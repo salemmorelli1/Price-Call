@@ -1,15 +1,25 @@
-name: Daily Backfill Realized
+name: Tuesday Prediction
 
 on:
-  schedule:
-    - cron: "17 22 * * *"
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Force pipeline even outside Tuesday 09:35–09:39 ET"
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "*/5 13-15 * * 2"
 
 permissions:
   contents: write
 
+concurrency:
+  group: tuesday-prediction
+  cancel-in-progress: false
+
 jobs:
-  backfill:
+  predict:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,14 +37,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run realized backfill
+      - name: Run Tuesday prediction pipeline
         run: |
-          python backfill_realized.py
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_run }}" = "true" ]; then
+            python run_tuesday_prediction.py --force
+          else
+            python run_tuesday_prediction.py
+          fi
 
-      - name: Commit updated prediction log if changed
+      - name: Commit updated artifacts if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts_part3/prediction_log.csv || true
-          git diff --cached --quiet || git commit -m "Automated realized backfill update"
+          git add artifacts_part1/ artifacts_part2_v77/ artifacts_part3/ v141_final_production_tape.csv v141_final_production_governance.csv || true
+          git diff --cached --quiet || git commit -m "Automated Tuesday prediction update"
           git push
