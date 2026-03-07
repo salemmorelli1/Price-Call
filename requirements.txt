@@ -1,0 +1,10 @@
+numpy
+pandas
+yfinance
+xgboost
+scipy
+scikit-learn
+pyarrow
+fastparquet
+gradio
+plotly
