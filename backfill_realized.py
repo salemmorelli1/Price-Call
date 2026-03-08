@@ -226,12 +226,16 @@ def main(force: bool = False, show_paths: bool = True) -> int:
     if show_paths:
         print_path_status(CFG)
 
+    if not Path(CFG.pred_log_path).exists():
+        print("prediction_log.csv not found yet. Nothing to backfill.")
+        return 0
+
     log = load_log(CFG)
 
     if log.empty:
         print("prediction_log.csv is empty. Nothing to backfill.")
         return 0
-
+        
     valid_decisions = log["decision_date"].dropna()
     if valid_decisions.empty:
         print("prediction_log.csv has no valid decision_date values.")
