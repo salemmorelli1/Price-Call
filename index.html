@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Price-Call Monitoring Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #020817;
+      --panel: #081225;
+      --panel-2: #0b1730;
+      --panel-3: #0f1b38;
+      --border: #24324a;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #7c83ff;
+      --good: #16a34a;
+      --warn: #f59e0b;
+      --bad: #dc2626;
+      --pill: #dbe4ff;
+      --pill-text: #000000;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .title h1 {
+      margin: 0 0 8px 0;
+      font-size: 2rem;
+    }
+
+    .title p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: var(--panel-3);
+      border: 1px solid var(--border);
+    }
+
+    .stamp {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.top {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .grid.mid {
+      grid-template-columns: 1.35fr 1fr;
+      margin-bottom: 16px;
+    }
+
+    .grid.bottom {
+      grid-template-columns: 1fr;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+    }
+
+    .label {
+      display: inline-block;
+      background: var(--pill);
+      color: var(--pill-text);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 6px;
+    }
+
+    .metric-sub {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .status-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .status-pill {
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-weight: 800;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-pill.good { background: rgba(22, 163, 74, 0.18); color: #6ee7b7; border: 1px solid rgba(22, 163, 74, 0.35); }
+    .status-pill.warn { background: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .status-pill.bad  { background: rgba(220, 38, 38, 0.18); color: #fca5a5; border: 1px solid rgba(220, 38, 38, 0.35); }
+
+    .chart {
+      width: 100%;
+      min-height: 420px;
+    }
+
+    .chart.small {
+      min-height: 360px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1100px;
+      background: var(--panel);
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--panel-3);
+      color: var(--text);
+      text-align: left;
+      padding: 12px;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(36, 50, 74, 0.7);
+      color: var(--text);
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background: rgba(124, 131, 255, 0.07);
+    }
+
+    .muted { color: var(--muted); }
+    .error { color: #fca5a5; white-space: pre-wrap; }
+
+    @media (max-width: 1100px) {
+      .grid.top, .grid.mid { grid-template-columns: 1fr; }
+      .header { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="title">
+        <h1>Price-Call Monitoring Dashboard</h1>
+        <p>GitHub-connected monitor for Tuesday predictions, governance, and realized backfill.</p>
+      </div>
+      <div class="controls">
+        <button id="refreshBtn">Refresh</button>
+        <a id="repoLink" href="#" target="_blank" rel="noopener">
+          <button class="secondary" type="button">Open Repository</button>
+        </a>
+        <div class="stamp" id="lastUpdated">Last updated: —</div>
+      </div>
+    </div>
+
+    <div class="grid top">
+      <div class="card">
+        <div class="label">Latest Decision Date</div>
+        <div class="metric-value" id="latestDecisionDate">—</div>
+        <div class="metric-sub" id="latestTargetDate">Target date: —</div>
+      </div>
+      <div class="card">
+        <div class="label">Latest VOO 7D Call</div>
+        <div class="metric-value" id="latestVooCall">—</div>
+        <div class="metric-sub" id="latestVooSpot">Spot: —</div>
+      </div>
+      <div class="card">
+        <div class="label">Latest IEF 7D Call</div>
+        <div class="metric-value" id="latestIefCall">—</div>
+        <div class="metric-sub" id="latestIefSpot">Spot: —</div>
+      </div>
+      <div class="card">
+        <div class="label">Forecast Accuracy</div>
+        <div class="metric-value" id="realizedRows">0</div>
+        <div class="metric-sub" id="errorSummary">Realized rows in prediction log</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 16px;">
+      <div class="label">Run Status</div>
+      <div class="status-row" id="statusRow"></div>
+      <div class="metric-sub" id="statusSummary" style="margin-top: 10px;">—</div>
+    </div>
+
+    <div class="grid mid">
+      <div class="card">
+        <div class="label">Prediction vs Realized</div>
+        <div id="predChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="label">Rolling Error</div>
+        <div id="errorChart" class="chart small"></div>
+      </div>
+    </div>
+
+    <div class="grid mid">
+      <div class="card">
+        <div class="label">Governance Metrics</div>
+        <div id="govChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="label">Current Governance Snapshot</div>
+        <div id="govSnapshot"></div>
+      </div>
+    </div>
+
+    <div class="grid bottom">
+      <div class="card">
+        <div class="label">Prediction Log</div>
+        <div class="table-wrap">
+          <table id="predTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="label">Debug / Load Status</div>
+      <div id="debugBox" class="muted">Waiting to load data…</div>
+    </div>
+  </div>
+
+  <script>
+    const CFG = {
+      owner: 'salemmorelli1',
+      repo: 'Price-Call',
+      branch: 'main',
+      files: {
+        predLog: 'artifacts_part3/prediction_log.csv',
+        prodTape: 'v141_final_production_tape.csv',
+        govTape: 'v141_final_production_governance.csv'
+      }
+    };
+
+    const repoBase = `https://github.com/${CFG.owner}/${CFG.repo}`;
+    const rawBase = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}`;
+    document.getElementById('repoLink').href = repoBase;
+
+    function rawUrl(path) {
+      return `${rawBase}/${path}?t=${Date.now()}`;
+    }
+
+    function fmtNum(x, digits = 4) {
+      return (x === null || x === undefined || Number.isNaN(+x)) ? '—' : Number(x).toFixed(digits);
+    }
+
+    function fmtDate(x) {
+      if (!x) return '—';
+      const d = new Date(x);
+      return Number.isNaN(d.getTime()) ? String(x) : d.toISOString().slice(0, 10);
+    }
+
+    function csvToObjects(text) {
+      const rows = text.trim().split(/\r?\n/);
+      if (!rows.length) return [];
+      const header = splitCsvRow(rows[0]);
+      return rows.slice(1).filter(r => r.trim().length > 0).map(row => {
+        const vals = splitCsvRow(row);
+        const obj = {};
+        header.forEach((h, i) => obj[h] = vals[i] ?? '');
+        return obj;
+      });
+    }
+
+    function splitCsvRow(row) {
+      const out = [];
+      let cur = '';
+      let q = false;
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '"') {
+          if (q && row[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            q = !q;
+          }
+        } else if (ch === ',' && !q) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out;
+    }
+
+    function coerceNumeric(obj, cols) {
+      obj.forEach(r => cols.forEach(c => {
+        if (c in r) {
+          const v = r[c];
+          r[c] = (v === '' || v === null || v === undefined) ? NaN : Number(v);
+        }
+      }));
+    }
+
+    function sortByDateAsc(rows, col) {
+      return [...rows].sort((a, b) => new Date(a[col]) - new Date(b[col]));
+    }
+
+    async function fetchCsv(path) {
+      const res = await fetch(rawUrl(path));
+      if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+      return csvToObjects(await res.text());
+    }
+
+    function buildStatusPills(predLog, prodTape) {
+      const row = predLog.length ? predLog[predLog.length - 1] : null;
+      const latestTape = prodTape.length ? prodTape[prodTape.length - 1] : null;
+      const targetFilled = row && row.target_date ? true : false;
+      const realizedFilled = row && row.px_voo_realized !== '' && row.px_ief_realized !== '';
+      const govTier = row ? (row.governance_tier || '—') : '—';
+      const alphaScale = row ? row.alpha_scale : NaN;
+      const pFinal = row ? row.p_final_cal : NaN;
+      const isLive = latestTape ? Number(latestTape.is_live || 0) === 1 : false;
+
+      const pills = [
+        { text: isLive ? 'LIVE ROW PRESENT' : 'NO LIVE ROW', cls: isLive ? 'good' : 'warn' },
+        { text: `GOVERNANCE: ${govTier}`, cls: govTier === 'NORMAL' ? 'good' : 'warn' },
+        { text: `ALPHA SCALE: ${fmtNum(alphaScale, 2)}`, cls: Number(alphaScale) >= 1 ? 'good' : 'warn' },
+        { text: `P_FINAL_CAL: ${fmtNum(pFinal, 4)}`, cls: 'good' },
+        { text: targetFilled ? 'TARGET DATE SET' : 'TARGET DATE PENDING', cls: targetFilled ? 'good' : 'warn' },
+        { text: realizedFilled ? 'REALIZED FILLED' : 'AWAITING REALIZED', cls: realizedFilled ? 'good' : 'warn' }
+      ];
+
+      const rowHtml = pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join('');
+      document.getElementById('statusRow').innerHTML = rowHtml;
+
+      const summary = row
+        ? `Latest row: decision=${fmtDate(row.decision_date)} | VOO call=${fmtNum(row.px_voo_call_7d, 2)} | IEF call=${fmtNum(row.px_ief_call_7d, 2)}`
+        : 'No prediction rows found.';
+      document.getElementById('statusSummary').textContent = summary;
+    }
+
+    function fillTopCards(predLog) {
+      const row = predLog.length ? predLog[predLog.length - 1] : null;
+      const realized = predLog.filter(r => Number.isFinite(r.voo_abs_err) && Number.isFinite(r.ief_abs_err));
+
+      document.getElementById('latestDecisionDate').textContent = row ? fmtDate(row.decision_date) : '—';
+      document.getElementById('latestTargetDate').textContent = `Target date: ${row ? fmtDate(row.target_date) : '—'}`;
+      document.getElementById('latestVooCall').textContent = row ? fmtNum(row.px_voo_call_7d, 2) : '—';
+      document.getElementById('latestVooSpot').textContent = row ? `Spot: ${fmtNum(row.px_voo_t, 2)}` : 'Spot: —';
+      document.getElementById('latestIefCall').textContent = row ? fmtNum(row.px_ief_call_7d, 2) : '—';
+      document.getElementById('latestIefSpot').textContent = row ? `Spot: ${fmtNum(row.px_ief_t, 2)}` : 'Spot: —';
+      document.getElementById('realizedRows').textContent = String(realized.length);
+
+      if (realized.length) {
+        const vooMae = realized.reduce((a, r) => a + r.voo_abs_err, 0) / realized.length;
+        const iefMae = realized.reduce((a, r) => a + r.ief_abs_err, 0) / realized.length;
+        document.getElementById('errorSummary').textContent = `VOO MAE ${fmtNum(vooMae, 3)} | IEF MAE ${fmtNum(iefMae, 3)}`;
+      } else {
+        document.getElementById('errorSummary').textContent = 'Realized rows in prediction log';
+      }
+    }
+
+    function renderPredictionChart(predLog) {
+      const rows = predLog.filter(r => r.decision_date);
+      const x = rows.map(r => r.decision_date);
+      const traces = [
+        { x, y: rows.map(r => r.px_voo_call_7d), mode: 'lines+markers', name: 'VOO call' },
+        { x, y: rows.map(r => r.px_ief_call_7d), mode: 'lines+markers', name: 'IEF call' },
+        { x, y: rows.map(r => r.px_voo_realized), mode: 'lines+markers', name: 'VOO realized' },
+        { x, y: rows.map(r => r.px_ief_realized), mode: 'lines+markers', name: 'IEF realized' }
+      ];
+
+      Plotly.newPlot('predChart', traces, {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'Decision Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Price', gridcolor: 'rgba(255,255,255,0.08)' },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 20, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderErrorChart(predLog) {
+      const realized = predLog.filter(r => Number.isFinite(r.voo_abs_err) || Number.isFinite(r.ief_abs_err));
+      const x = realized.map(r => r.decision_date);
+
+      Plotly.newPlot('errorChart', [
+        { x, y: realized.map(r => r.voo_abs_err), mode: 'lines+markers', name: 'VOO abs err' },
+        { x, y: realized.map(r => r.ief_abs_err), mode: 'lines+markers', name: 'IEF abs err' },
+        { x, y: realized.map(r => Number.isFinite(r.voo_ape) ? 100 * r.voo_ape : NaN), mode: 'lines+markers', name: 'VOO APE %', yaxis: 'y2' },
+        { x, y: realized.map(r => Number.isFinite(r.ief_ape) ? 100 * r.ief_ape : NaN), mode: 'lines+markers', name: 'IEF APE %', yaxis: 'y2' }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'Decision Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Absolute Error', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis2: { title: 'APE %', overlaying: 'y', side: 'right' },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 60, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderGovernanceChart(govRows) {
+      const rows = govRows.filter(r => r.Date);
+      const x = rows.map(r => r.Date);
+      Plotly.newPlot('govChart', [
+        { x, y: rows.map(r => r.alpha_eff_final), mode: 'lines', name: 'alpha_eff_final' },
+        { x, y: rows.map(r => r.gov_scale), mode: 'lines', name: 'gov_scale' },
+        { x, y: rows.map(r => r.GovHealthScore_live), mode: 'lines', name: 'GovHealthScore_live' },
+        { x, y: rows.map(r => r.AnnCostDrag_Roll), mode: 'lines', name: 'AnnCostDrag_Roll', yaxis: 'y2' },
+        { x, y: rows.map(r => r.TurnEff_Roll), mode: 'lines', name: 'TurnEff_Roll', yaxis: 'y2' }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Scale / Health', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis2: { title: 'Cost / Turnover', overlaying: 'y', side: 'right' },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 60, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderGovSnapshot(govRows) {
+      const row = govRows.length ? govRows[govRows.length - 1] : null;
+      const el = document.getElementById('govSnapshot');
+      if (!row) {
+        el.innerHTML = '<div class="muted">No governance rows found.</div>';
+        return;
+      }
+
+      el.innerHTML = `
+        <div class="metric-value">${row.GovMode || '—'}</div>
+        <div class="metric-sub" style="margin-bottom:14px;">Reason: ${row.GovReason || '—'}</div>
+        <div class="status-row">
+          <div class="status-pill ${row.GovMode === 'ACTIVE' ? 'good' : 'warn'}">GovMode: ${row.GovMode || '—'}</div>
+          <div class="status-pill ${Number(row.ZeRO_Active_End) === 1 ? 'warn' : 'good'}">ZeRO Active: ${row.ZeRO_Active_End || 0}</div>
+          <div class="status-pill ${Number(row.TooGood_Alarm_End) === 1 ? 'warn' : 'good'}">TooGood Alarm: ${row.TooGood_Alarm_End || 0}</div>
+        </div>
+        <div style="margin-top:16px; line-height:1.9;">
+          <div><strong>Date:</strong> ${fmtDate(row.Date)}</div>
+          <div><strong>alpha_eff_final:</strong> ${fmtNum(row.alpha_eff_final, 4)}</div>
+          <div><strong>gov_scale:</strong> ${fmtNum(row.gov_scale, 4)}</div>
+          <div><strong>GovHealthScore_live:</strong> ${fmtNum(row.GovHealthScore_live, 4)}</div>
+          <div><strong>GovHealthScore_realized:</strong> ${fmtNum(row.GovHealthScore_realized, 4)}</div>
+          <div><strong>Lift_End:</strong> ${fmtNum(row.Lift_End, 4)}</div>
+          <div><strong>dES_P_End:</strong> ${fmtNum(row.dES_P_End, 4)}</div>
+          <div><strong>AnnCostDrag_Roll:</strong> ${fmtNum(row.AnnCostDrag_Roll, 6)}</div>
+          <div><strong>TurnEff_Roll:</strong> ${fmtNum(row.TurnEff_Roll, 6)}</div>
+        </div>
+      `;
+    }
+
+    function renderTable(predLog) {
+      const rows = [...predLog].reverse();
+      const cols = [
+        'decision_date', 'target_date', 'p_final_cal', 'p0', 'alpha_scale', 'governance_tier',
+        'px_voo_t', 'px_voo_call_7d', 'px_voo_realized', 'voo_abs_err', 'voo_ape',
+        'px_ief_t', 'px_ief_call_7d', 'px_ief_realized', 'ief_abs_err', 'ief_ape'
+      ];
+
+      const thead = document.querySelector('#predTable thead');
+      const tbody = document.querySelector('#predTable tbody');
+      thead.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          ${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join('')}
+        </tr>
+      `).join('');
+    }
+
+    function formatCell(col, val) {
+      if (val === '' || val === null || val === undefined || (typeof val === 'number' && Number.isNaN(val))) return '—';
+      if (col.includes('date')) return fmtDate(val);
+      if (typeof val === 'number') {
+        if (col.includes('ape')) return fmtNum(100 * val, 2) + '%';
+        return fmtNum(val, 4);
+      }
+      return String(val);
+    }
+
+    async function loadAll() {
+      const debug = document.getElementById('debugBox');
+      debug.textContent = 'Loading GitHub CSVs...';
+      try {
+        const [predLogRaw, prodTapeRaw, govRaw] = await Promise.all([
+          fetchCsv(CFG.files.predLog),
+          fetchCsv(CFG.files.prodTape),
+          fetchCsv(CFG.files.govTape)
+        ]);
+
+        const predLog = sortByDateAsc(predLogRaw, 'decision_date');
+        const prodTape = sortByDateAsc(prodTapeRaw, 'Date');
+        const govRows = sortByDateAsc(govRaw, 'Date');
+
+        coerceNumeric(predLog, [
+          'h_reb','p_final_cal','p0','alpha_scale','px_voo_t','px_ief_t','px_voo_call_7d','px_ief_call_7d',
+          'px_voo_realized','px_ief_realized','voo_err','ief_err','voo_abs_err','ief_abs_err','voo_ape','ief_ape'
+        ]);
+
+        coerceNumeric(prodTape, [
+          'is_live','p_final_use','p0','alpha_scale','w_exec','cost_exec','alpha_eff_final'
+        ]);
+
+        coerceNumeric(govRows, [
+          'gov_scale','alpha_eff_final','GovHealthScore_live','GovHealthScore_realized',
+          'Lift_End','dES_P_End','AnnCostDrag_Roll','TurnEff_Roll','ZeRO_Active_End','TooGood_Alarm_End'
+        ]);
+
+        fillTopCards(predLog);
+        buildStatusPills(predLog, prodTape);
+        renderPredictionChart(predLog);
+        renderErrorChart(predLog);
+        renderGovernanceChart(govRows);
+        renderGovSnapshot(govRows);
+        renderTable(predLog);
+
+        document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleString()}`;
+        debug.textContent = `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, and ${govRows.length} governance rows from ${repoBase}.`;
+      } catch (err) {
+        console.error(err);
+        debug.innerHTML = `<div class="error">Failed to load dashboard data.\n${String(err)}</div>`;
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadAll);
+    loadAll();
+  </script>
+</body>
+</html> This is the current html. We need to move slowly and step by step. Do you understand what I am showing? Let’s take our time. Now what do I do?દાવાદ to=canmore.create_textdoc ＿奇米影视  北京赛车冠军agent to=canmore.create_textdoc  大发快三怎么看json code_snippet  北京pk赛车 final  天天中彩票开奖 code  亿贝json  天天彩票软件assistant to=canmore.create_textdoc 񹚟analysis code  天天爱彩票提现json code  天天中彩票未commentary to=canmore.create_textdoc ,最新高清无码专区 code  天天送commentary to=canmore.create_textdoc  天天中彩票和 json  申博太阳城commentary to=canmore.create_textdoc  北京赛车如何json code  彩神争霸提现commentary to=canmore.create_textdoc  天天中彩票腾讯Jzb24 +天天中彩票commentary to=canmore.create_textdoc ＿俺去也json  手机版天天中彩票 code  彩神争霸可以commentary to=canmore.create_textdoc 񎔊pp্ত্রিয় json code  日本一本道commentary to=canmore.create_textdoc  大发游戏 code 彩票直属assistant to=canmore.create_textdoc ﻿출장안마json code  天天彩票appcommentary to=canmore.create_textdoc ＿天天json code ＿亚洲assistant to=canmore.create_textdoc  天天乐购彩票json code 】【。】【analysis to=canmore.create_textdoc одjson code  菲龙եականcommentary to=canmore.create_textdoc 软件合法吗 to=canmore.create_textdoc 大发展有限公司官网json code  天天中彩票未analysis to=canmore.create_textdoc  天天中彩票人工json code 】【：commentary to=canmore.create_textdoc  彩神争霸下载json code  乐盈commentary to=canmore.create_textdoc  菲龙json code ♀♀♀analysis to=canmore.create_textdoc  万亚json code ിന്തanalysis to=canmore.create_textdoc  天天中彩票软件json code ത്തികanalysis to=canmore.create_textdoc 久久免费热在线精品json code ന്ത്രി to=canmore.create_textdoc 񟻭json code േരളanalysis to=canmore.create_textdoc  шықәсазыjson code ెళ్లుassistant to=canmore.create_textdoc  彩神争霸是 to=canmore.create_textdoc  博猫json code  аҭыԥassistant to=canmore.create_textdoc  天天中彩票人工json code րճcommentary to=canmore.create_textdoc ыҵjson code 州扑克 analysis to=canmore.create_textdoc  иалахәjson code 출장샵analysis to=canmore.create_textdoc 大香蕉伊人json code 发表评论 to=canmore.create_textdoc  天天中彩票不能买json code qatigiitanalysis to=canmore.create_textdoc ეობრივjson code ബ് to=canmore.create_textdoc 天天啪json code  to=canmore.create_textdoc  天天中彩票未analysis code 不中返json to=canmore.create_textdoc  万亚json code 旗舰厅analysis to=canmore.create_textdoc  สูตรบาคาร่าjson code నొందanalysis to=canmore.create_textdoc тәыjson code ಪ್ರಜಾವಾಣಿ to=canmore.create_textdoc  даирилириjson code म्पanalysis to=canmore.create_textdoc ેjson code waswoanalysis to=canmore.create_textdoc ‍കിയjson code ുത്ത to=canmore.create_textdoc 彩网大发快三json code  analyze if need answer only no tool. User pasted HTML and asks if understand what showing and what do next step by step. Need answer. No need web. Could use canmore? no. Need respond with clear step-by-step. He has HTML for GUI likely needs deploy in GitHub Pages. Need move slowly. Explain yes understand: this HTML is a static dashboard that reads repo CSVs from raw.githubusercontent. Next step is save as file in repo, probably `index.html` at repo root or `docs/index.html`. Then enable Pages. Need step-by-step. Keep concise. Mention current HTML structure valid. Need maybe avoid 
