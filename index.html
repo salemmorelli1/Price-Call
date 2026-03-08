@@ -380,7 +380,7 @@
       const row = predLog.length ? predLog[predLog.length - 1] : null;
       const latestTape = prodTape.length ? prodTape[prodTape.length - 1] : null;
       const targetFilled = row && row.target_date ? true : false;
-      const realizedFilled = row && row.px_voo_realized !== '' && row.px_ief_realized !== '';
+      const realizedFilled = row && Number.isFinite(row.px_voo_realized) && Number.isFinite(row.px_ief_realized);
       const govTier = row ? (row.governance_tier || '—') : '—';
       const alphaScale = row ? row.alpha_scale : NaN;
       const pFinal = row ? row.p_final_cal : NaN;
