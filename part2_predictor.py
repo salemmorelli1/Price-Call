@@ -813,12 +813,13 @@ def main(cfg: V77Config):
                 print(f"Spread consistency: median(gap = direct - (voo_hat-ief_hat)) = {gap_med:.6e}")
 
         # Live row append
+        # Live row append
         try:
             live_date = pd.to_datetime(X.index.max()).tz_localize(None).normalize()
-            pos = df.index.get_loc(live_date)
-            revealed_pos = pos - cfg.H
-
             print("X last date:", live_date)
+
+            live_pos = int(np.where(df.index == live_date)[0][0])
+            revealed_pos = live_pos - cfg.H
             if revealed_pos >= 0:
                 print("Expected y_revealed last date (row-based):", df.index[revealed_pos])
             else:
@@ -828,7 +829,7 @@ def main(cfg: V77Config):
 
             if "is_live" not in m.columns:
                 m["is_live"] = 0
-            m["is_live"] = m["is_live"].fillna(0).astype(int)
+            m["is_live"] = pd.to_numeric(m["is_live"], errors="coerce").fillna(0).astype(int)
 
             if live_date not in m.index:
                 base = df.loc[live_date].copy()
@@ -836,11 +837,15 @@ def main(cfg: V77Config):
                 X_live_row = X.loc[[live_date], feat_cols]
                 z_live = float(clf.predict(X_live_row, output_margin=True)[0])
 
-                live_pos = int(np.where(df.index == live_date)[0][0])
                 train_end_idx_live = live_pos + 1
-                p0_live = float(compute_p0_state_from_revealed_labels(
-                    df["y_voo"], train_end_idx=train_end_idx_live, H=cfg.H, seed_value=seed_value
-                ))
+                p0_live = float(
+                    compute_p0_state_from_revealed_labels(
+                        df["y_voo"],
+                        train_end_idx=train_end_idx_live,
+                        H=cfg.H,
+                        seed_value=seed_value,
+                    )
+                )
 
                 calib_asof = calib_df.loc[:live_date].iloc[-1]
                 s_live = float(calib_asof["sign"])
@@ -864,10 +869,11 @@ def main(cfg: V77Config):
                 else:
                     p_cal_live = p_raw_live
 
-                live_row = pd.Series({c: np.nan for c in m.columns}, name=live_date)
+                # build as dict so string columns work safely
+                live_row = {c: np.nan for c in m.columns}
 
                 for c in m.columns:
-                    if c in base.index and pd.notna(base[c]):
+                    if c in base.index:
                         live_row[c] = base[c]
 
                 live_row["z_raw"] = z_live
@@ -921,10 +927,19 @@ def main(cfg: V77Config):
                 last = m.sort_index().iloc[-1]
                 live_row["drift_alarm"] = int(last.get("drift_alarm", 0))
                 live_row["alpha_scale"] = float(last.get("alpha_scale", 1.0))
-                live_row["governance_tier"] = last.get("governance_tier", "NORMAL")
-
+                live_row["governance_tier"] = str(last.get("governance_tier", "NORMAL"))
                 live_row["is_live"] = 1
-                m = pd.concat([m, live_row.to_frame().T], axis=0).sort_index()
+
+                live_row_df = pd.DataFrame([live_row], index=[live_date])
+                m = pd.concat([m, live_row_df], axis=0).sort_index()
+
+                m["is_live"] = pd.to_numeric(m["is_live"], errors="coerce").fillna(0).astype(int)
+                m.loc[m.index != live_date, "is_live"] = 0
+
+            else:
+                m["is_live"] = pd.to_numeric(m["is_live"], errors="coerce").fillna(0).astype(int)
+                m.loc[m.index != live_date, "is_live"] = 0
+                m.loc[m.index == live_date, "is_live"] = 1
 
         except Exception as e:
             print(f"[WARN] Live-row append skipped due to: {e}")
@@ -939,9 +954,23 @@ def main(cfg: V77Config):
     print(f"\n✅ V77 TAPE WRITTEN: {out_path}")
 
     t = pd.read_csv(out_path)
-    t["Date"] = pd.to_datetime(t["Date"])
-    assert t["Date"].max() == pd.to_datetime(X.index.max()).normalize()
-    assert int(t.sort_values("Date").iloc[-1]["is_live"]) == 1
+    t["Date"] = pd.to_datetime(t["Date"], errors="coerce").dt.normalize()
+
+    expected_last = pd.to_datetime(X.index.max()).normalize()
+    actual_last = t["Date"].max()
+
+    if actual_last != expected_last:
+        raise RuntimeError(
+            f"Part 2 tape max Date mismatch: actual={actual_last} expected={expected_last}"
+        )
+
+    if "is_live" not in t.columns:
+        raise RuntimeError("Part 2 tape is missing is_live column.")
+
+    last_is_live = int(pd.to_numeric(t.sort_values("Date").iloc[-1]["is_live"], errors="coerce"))
+    if last_is_live != 1:
+        raise RuntimeError("Part 2 tape last row is not marked is_live=1.")
+        
 
     last_row = t.sort_values("Date").tail(1)
     is_live_last = last_row["is_live"].values[0] if "is_live" in last_row.columns else None
@@ -953,7 +982,7 @@ def main(cfg: V77Config):
         "drift_alarm_rate": float(m["drift_alarm"].mean()),
         "final_verdict_pass": bool(final_pass),
         "last_date": str(t["Date"].max().date()),
-        "last_is_live": int(is_live_last),
+        "last_is_live": int(last_is_live),
     }
 
 
