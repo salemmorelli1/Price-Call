@@ -1,0 +1,32 @@
+{
+  "date_min_data": "2010-09-09",
+  "date_max_data": "2026-03-06",
+  "date_min_X_live": "2010-09-23",
+  "date_max_X_live": "2026-03-06",
+  "date_min_y_reg_revealed": "2010-09-09",
+  "date_max_y_reg_revealed": "2026-02-25",
+  "n_data": 3896,
+  "n_X_live": 3886,
+  "n_y_reg_revealed": 3889,
+  "n_reg_train": 3879,
+  "n_rows_lost_join": 7,
+  "missing_frac": {
+    "IEF": 0.0,
+    "JNK": 0.0,
+    "QQQ": 0.0,
+    "RSP": 0.0,
+    "VOO": 0.04228121927236971,
+    "^VIX": 0.0,
+    "^VIX3M": 0.0
+  },
+  "max_equal_close_run": {
+    "VOO": 2,
+    "IEF": 3,
+    "JNK": 3,
+    "RSP": 2,
+    "QQQ": 3,
+    "^VIX": 2,
+    "^VIX3M": 2
+  },
+  "stale_dropped_rows": 0
+}
