@@ -1464,17 +1464,47 @@
     function renderPredictionChart(predLog) {
       const rows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
       const height = getChartHeight("main");
-
+    
       if (!rows.length) {
         renderBlankPlot("predChart", "No prediction log loaded.", height);
         return;
       }
-
+    
       const onePoint = rows.length === 1;
+      const xVals = rows.map(r => r.decision_date);
+    
+      const traces = [
+        {
+          x: xVals,
+          y: rows.map(r => safeNum(r.px_voo_call_7d)),
+          mode: onePoint ? "markers" : "lines+markers",
+          name: "VOO call"
+        },
+        {
+          x: xVals,
+          y: rows.map(r => safeNum(r.px_ief_call_7d)),
+          mode: onePoint ? "markers" : "lines+markers",
+          name: "IEF call"
+        },
+        {
+          x: xVals,
+          y: rows.map(r => safeNum(r.px_voo_realized)),
+          mode: onePoint ? "markers" : "lines+markers",
+          name: "VOO realized"
+        },
+        {
+          x: xVals,
+          y: rows.map(r => safeNum(r.px_ief_realized)),
+          mode: onePoint ? "markers" : "lines+markers",
+          name: "IEF realized"
+        }
+      ];
+    
       let layout = plotBaseLayout({
         height,
+        margin: { l: 82, r: 34, t: 30, b: 140 },
         xaxis: {
-          title: { text: "Decision Date", standoff: 28 },
+          title: { text: "Decision Date", standoff: 34 },
           automargin: true,
           gridcolor: "rgba(148,163,184,0.18)"
         },
@@ -1484,28 +1514,53 @@
           gridcolor: "rgba(148,163,184,0.18)"
         }
       });
-
+    
       layout = applySingleDatePadding(rows, "decision_date", layout);
-
-      Plotly.newPlot("predChart", [
-        {
-          x: rows.map(r => r.decision_date),
-          y: rows.map(r => safeNum(r.px_voo_call_7d)),
-          mode: onePoint ? "markers+text" : "lines+markers",
-          text: onePoint ? ["VOO call"] : undefined,
-          textposition: "top center",
-          cliponaxis: false,
-          name: "VOO call"
-        },
-        {
-          x: rows.map(r => r.decision_date),
-          y: rows.map(r => safeNum(r.px_ief_call_7d)),
-          mode: onePoint ? "markers+text" : "lines+markers",
-          text: onePoint ? ["IEF call"] : undefined,
-          textposition: "top center",
-          cliponaxis: false,
-          name: "IEF call"
-        },
+    
+      if (onePoint) {
+        const r = rows[0];
+        const pts = [
+          { key: "px_voo_call_7d", text: "VOO call", xshift: 0,  yshift: 14 },
+          { key: "px_ief_call_7d", text: "IEF call", xshift: 0,  yshift: 14 },
+          { key: "px_voo_realized", text: "VOO realized", xshift: -48, yshift: -18 },
+          { key: "px_ief_realized", text: "IEF realized", xshift: 48,  yshift: -18 }
+        ];
+    
+        const finiteY = pts
+          .map(p => safeNum(r[p.key]))
+          .filter(v => v !== null && Number.isFinite(v));
+    
+        if (finiteY.length) {
+          const minY = Math.min(...finiteY);
+          const maxY = Math.max(...finiteY);
+          const spread = Math.max(maxY - minY, 1);
+          const pad = Math.max(spread * 0.18, maxY * 0.08, 35);
+    
+          layout.yaxis.range = [minY - pad, maxY + pad];
+        }
+    
+        layout.annotations = pts
+          .map(p => {
+            const y = safeNum(r[p.key]);
+            if (y === null || !Number.isFinite(y)) return null;
+            return {
+              x: r.decision_date,
+              y,
+              text: p.text,
+              showarrow: false,
+              xshift: p.xshift,
+              yshift: p.yshift,
+              font: { color: "#f8fafc", size: 12 }
+            };
+          })
+          .filter(Boolean);
+      }
+    
+      Plotly.newPlot("predChart", traces, layout, {
+        responsive: true,
+        displayModeBar: false
+      });
+    }
         {
           x: rows.map(r => r.decision_date),
           y: rows.map(r => safeNum(r.px_voo_realized)),
