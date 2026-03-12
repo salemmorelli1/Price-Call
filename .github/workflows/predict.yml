@@ -56,12 +56,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+          
           echo "=== files created by pipeline ==="
           find artifacts_part1 -maxdepth 2 -type f | sort || true
-          find artifacts_part2_v77 -maxdepth 3 -type f | sort || true
           find artifacts_part3 -maxdepth 2 -type f | sort || true
-          ls -l v141_final_production_tape.csv v141_final_production_governance.csv || true
+          find artifacts_part3_v1 -maxdepth 2 -type f | sort || true
+          ls -l artifacts_part3_v1/v1_final_production_tape.csv artifacts_part3_v1/v1_final_production_governance.csv artifacts_part3_v1/v1_fusion_allocations.csv || true
 
           echo "=== git status before add ==="
           git status --short
@@ -86,9 +86,7 @@ jobs:
           name: tuesday-prediction-outputs
           path: |
             artifacts_part1/**
-            artifacts_part2_v77/**
             artifacts_part3/**
-            v141_final_production_tape.csv
-            v141_final_production_governance.csv
+            artifacts_part3_v1/**
           if-no-files-found: warn
                 
