@@ -1269,36 +1269,99 @@
 
     function renderPredictionChart(predLog) {
       const rows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
+      const chartHeight = Math.max(420, Math.min(Math.round(window.innerHeight * 0.50), 560));
+    
       if (!rows.length) {
-        renderBlankPlot("predChart", "No prediction log loaded.", 420);
+        renderBlankPlot("predChart", "No prediction log loaded.", chartHeight);
         return;
       }
-
+    
       const x = rows.map(r => r.decision_date);
+      const singlePoint = rows.length === 1;
+    
       const traces = [
-        { x, y: rows.map(r => safeNum(r.px_voo_call_7d)), mode: rows.length > 1 ? "lines+markers" : "markers+text", text: rows.length === 1 ? ["VOO call"] : undefined, textposition: "top center", name: "VOO call" },
-        { x, y: rows.map(r => safeNum(r.px_ief_call_7d)), mode: rows.length > 1 ? "lines+markers" : "markers+text", text: rows.length === 1 ? ["IEF call"] : undefined, textposition: "top center", name: "IEF call" },
-        { x, y: rows.map(r => safeNum(r.px_voo_realized)), mode: rows.length > 1 ? "lines+markers" : "markers+text", text: rows.length === 1 ? ["VOO realized"] : undefined, textposition: "bottom center", name: "VOO realized" },
-        { x, y: rows.map(r => safeNum(r.px_ief_realized)), mode: rows.length > 1 ? "lines+markers" : "markers+text", text: rows.length === 1 ? ["IEF realized"] : undefined, textposition: "bottom center", name: "IEF realized" }
+        {
+          x,
+          y: rows.map(r => safeNum(r.px_voo_call_7d)),
+          mode: singlePoint ? "markers+text" : "lines+markers",
+          text: singlePoint ? ["VOO call"] : undefined,
+          textposition: "top center",
+          textfont: { size: 16 },
+          cliponaxis: false,
+          name: "VOO call"
+        },
+        {
+          x,
+          y: rows.map(r => safeNum(r.px_ief_call_7d)),
+          mode: singlePoint ? "markers+text" : "lines+markers",
+          text: singlePoint ? ["IEF call"] : undefined,
+          textposition: "top center",
+          textfont: { size: 16 },
+          cliponaxis: false,
+          name: "IEF call"
+        },
+        {
+          x,
+          y: rows.map(r => safeNum(r.px_voo_realized)),
+          mode: singlePoint ? "markers+text" : "lines+markers",
+          text: singlePoint ? ["VOO realized"] : undefined,
+          textposition: "bottom center",
+          textfont: { size: 15 },
+          cliponaxis: false,
+          name: "VOO realized"
+        },
+        {
+          x,
+          y: rows.map(r => safeNum(r.px_ief_realized)),
+          mode: singlePoint ? "markers+text" : "lines+markers",
+          text: singlePoint ? ["IEF realized"] : undefined,
+          textposition: "bottom center",
+          textfont: { size: 15 },
+          cliponaxis: false,
+          name: "IEF realized"
+        }
       ];
 
       const layout = plotBaseLayout({
-        height: 420,
-        xaxis: { title: "Decision Date", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Price", gridcolor: "rgba(148,163,184,0.18)" }
-      });
-
-      if (rows.length === 1) {
-        const x0 = parseDateValue(rows[0].decision_date);
-        if (x0) {
-          const lo = new Date(x0.getTime() - 3 * 86400000).toISOString();
-          const hi = new Date(x0.getTime() + 3 * 86400000).toISOString();
-          layout.xaxis.range = [lo, hi];
+              height: chartHeight,
+              margin: { l: 78, r: 28, t: 20, b: 130 },
+              legend: {
+                orientation: "h",
+                yanchor: "top",
+                y: -0.23,
+                xanchor: "left",
+                x: 0,
+                bgcolor: "rgba(0,0,0,0)",
+                font: { color: "#f8fafc", size: 14 }
+              },
+              xaxis: {
+                title: { text: "Decision Date", standoff: 30 },
+                automargin: true,
+                tickangle: 0,
+                gridcolor: "rgba(148,163,184,0.18)"
+              },
+              yaxis: {
+                title: { text: "Price", standoff: 16 },
+                automargin: true,
+                gridcolor: "rgba(148,163,184,0.18)"
+              }
+            })
+          };
+        
+          if (singlePoint) {
+            const x0 = parseDateValue(rows[0].decision_date);
+            if (x0) {
+              const lo = new Date(x0.getTime() - 4 * 86400000).toISOString();
+              const hi = new Date(x0.getTime() + 4 * 86400000).toISOString();
+              layout.xaxis.range = [lo, hi];
+            }
+          }
+        
+          Plotly.newPlot("predChart", traces, layout, {
+            responsive: true,
+            displayModeBar: false
+          });
         }
-      }
-
-      Plotly.newPlot("predChart", traces, layout, { responsive: true, displayModeBar: false });
-    }
 
     function renderForecastErrorPanel(predLog) {
       const realized = sortByDateAsc(predLog, "decision_date").filter(r =>
