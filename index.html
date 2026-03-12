@@ -820,26 +820,28 @@
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
 
-    function addBusinessDays(dateObj, days) {
+    function addCalendarDays(dateObj, days) {
       if (!dateObj || !Number.isFinite(days)) return null;
       const d = new Date(dateObj.getTime());
-      let added = 0;
-      while (added < days) {
-        d.setUTCDate(d.getUTCDate() + 1);
-        const dow = d.getUTCDay();
-        if (dow !== 0 && dow !== 6) added += 1;
-      }
+      d.setUTCDate(d.getUTCDate() + Math.round(days));
       return d;
+    }
+
+    function rowHasRealized(row) {
+      if (!row) return false;
+      return Number.isFinite(toNumber(row.px_voo_realized)) && Number.isFinite(toNumber(row.px_ief_realized));
     }
 
     function deriveTargetDate(row) {
       if (!row) return "NA";
       if (!isMissing(row.target_date)) return fmtDate(row.target_date);
-      const decision = parseDateOnly(row.decision_date);
+
+      const decision = parseDateOnly(row.decision_date || row.Date);
       if (!decision) return "NA";
+
       const hRaw = toNumber(row.h_reb);
       const h = Number.isFinite(hRaw) && hRaw > 0 ? Math.round(hRaw) : 7;
-      const target = addBusinessDays(decision, h);
+      const target = addCalendarDays(decision, h);
       return target ? fmtDate(target) : "NA";
     }
 
@@ -1120,6 +1122,10 @@
       const row = govRow || tapeRow;
       if (!row) return null;
 
+      const alphaEffFinal = Number.isFinite(toNumber(govRow?.alpha_eff_final)) ? toNumber(govRow.alpha_eff_final) :
+                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final)) ? toNumber(tapeRow.alpha_eff_final) :
+                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final_live)) ? toNumber(tapeRow.alpha_eff_final_live) : NaN;
+
       return {
         date: row ? fmtDate(row.Date) : "NA",
         GovMode: !isMissing(govRow?.GovMode) ? govRow.GovMode : "NA",
@@ -1128,7 +1134,7 @@
         scale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
                Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) :
                Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) : NaN,
-        alphaEffFinal: toNumber(govRow?.alpha_eff_final),
+        alphaEffFinal,
         healthLive: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
         healthReal: toNumber(govRow?.GovHealthScore_realized),
         healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) :
@@ -1139,7 +1145,8 @@
         turnEff: Number.isFinite(toNumber(govRow?.TurnEff_Roll)) ? toNumber(govRow.TurnEff_Roll) : toNumber(govRow?.turn_eff_roll),
         zeroActive: toNumber(govRow?.ZeRO_Active_End),
         tooGood: toNumber(govRow?.TooGood_Alarm_End),
-        govScale: toNumber(govRow?.gov_scale)
+        govScale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
+                  Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) : NaN
       };
     }
 
@@ -1255,6 +1262,7 @@
     }
 
     function buildStatusPills(system, forecast, defense, alpha) {
+      const latestRealizedFilled = rowHasRealized(forecast?.row);
       const pills = [];
       pills.push({
         text: system.status === "LIVE" ? "🟢 SYSTEM LIVE" : system.status === "DELAYED" ? "🔵 SYSTEM DELAYED" : "🔴 SYSTEM STALE",
@@ -1289,12 +1297,12 @@
         cls: forecast?.targetDate && forecast.targetDate !== "NA" ? "good" : "warn"
       });
       pills.push({
-        text: system.realizedRows > 0 ? "Realized Filled" : "Awaiting Realized",
-        cls: system.realizedRows > 0 ? "good" : "warn"
+        text: latestRealizedFilled ? "Realized Filled" : "Awaiting Realized",
+        cls: latestRealizedFilled ? "good" : "warn"
       });
 
       setHtml("statusRow", pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join(""));
-      setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)}`);
+      setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | target=${forecast?.targetDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)}`);
     }
 
     function buildSummaryText(system, forecast, defense, alpha, fusion, counts) {
@@ -1363,9 +1371,10 @@
 
     function populatePredictionSnapshotCard(forecast, latestPredRow, system) {
       const row = latestPredRow || forecast?.row || null;
+      const latestRealizedFilled = rowHasRealized(row);
       setText("predSnapDate", forecast?.decisionDate || "NA");
       const badges = [];
-      badges.push(`<div class="status-pill ${system.realizedRows > 0 ? "good" : "warn"}">${system.realizedRows > 0 ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>`);
+      badges.push(`<div class="status-pill ${latestRealizedFilled ? "good" : "warn"}">${latestRealizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>`);
       badges.push(`<div class="status-pill good">VOO CALL: ${fmtPrice(forecast?.vooCall)}</div>`);
       badges.push(`<div class="status-pill good">IEF CALL: ${fmtPrice(forecast?.iefCall)}</div>`);
       setHtml("predSnapBadges", badges.join(""));
@@ -1953,8 +1962,16 @@
     }
 
     function populateDataTables(predLog, allocRows, govTape, alphaSummary, alphaPositions, alphaEligibility) {
+      const predDisplayRows = headRows(
+        sortByDateAsc(predLog, "decision_date").slice().reverse().map(r => ({
+          ...r,
+          target_date: deriveTargetDate(r)
+        })),
+        20
+      );
+
       renderTable("predTable",
-        headRows(sortByDateAsc(predLog, "decision_date").slice().reverse(), 20),
+        predDisplayRows,
         ["decision_date", "target_date", "p_final_cal", "p0", "alpha_scale", "governance_tier", "px_voo_t", "px_voo_call_7d", "px_voo_realized", "voo_abs_err", "voo_ape", "px_ief_t", "px_ief_call_7d", "px_ief_realized", "ief_abs_err", "ief_ape"]
       );
 
