@@ -1,0 +1,57 @@
+{
+  "part": "part2a21_alpha",
+  "version": "PART_2A21_HARDENED_CROSS_SECTIONAL_ALPHA_V1",
+  "horizon": 7,
+  "holdout_start": "2020-01-01",
+  "panel_rows": 23325,
+  "realized_panel_rows": 23220,
+  "dates": 1555,
+  "realized_dates": 1288,
+  "classification_raw": {
+    "auc": 0.4987943401055712,
+    "pr": 0.4959186219298115,
+    "lift": 0.9952662403811775,
+    "brier": 0.2513156913038897,
+    "ece": 0.0349383234656853
+  },
+  "classification_cal_candidate": {
+    "auc": 0.4874376643754567,
+    "pr": 0.4924657889520173,
+    "lift": 0.988336700040263,
+    "brier": 0.2511332973057903,
+    "ece": 0.013759418595572805
+  },
+  "classification_final_used": {
+    "auc": 0.506693316665492,
+    "pr": 0.5032543389090463,
+    "lift": 1.0099883966696677,
+    "brier": 0.2508928152655805,
+    "ece": 0.016287481833694387
+  },
+  "calibration_gate_on_rate": 0.5048231511254019,
+  "alpha_drift_alarm_rate": 0.09903536977491961,
+  "risk_rmse": 0.024782576362375526,
+  "risk_mae": 0.017973325438185386,
+  "rel_mae_zero": 0.017946436624193374,
+  "alpha_rmse": 0.025818002939582536,
+  "alpha_mae": 0.018457317524122375,
+  "alpha_mae_zero": 0.017973325438185386,
+  "mean_rank_ic": 0.017843578489722345,
+  "mean_topk_rel_ret_net": 0.00011301364416517931,
+  "ir_topk_rel_ret_net": 0.5724100484177337,
+  "mean_selection_hit_rate": 0.5364906832298136,
+  "mean_breadth_selected": 1.013975155279503,
+  "mean_eligible_breadth": 4.008540372670807,
+  "mean_budget_used": 0.038400621118012415,
+  "live_eligible_names": [
+    "EEM",
+    "EFA",
+    "IWM",
+    "SMH"
+  ],
+  "shuffle_auc_median": 0.499877971741332,
+  "final_pass": true,
+  "positions_out": "./artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv",
+  "summary_tape_out": "./artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
+  "eligibility_out": "./artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv"
+}

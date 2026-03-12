@@ -1,0 +1,49 @@
+{
+  "part": "part1",
+  "version": "V19",
+  "asof_date": "2026-03-11",
+  "horizon": 7,
+  "tail_threshold": -0.015,
+  "tail_label_name": "y_rel_tail_voo_vs_ief",
+  "feature_cols": [
+    "voo_vol10",
+    "excess_vol10",
+    "vix_mom5",
+    "alpha_credit_spread",
+    "alpha_credit_accel",
+    "alpha_vix_term",
+    "alpha_breadth",
+    "alpha_tech_relative"
+  ],
+  "reg_target_cols": [
+    "px_voo_t",
+    "px_ief_t",
+    "fwd_voo",
+    "fwd_ief",
+    "fwd_spread",
+    "px_voo_fwd",
+    "px_ief_fwd"
+  ],
+  "benchmark_ticker": "VOO",
+  "alpha_universe": [
+    "XLK",
+    "XLF",
+    "XLI",
+    "XLY",
+    "XLP",
+    "XLV",
+    "XLE",
+    "XLU",
+    "XLB",
+    "XLC",
+    "SMH",
+    "IWM",
+    "MDY",
+    "EFA",
+    "EEM"
+  ],
+  "n_X_live": 3889,
+  "n_y_reg_revealed": 3892,
+  "n_reg_train": 3882,
+  "n_alpha_panel": 56388
+}
