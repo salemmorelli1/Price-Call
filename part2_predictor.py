@@ -1327,10 +1327,6 @@ def main(cfg: Part22Config):
     is_live_last = last_row["is_live"].values[0] if "is_live" in last_row.columns else None
     print("Tape last date:", t["Date"].max(), "| is_live at end:", [is_live_last])
 
-
-if __name__ == "__main__":
-    main(CFG)
-
 def cli() -> int:
     cfg = V77Config()
     summary = main(cfg)
