@@ -12,9 +12,13 @@ concurrency:
   group: daily-backfill
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out repo
@@ -45,7 +49,7 @@ jobs:
           echo "=== git status before add ==="
           git status --short
 
-          git add -A
+          git add artifacts_part3/prediction_log.csv
 
           echo "=== git status after add ==="
           git status --short
@@ -58,4 +62,3 @@ jobs:
           git commit -m "Automated realized backfill update"
           git pull --rebase origin main || true
           git push origin HEAD:main
-          
