@@ -136,6 +136,40 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     fwd_ief = np.log(px_ief).shift(-H) - np.log(px_ief)
     excess_ret = fwd_voo - fwd_ief
 
+    # -----------------------------
+    # 2A) Daily factor / benchmark return artifacts for Part 2
+    # -----------------------------
+    # Daily log returns aligned to the Part 1 row space.
+    voo_ret_1d = np.log(data["VOO"]).diff()
+    ief_ret_1d = np.log(data["IEF"]).diff()
+    jnk_ret_1d = np.log(data["JNK"]).diff()
+    rsp_ret_1d = np.log(data["RSP"]).diff()
+    qqq_ret_1d = np.log(data["QQQ"]).diff()
+
+    factor_returns = pd.DataFrame(
+        {
+            "voo_ret_1d": voo_ret_1d,
+            "ief_ret_1d": ief_ret_1d,
+            "jnk_ret_1d": jnk_ret_1d,
+            "rsp_ret_1d": rsp_ret_1d,
+            "qqq_ret_1d": qqq_ret_1d,
+            "spread_ret_1d": voo_ret_1d - ief_ret_1d,
+        },
+        index=data.index,
+    ).loc[X_live.index].copy()
+
+    benchmark_returns = pd.DataFrame(
+        {
+            "bench_60_40": 0.60 * voo_ret_1d + 0.40 * ief_ret_1d,
+            "voo_ret_1d": voo_ret_1d,
+            "ief_ret_1d": ief_ret_1d,
+        },
+        index=data.index,
+    ).loc[X_live.index].copy()
+
+    factor_returns.to_parquet(os.path.join(cfg.out_dir, "factor_returns.parquet"))
+    benchmark_returns.to_parquet(os.path.join(cfg.out_dir, "benchmark_returns.parquet"))
+    
     y_rel_tail = (excess_ret < cfg.tail_threshold).astype(float)
     y_rel_tail[excess_ret.isna()] = np.nan
 
