@@ -7,40 +7,40 @@
   "rows_realized": 222,
   "rows_audit": 222,
   "classification_raw": {
-    "auc": 0.5589972527472528,
-    "pr": 0.2526486181115036,
-    "lift": 1.402199830518845,
-    "brier": 0.15462534207574408,
-    "ece": 0.09447470278841391
+    "auc": 0.5588598901098901,
+    "pr": 0.2525428539655491,
+    "lift": 1.4016128395087974,
+    "brier": 0.15462596654395858,
+    "ece": 0.09447611513609576
   },
   "classification_cal_candidate": {
     "auc": 0.5197802197802198,
     "pr": 0.22120281322717533,
     "lift": 1.227675613410823,
-    "brier": 0.25032006627959164,
-    "ece": 0.20296222964385657
+    "brier": 0.250318569800604,
+    "ece": 0.20295731541753637
   },
   "classification_final_used": {
     "auc": 0.5548763736263737,
     "pr": 0.2506367561771218,
     "lift": 1.3910339967830259,
-    "brier": 0.15481651011699585,
-    "ece": 0.09341191315143892
+    "brier": 0.15481713214943413,
+    "ece": 0.0934132990385365
   },
   "calibration_gate_on_rate": 0.03587443946188341,
   "high_risk_state_rate": 0.19730941704035873,
-  "drift_base_ece": 0.16258119510949048,
-  "drift_base_brier": 0.19640098231246633,
+  "drift_base_ece": 0.1625766767799383,
+  "drift_base_brier": 0.1963960051227363,
   "drift_alarm_rate": 0.47085201793721976,
-  "active_ret_net_mean": 0.0003528537253891127,
-  "active_ret_net_ir": 0.09994411106224577,
-  "strategy_ret_net_ir": 0.6300285741718669,
-  "negative_benchmark_active_mean": 0.00851221010976853,
+  "active_ret_net_mean": 0.0003528590832852757,
+  "active_ret_net_ir": 0.09994551605368271,
+  "strategy_ret_net_ir": 0.6300330338842335,
+  "negative_benchmark_active_mean": 0.008512215978024977,
   "negative_benchmark_hit_rate": 0.6744186046511628,
-  "downside_capture_ratio": -0.6816840708346271,
-  "avg_abs_active_weight_raw": 0.48903406707131075,
-  "avg_abs_active_weight_capped": 0.09177595036323524,
-  "shuffle_auc_median": 0.4985576923076923,
+  "downside_capture_ratio": -0.6816858625519295,
+  "avg_abs_active_weight_raw": 0.4890647165919351,
+  "avg_abs_active_weight_capped": 0.09177577820469678,
+  "shuffle_auc_median": 0.4984203296703297,
   "final_pass": true,
   "out_path": "./artifacts_part2_v77/predictions/v77_final_consensus_tape.csv"
 }
