@@ -342,6 +342,72 @@
       height: 8px;
     }
 
+    .summary-brief {
+      color: var(--muted);
+      font-size: 0.96rem;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .summary-details {
+      margin-top: 4px;
+      border-top: 1px solid rgba(36, 50, 74, 0.7);
+      padding-top: 10px;
+    }
+
+    .summary-details summary {
+      cursor: pointer;
+      color: var(--text-strong);
+      font-weight: 800;
+      list-style: none;
+      user-select: none;
+    }
+
+    .summary-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .summary-details summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 8px;
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+
+    .summary-details[open] summary::before {
+      transform: rotate(90deg);
+    }
+
+    .summary-details summary span {
+      color: var(--muted);
+      font-weight: 700;
+      margin-left: 6px;
+      font-size: 0.92rem;
+    }
+
+    .footer-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.93rem;
+      line-height: 1.45;
+    }
+
+    .footer-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(36, 50, 74, 0.9);
+      background: rgba(11, 23, 48, 0.7);
+      color: var(--text-strong);
+      font-weight: 800;
+    }
+
     @media (max-width: 1600px) {
       .hero-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -474,7 +540,11 @@
 
     <div class="card" style="margin-bottom: 14px;">
       <div class="label">Status / Summary</div>
-      <pre id="statusSummaryPre" class="summary-box">Waiting to load data…</pre>
+      <div id="summaryBrief" class="summary-brief">Loading concise summary…</div>
+      <details class="summary-details">
+        <summary>Open diagnostic detail <span>expanded for debugging, collapsible for daily use</span></summary>
+        <pre id="statusSummaryPre" class="summary-box">Waiting to load data…</pre>
+      </details>
     </div>
 
     <div class="tabs">
@@ -751,6 +821,16 @@
       <div class="label">Debug / Load Status</div>
       <div id="debugBox" class="muted">Waiting to load data…</div>
     </div>
+
+    <div class="card" style="margin-top: 14px; padding-top: 14px; padding-bottom: 14px;">
+      <div class="label">Source / Trust Layer</div>
+      <div class="footer-bar">
+        <div class="footer-pill" id="footerSource">Source: GitHub main</div>
+        <div class="footer-pill" id="footerDecision">Decision: —</div>
+        <div class="footer-pill" id="footerTarget">Target: —</div>
+        <div class="footer-pill" id="footerLoaded">Rows loaded: —</div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -804,6 +884,20 @@
     function fmtPrice(x) {
       const n = toNumber(x);
       return Number.isFinite(n) ? n.toFixed(2) : "NA";
+    }
+
+    function fmtValueOrPending(value, formatter, pendingText = "Pending") {
+      const out = formatter(value);
+      return out === "NA" ? pendingText : out;
+    }
+
+    function textOrPending(value, pendingText = "Pending") {
+      return isMissing(value) ? pendingText : String(value);
+    }
+
+    function realizedPendingLabel(value, system, fallback = "Pending") {
+      if (!isMissing(value)) return String(value);
+      return system && system.maturity === "PARTIALLY MATURED" ? fallback : "NA";
     }
 
     function fmtDate(value) {
@@ -1221,6 +1315,27 @@
       return { meta, latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight)) };
     }
 
+    function populateSummaryBrief(system, forecast, defense, alpha, fusion) {
+      const notes = [];
+      notes.push(`System ${system.status.toLowerCase()} and ${system.maturity.toLowerCase()}.`);
+      notes.push(`Latest decision ${forecast?.decisionDate || "NA"}${forecast?.targetDate && forecast.targetDate !== "NA" ? ` targets ${forecast.targetDate}.` : "."}`);
+      notes.push(`Defense is ${String(defense?.GovMode || "NA").toLowerCase()}; alpha state is ${String(alpha?.alphaState || "NA").toLowerCase()}.`);
+      if (system.realizedRows < 2) {
+        notes.push("Rolling error and distribution charts will fill in as more realized rows mature.");
+      }
+      if (Number.isFinite(toNumber(fusion?.meta?.sumWeight))) {
+        notes.push(`Latest fusion weights sum to ${fmtNum(fusion.meta.sumWeight)}.`);
+      }
+      setText("summaryBrief", notes.join(" "));
+    }
+
+    function populateFooter(counts, forecast) {
+      setText("footerSource", `Source: GitHub ${CFG.branch}`);
+      setText("footerDecision", `Decision: ${forecast?.decisionDate || "NA"}`);
+      setText("footerTarget", `Target: ${forecast?.targetDate || "Pending"}`);
+      setText("footerLoaded", `Rows loaded: pred ${counts.predictionRows} | tape ${counts.productionRows} | gov ${counts.governanceRows}`);
+    }
+
     function populateHeroCards(system, forecast, defense, alpha, fusion) {
       setText("heroVooCall", fmtPrice(forecast?.vooCall));
       setText("heroVooMeta", `Current: ${fmtPrice(forecast?.vooSpot)} | Δ: ${fmtPct(forecast?.vooDelta)}`);
@@ -1235,7 +1350,7 @@
       setText("heroUpdatedUtc", `Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`);
 
       setText("heroDecisionDate", forecast?.decisionDate || "NA");
-      setText("heroTargetDate", `Target date: ${forecast?.targetDate || "NA"}`);
+      setText("heroTargetDate", `Target date: ${forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending"}`);
       setText("heroRealizedRows", `Realized rows: ${system.realizedRows}`);
 
       setText("heroGovMode", defense?.GovMode || "NA");
@@ -1246,7 +1361,7 @@
       setText("heroAlphaLive", `Alpha live: ${toNumber(alpha.alphaLive) === 1 ? "YES" : "NO"} | Fusion live: ${toNumber(alpha.fusionLive) === 1 ? "YES" : "NO"}`);
       setText("heroBudgetMult", `Budget mult: ${fmtNum(alpha.budgetMult, 2)}`);
 
-      setText("heroRealizedDates", Number.isFinite(toNumber(alpha.realizedDates)) ? String(Math.round(toNumber(alpha.realizedDates))) : "NA");
+      setText("heroRealizedDates", Number.isFinite(toNumber(alpha.realizedDates)) ? String(Math.round(toNumber(alpha.realizedDates))) : "Pending");
       setText("heroQualityGates", `quality_ok=${Number.isFinite(toNumber(alpha.qualityOk)) ? Math.round(toNumber(alpha.qualityOk)) : "NA"} | drift_ok=${Number.isFinite(toNumber(alpha.driftOk)) ? Math.round(toNumber(alpha.driftOk)) : "NA"}`);
       setText("heroTrialFused", `trial=${Number.isFinite(toNumber(alpha.trialOpen)) ? Math.round(toNumber(alpha.trialOpen)) : "NA"} | fused=${Number.isFinite(toNumber(alpha.fusedOpen)) ? Math.round(toNumber(alpha.fusedOpen)) : "NA"} | ready=${Number.isFinite(toNumber(alpha.ready)) ? Math.round(toNumber(alpha.ready)) : "NA"}`);
 
@@ -1257,8 +1372,8 @@
       setText("heroAllocAlpha", `Alpha gross: ${fmtNum(fusion.meta.alphaGross)}`);
 
       setText("heroRankIc", fmtNum(alpha.rankIcRoll));
-      setText("heroTopkNet", `TopK net: ${fmtNum(alpha.topkRoll, 6)} | IR: ${fmtNum(alpha.irTopk, 3)}`);
-      setText("heroDriftRate", `Drift rate: ${fmtPct(alpha.driftRate)}`);
+      setText("heroTopkNet", `TopK net: ${fmtNum(alpha.topkRoll, 6)} | IR: ${fmtValueOrPending(alpha.irTopk, v => fmtNum(v, 3))}`);
+      setText("heroDriftRate", `Drift rate: ${fmtValueOrPending(alpha.driftRate, v => fmtPct(v))}`);
     }
 
     function buildStatusPills(system, forecast, defense, alpha) {
@@ -1378,45 +1493,45 @@
       badges.push(`<div class="status-pill good">VOO CALL: ${fmtPrice(forecast?.vooCall)}</div>`);
       badges.push(`<div class="status-pill good">IEF CALL: ${fmtPrice(forecast?.iefCall)}</div>`);
       setHtml("predSnapBadges", badges.join(""));
-      setText("predSnapTarget", forecast?.targetDate || "NA");
-      setText("predSnapTier", !isMissing(row?.governance_tier) ? row.governance_tier : "NA");
+      setText("predSnapTarget", forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending");
+      setText("predSnapTier", !isMissing(row?.governance_tier) ? row.governance_tier : "Pending");
       setText("predSnapPFinal", fmtNum(row?.p_final_cal || row?.p_final_use, 4));
       setText("predSnapAlphaScale", fmtNum(row?.alpha_scale));
       setText("predSnapVoo", `${fmtPrice(forecast?.vooSpot)} / ${fmtPrice(forecast?.vooCall)}`);
       setText("predSnapIef", `${fmtPrice(forecast?.iefSpot)} / ${fmtPrice(forecast?.iefCall)}`);
     }
 
-    function populateGovernanceSnapshot(defense) {
+    function populateGovernanceSnapshot(defense, system) {
       setText("govSnapMode", defense?.GovMode || "NA");
       setText("govSnapReason", `Reason: ${defense?.GovReason || "NA"}`);
       setText("govBadgeMode", `GovMode: ${defense?.GovMode || "NA"}`);
       setText("govBadgeZero", `ZeRO Active: ${Number.isFinite(toNumber(defense?.zeroActive)) ? Math.round(toNumber(defense.zeroActive)) : 0}`);
       setText("govBadgeTooGood", `TooGood Alarm: ${Number.isFinite(toNumber(defense?.tooGood)) ? Math.round(toNumber(defense.tooGood)) : 0}`);
       setText("govSnapDate", defense?.date || "NA");
-      setText("govSnapAlphaEff", fmtNum(defense?.alphaEffFinal));
+      setText("govSnapAlphaEff", realizedPendingLabel(fmtNum(defense?.alphaEffFinal), system));
       setText("govSnapScale", fmtNum(defense?.govScale));
       setText("govSnapHealthLive", fmtNum(defense?.healthLive));
-      setText("govSnapHealthReal", fmtNum(defense?.healthReal));
-      setText("govSnapLift", fmtNum(defense?.liftEnd));
-      setText("govSnapDes", fmtNum(defense?.desEnd));
-      setText("govSnapCost", fmtNum(defense?.costRoll, 6));
-      setText("govSnapTurnEff", fmtNum(defense?.turnEff, 6));
+      setText("govSnapHealthReal", realizedPendingLabel(fmtNum(defense?.healthReal), system));
+      setText("govSnapLift", realizedPendingLabel(fmtNum(defense?.liftEnd), system));
+      setText("govSnapDes", realizedPendingLabel(fmtNum(defense?.desEnd), system));
+      setText("govSnapCost", realizedPendingLabel(fmtNum(defense?.costRoll, 6), system));
+      setText("govSnapTurnEff", realizedPendingLabel(fmtNum(defense?.turnEff, 6), system));
       setText("govSnapHealthAny", fmtNum(defense?.healthAny));
     }
 
-    function populateAlphaSnapshot(alpha) {
+    function populateAlphaSnapshot(alpha, system) {
       setText("alphaSnapTier", alpha.tier || "NA");
       setText("alphaBadgeDrift", `Drift Alarm: ${Number.isFinite(toNumber(alpha.driftAlarm)) ? Math.round(toNumber(alpha.driftAlarm)) : 0}`);
       setText("alphaBadgeSelected", `Selected: ${alpha.selectedCount}`);
-      setText("alphaBadgeOverlay", `Overlay Scale: ${fmtNum(alpha.overlayScale, 2)}`);
+      setText("alphaBadgeOverlay", `Overlay Scale: ${fmtValueOrPending(alpha.overlayScale, v => fmtNum(v, 2))}`);
       setText("alphaSnapDate", alpha.date || "NA");
-      setText("alphaSnapRankIc", fmtNum(alpha.rankIcRoll));
-      setText("alphaSnapTopk", fmtNum(alpha.topkRoll, 6));
-      setText("alphaSnapBudget", fmtNum(alpha.budgetUsed));
-      setText("alphaSnapEligibleBreadth", Number.isFinite(toNumber(alpha.eligibleBreadth)) ? String(Math.round(toNumber(alpha.eligibleBreadth))) : "NA");
-      setText("alphaSnapHitRate", fmtPct(alpha.hitRate));
-      setText("alphaSnapEligibleNames", alpha.eligibleNames || "NA");
-      setText("alphaSnapSelectedNames", alpha.selectedNames || "NA");
+      setText("alphaSnapRankIc", fmtValueOrPending(alpha.rankIcRoll, v => fmtNum(v)));
+      setText("alphaSnapTopk", fmtValueOrPending(alpha.topkRoll, v => fmtNum(v, 6)));
+      setText("alphaSnapBudget", fmtValueOrPending(alpha.budgetUsed, v => fmtNum(v)));
+      setText("alphaSnapEligibleBreadth", Number.isFinite(toNumber(alpha.eligibleBreadth)) ? String(Math.round(toNumber(alpha.eligibleBreadth))) : "Pending");
+      setText("alphaSnapHitRate", fmtValueOrPending(alpha.hitRate, v => fmtPct(v), system && system.maturity === "PARTIALLY MATURED" ? "Pending" : "NA"));
+      setText("alphaSnapEligibleNames", alpha.eligibleNames || "Pending");
+      setText("alphaSnapSelectedNames", alpha.selectedNames || "Pending");
     }
 
     function renderPredictionChart(predLog) {
@@ -2081,9 +2196,10 @@
 
         populateHeroCards(system, forecast, defense, alpha, fusion);
         buildStatusPills(system, forecast, defense, alpha);
+        populateSummaryBrief(system, forecast, defense, alpha, fusion);
         populatePredictionSnapshotCard(forecast, latestRow(predLog, "decision_date"), system);
-        populateGovernanceSnapshot(defense);
-        populateAlphaSnapshot(alpha);
+        populateGovernanceSnapshot(defense, system);
+        populateAlphaSnapshot(alpha, system);
 
         const counts = {
           predictionRows: predLog.length,
@@ -2095,6 +2211,7 @@
           alphaEligibilityRows: alphaEligibility.length
         };
         setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, fusion, counts));
+        populateFooter(counts, forecast);
 
         renderPredictionChart(predLog);
         renderErrorPanel(predLog);
