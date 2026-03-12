@@ -21,9 +21,18 @@ class Part1Config:
     end: str = date.today().strftime("%Y-%m-%d")
     horizon: int = 7
     tail_threshold: float = -0.015  # threshold on (fwd_voo - fwd_ief)
+
     main_tickers: Tuple[str, ...] = ("VOO", "IEF", "JNK", "RSP", "QQQ")
     vix_ticker: str = "^VIX"
     vix3m_ticker: str = "^VIX3M"
+
+    benchmark_ticker: str = "VOO"
+    alpha_universe: Tuple[str, ...] = (
+        "XLK", "XLF", "XLI", "XLY", "XLP",
+        "XLV", "XLE", "XLU", "XLB", "XLC",
+        "SMH", "IWM", "MDY", "EFA", "EEM",
+    )
+
     out_dir: str = "./artifacts_part1"
     min_reg_rows: int = 200
 
@@ -50,22 +59,100 @@ def _max_consecutive_equal(x: pd.Series) -> int:
     return int(best)
 
 
+def _safe_logret(px: pd.Series) -> pd.Series:
+    px = px.astype(float)
+    return np.log(px).diff()
+
+
+def build_alpha_panel_from_prices(
+    close_all: pd.DataFrame,
+    X_live: pd.DataFrame,
+    cfg: Part1Config,
+    H: int,
+) -> pd.DataFrame:
+    """
+    Build cross-sectional alpha panel:
+      Date, Ticker, px_t, fwd_ret, benchmark_fwd_ret, rel_ret
+    plus date-level live features from X_live.
+
+    Important:
+    - Keeps unrevealed/latest rows (fwd_ret/rel_ret may be NaN there)
+    - Joins only dates where X_live exists
+    """
+    if cfg.benchmark_ticker not in close_all.columns:
+        raise RuntimeError(
+            f"Benchmark ticker '{cfg.benchmark_ticker}' missing from downloaded price matrix."
+        )
+
+    px_bench = close_all[cfg.benchmark_ticker].astype(float)
+    bench_fwd = np.log(px_bench).shift(-H) - np.log(px_bench)
+
+    feat_df = X_live.reset_index().rename(columns={"index": "Date"})
+    feat_df["Date"] = pd.to_datetime(feat_df["Date"]).dt.normalize()
+
+    blocks = []
+    missing_tickers = []
+
+    for tk in cfg.alpha_universe:
+        if tk not in close_all.columns:
+            missing_tickers.append(tk)
+            continue
+
+        px = close_all[tk].astype(float)
+
+        block = pd.DataFrame(
+            {
+                "px_t": px,
+                "fwd_ret": np.log(px).shift(-H) - np.log(px),
+                "benchmark_fwd_ret": bench_fwd,
+            },
+            index=close_all.index,
+        )
+        block["rel_ret"] = block["fwd_ret"] - block["benchmark_fwd_ret"]
+        block["Ticker"] = tk
+
+        block = block.reset_index().rename(columns={"index": "Date"})
+        block["Date"] = pd.to_datetime(block["Date"]).dt.normalize()
+        blocks.append(block)
+
+    if missing_tickers:
+        print(f"⚠️ Alpha panel missing downloaded tickers: {missing_tickers}")
+
+    if len(blocks) == 0:
+        raise RuntimeError("No alpha-universe rows were built for alpha_panel.parquet.")
+
+    alpha_panel = pd.concat(blocks, axis=0, ignore_index=True)
+
+    # Join only dates where live features exist
+    alpha_panel = alpha_panel.merge(feat_df, on="Date", how="inner")
+
+    # Keep rows with actual price present; allow unrevealed forward returns
+    alpha_panel = alpha_panel.dropna(subset=["px_t"]).copy()
+
+    alpha_panel["is_revealed"] = np.isfinite(alpha_panel["rel_ret"]).astype(int)
+    alpha_panel = alpha_panel.sort_values(["Date", "Ticker"]).reset_index(drop=True)
+
+    return alpha_panel
+
+
 def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     os.makedirs(cfg.out_dir, exist_ok=True)
 
     H = int(cfg.horizon)
-    tickers = list(cfg.main_tickers) + [cfg.vix_ticker, cfg.vix3m_ticker]
+    tickers = sorted(
+        set(list(cfg.main_tickers) + [cfg.vix_ticker, cfg.vix3m_ticker] + list(cfg.alpha_universe))
+    )
 
     print(f"-> Building Artifacts (V19) | H={H} | Tail thr on spread: {cfg.tail_threshold:.2%}")
 
     raw = yf.download(
-    tickers,
-    start=cfg.start,
-    end=cfg.end,
-    progress=False,
-    auto_adjust=True,
-    threads=False,
-)
+        tickers,
+        start=cfg.start,
+        end=cfg.end,
+        progress=False,
+        auto_adjust=True,
+        threads=False,
+    )
 
     # Robust close extraction
     data = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
@@ -100,7 +187,7 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
             "No rows remain after dropping rows with missing required tickers. "
             f"Missingness summary: {miss_frac}"
         )
-        
+
     stale_report: Dict[str, int] = {}
     for t in req:
         stale_report[t] = _max_consecutive_equal(data[t])
@@ -111,7 +198,7 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     if stale_tickers:
         print(f"⚠️ Staleness warning (max equal-close run > {cfg.max_stale_run}): {stale_tickers}")
         for t in req:
-            r0 = (np.log(data[t]).diff() == 0.0)
+            r0 = (_safe_logret(data[t]) == 0.0)
             w = cfg.max_stale_run + 1
             drop_mask |= (r0.rolling(w).sum() >= w)
         data = data.loc[~drop_mask].copy()
@@ -121,8 +208,8 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     # -----------------------------
     X = pd.DataFrame(index=data.index)
 
-    voo_r1 = np.log(data["VOO"]).diff()
-    ief_r1 = np.log(data["IEF"]).diff()
+    voo_r1 = _safe_logret(data["VOO"])
+    ief_r1 = _safe_logret(data["IEF"])
     spread_r1 = voo_r1 - ief_r1
 
     X["voo_vol10"] = voo_r1.rolling(10).std() * np.sqrt(252)
@@ -148,7 +235,6 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     X_live.to_parquet(os.path.join(cfg.out_dir, "X_features.parquet"))
 
     last_feature_date = pd.Timestamp(X_live.index.max()).normalize()
-
     with open(os.path.join(cfg.out_dir, "asof_date.txt"), "w") as f:
         f.write(last_feature_date.strftime("%Y-%m-%d"))
     print(f"AS-OF DATE WRITTEN: {last_feature_date.strftime('%Y-%m-%d')}")
@@ -162,38 +248,6 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     fwd_voo = np.log(px_voo).shift(-H) - np.log(px_voo)
     fwd_ief = np.log(px_ief).shift(-H) - np.log(px_ief)
     excess_ret = fwd_voo - fwd_ief
-
-    # -----------------------------
-    # 2A) Daily factor / benchmark return artifacts for Part 2
-    # -----------------------------
-    # Daily log returns aligned to the Part 1 row space.
-    voo_ret_1d = np.log(data["VOO"]).diff()
-    ief_ret_1d = np.log(data["IEF"]).diff()
-    jnk_ret_1d = np.log(data["JNK"]).diff()
-    rsp_ret_1d = np.log(data["RSP"]).diff()
-    qqq_ret_1d = np.log(data["QQQ"]).diff()
-
-    factor_returns = pd.DataFrame(
-        {
-            "voo_ret_1d": voo_ret_1d,
-            "ief_ret_1d": ief_ret_1d,
-            "jnk_ret_1d": jnk_ret_1d,
-            "rsp_ret_1d": rsp_ret_1d,
-            "qqq_ret_1d": qqq_ret_1d,
-            "spread_ret_1d": voo_ret_1d - ief_ret_1d,
-        },
-        index=data.index,
-    ).loc[X_live.index].copy()
-
-    benchmark_returns = pd.DataFrame(
-    {
-        "bench_60_40": 0.60 * voo_ret_1d + 0.40 * ief_ret_1d,
-    },
-    index=data.index,
-    ).loc[X_live.index].copy()
-
-    factor_returns.to_parquet(os.path.join(cfg.out_dir, "factor_returns.parquet"))
-    benchmark_returns.to_parquet(os.path.join(cfg.out_dir, "benchmark_returns.parquet"))
 
     y_rel_tail = (excess_ret < cfg.tail_threshold).astype(float)
     y_rel_tail[excess_ret.isna()] = np.nan
@@ -214,6 +268,42 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
         os.path.join(cfg.out_dir, "y_labels_revealed.parquet")
     )
     y_labels.to_parquet(os.path.join(cfg.out_dir, "y_labels_full.parquet"))
+
+    # -----------------------------
+    # 2A) Daily factor / benchmark artifacts for Part 2
+    # -----------------------------
+    voo_ret_1d = _safe_logret(data["VOO"])
+    ief_ret_1d = _safe_logret(data["IEF"])
+    jnk_ret_1d = _safe_logret(data["JNK"])
+    rsp_ret_1d = _safe_logret(data["RSP"])
+    qqq_ret_1d = _safe_logret(data["QQQ"])
+
+    factor_returns = pd.DataFrame(
+        {
+            "voo_ret_1d": voo_ret_1d,
+            "ief_ret_1d": ief_ret_1d,
+            "jnk_ret_1d": jnk_ret_1d,
+            "rsp_ret_1d": rsp_ret_1d,
+            "qqq_ret_1d": qqq_ret_1d,
+            "spread_ret_1d": voo_ret_1d - ief_ret_1d,
+        },
+        index=data.index,
+    ).loc[X_live.index].copy()
+    factor_returns.to_parquet(os.path.join(cfg.out_dir, "factor_returns.parquet"))
+
+    benchmark_returns = pd.DataFrame(
+        {
+            "bench_60_40": 0.60 * voo_ret_1d + 0.40 * ief_ret_1d,
+        },
+        index=data.index,
+    ).loc[X_live.index].copy()
+    benchmark_returns.to_parquet(os.path.join(cfg.out_dir, "benchmark_returns.parquet"))
+
+    # -----------------------------
+    # 2B) Alpha panel for Part 2A21
+    # -----------------------------
+    alpha_panel = build_alpha_panel_from_prices(data, X_live, cfg, H)
+    alpha_panel.to_parquet(os.path.join(cfg.out_dir, "alpha_panel.parquet"))
 
     # -----------------------------
     # 3) Regression targets
@@ -274,6 +364,7 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
         "n_X_live": int(len(X_live)),
         "n_y_reg_revealed": int(len(y_reg_revealed)),
         "n_reg_train": int(len(reg_train)),
+        "n_alpha_panel": int(len(alpha_panel)),
         "n_rows_lost_join": int(len(X_live) - len(reg_train)),
         "missing_frac": miss_frac,
         "max_equal_close_run": stale_report,
@@ -307,9 +398,12 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
         "tail_label_name": "y_rel_tail_voo_vs_ief",
         "feature_cols": list(X_live.columns),
         "reg_target_cols": list(y_reg_revealed.columns),
+        "benchmark_ticker": cfg.benchmark_ticker,
+        "alpha_universe": list(cfg.alpha_universe),
         "n_X_live": int(len(X_live)),
         "n_y_reg_revealed": int(len(y_reg_revealed)),
         "n_reg_train": int(len(reg_train)),
+        "n_alpha_panel": int(len(alpha_panel)),
     }
     with open(os.path.join(cfg.out_dir, "part1_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -318,6 +412,7 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     print(f"✅ V19 COMPLETE | Relative Tail Base Rate (revealed): {tail_rate:.2%}")
     print(
         "Wrote: X_features.parquet, y_labels_revealed.parquet, y_labels_full.parquet, "
+        "factor_returns.parquet, benchmark_returns.parquet, alpha_panel.parquet, "
         "y_reg_revealed.parquet, y_reg_full.parquet, regression_train.parquet, "
         "price_calls_live_snapshot.parquet, target_prices_snapshot.parquet, asof_date.txt, "
         "part1_meta.json, part1_diagnostics.json"
@@ -329,6 +424,7 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
         "n_X_live": int(len(X_live)),
         "n_y_reg_revealed": int(len(y_reg_revealed)),
         "n_reg_train": int(len(reg_train)),
+        "n_alpha_panel": int(len(alpha_panel)),
         "tail_rate": tail_rate,
     }
 
