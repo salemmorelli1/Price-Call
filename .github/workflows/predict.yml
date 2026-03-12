@@ -19,9 +19,13 @@ concurrency:
   group: tuesday-prediction
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   predict:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Check out repo
@@ -56,9 +60,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
+
           echo "=== files created by pipeline ==="
           find artifacts_part1 -maxdepth 2 -type f | sort || true
+          find artifacts_part2_v77 -maxdepth 3 -type f | sort || true
+          find artifacts_part2a_alpha -maxdepth 3 -type f | sort || true
           find artifacts_part3 -maxdepth 2 -type f | sort || true
           find artifacts_part3_v1 -maxdepth 2 -type f | sort || true
           ls -l artifacts_part3_v1/v1_final_production_tape.csv artifacts_part3_v1/v1_final_production_governance.csv artifacts_part3_v1/v1_fusion_allocations.csv || true
@@ -66,7 +72,7 @@ jobs:
           echo "=== git status before add ==="
           git status --short
 
-          git add -A
+          git add artifacts_part1 artifacts_part2_v77 artifacts_part2a_alpha artifacts_part3 artifacts_part3_v1
 
           echo "=== git status after add ==="
           git status --short
@@ -86,7 +92,8 @@ jobs:
           name: tuesday-prediction-outputs
           path: |
             artifacts_part1/**
+            artifacts_part2_v77/**
+            artifacts_part2a_alpha/**
             artifacts_part3/**
             artifacts_part3_v1/**
           if-no-files-found: warn
-                
