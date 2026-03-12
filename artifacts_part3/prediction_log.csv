@@ -1,2 +1,0 @@
-decision_date,h_reb,p_final_cal,p0,alpha_scale,governance_tier,px_voo_t,px_ief_t,px_voo_call_7d,px_ief_call_7d,voo_call_src,ief_call_src,target_date,px_voo_realized,px_ief_realized,voo_err,ief_err,voo_abs_err,ief_abs_err,voo_ape,ief_ape,spread_err,hit_direction
-2026-03-06,7,0.1025877041633799,0.1930910028357824,1.0,NORMAL,618.4299926757812,96.4499969482422,627.3771503991595,96.4499969482422,explicit_call,explicit_call,,,,,,,,,,,
