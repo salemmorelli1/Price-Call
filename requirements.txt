@@ -1,10 +1,10 @@
 numpy
 pandas
-yfinance
+pyarrow
+yfinance==0.2.66
 xgboost
 scipy
 scikit-learn
-pyarrow
-fastparquet
-gradio
 plotly
+gradio
+tzdata
