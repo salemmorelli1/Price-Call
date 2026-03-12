@@ -9,7 +9,8 @@ on:
         default: false
         type: boolean
   schedule:
-    - cron: "*/5 13-15 * * 2"
+    - cron: "35 13 * * 2"
+    - cron: "35 14 * * 2"
 
 permissions:
   contents: write
@@ -25,6 +26,8 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -45,37 +48,38 @@ jobs:
             python run_tuesday_prediction.py
           fi
 
-
+      - name: Run realized backfill
+        run: |
+          python backfill_realized.py --force
 
       - name: Commit updated artifacts if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      
+
           echo "=== files created by pipeline ==="
           find artifacts_part1 -maxdepth 2 -type f | sort || true
           find artifacts_part2_v77 -maxdepth 3 -type f | sort || true
           find artifacts_part3 -maxdepth 2 -type f | sort || true
           ls -l v141_final_production_tape.csv v141_final_production_governance.csv || true
-      
+
           echo "=== git status before add ==="
           git status --short
-      
+
           git add -A
-      
+
           echo "=== git status after add ==="
           git status --short
-      
+
           if git diff --cached --quiet; then
             echo "No changes staged."
             exit 0
           fi
-      
+
           git commit -m "Automated Tuesday prediction update"
           git pull --rebase origin main || true
           git push origin HEAD:main
 
-      
       - name: Upload generated outputs
         uses: actions/upload-artifact@v4
         with:
@@ -87,6 +91,4 @@ jobs:
             v141_final_production_tape.csv
             v141_final_production_governance.csv
           if-no-files-found: warn
-      
-      
                 
