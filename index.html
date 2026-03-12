@@ -1561,26 +1561,7 @@
         displayModeBar: false
       });
     }
-        {
-          x: rows.map(r => r.decision_date),
-          y: rows.map(r => safeNum(r.px_voo_realized)),
-          mode: onePoint ? "markers+text" : "lines+markers",
-          text: onePoint ? ["VOO realized"] : undefined,
-          textposition: "bottom center",
-          cliponaxis: false,
-          name: "VOO realized"
-        },
-        {
-          x: rows.map(r => r.decision_date),
-          y: rows.map(r => safeNum(r.px_ief_realized)),
-          mode: onePoint ? "markers+text" : "lines+markers",
-          text: onePoint ? ["IEF realized"] : undefined,
-          textposition: "bottom center",
-          cliponaxis: false,
-          name: "IEF realized"
-        }
-      ], layout, { responsive: true, displayModeBar: false });
-    }
+
 
     function renderErrorChart(predLog) {
       const allRows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
