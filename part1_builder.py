@@ -161,8 +161,6 @@ def build_part1_v19(cfg: Part1Config) -> Dict[str, object]:
     benchmark_returns = pd.DataFrame(
         {
             "bench_60_40": 0.60 * voo_ret_1d + 0.40 * ief_ret_1d,
-            "voo_ret_1d": voo_ret_1d,
-            "ief_ret_1d": ief_ret_1d,
         },
         index=data.index,
     ).loc[X_live.index].copy()
