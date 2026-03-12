@@ -15,19 +15,27 @@
       --text: #f8fafc;
       --text-strong: #ffffff;
       --muted: #cbd5e1;
-      --muted-2: #94a3b8;
       --accent: #7c83ff;
+
       --good: #16a34a;
-      --good-soft: rgba(22, 163, 74, 0.16);
+      --good-bg: rgba(22, 163, 74, 0.16);
+      --good-bd: rgba(22, 163, 74, 0.35);
+
       --warn: #f59e0b;
-      --warn-soft: rgba(245, 158, 11, 0.16);
+      --warn-bg: rgba(245, 158, 11, 0.16);
+      --warn-bd: rgba(245, 158, 11, 0.35);
+
       --bad: #dc2626;
-      --bad-soft: rgba(220, 38, 38, 0.16);
+      --bad-bg: rgba(220, 38, 38, 0.16);
+      --bad-bd: rgba(220, 38, 38, 0.35);
+
       --info: #06b6d4;
-      --info-soft: rgba(6, 182, 212, 0.16);
+      --info-bg: rgba(6, 182, 212, 0.16);
+      --info-bd: rgba(6, 182, 212, 0.35);
+
       --pill: #dbe4ff;
       --pill-text: #000000;
-      --shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+      --shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
     }
 
     * { box-sizing: border-box; }
@@ -45,9 +53,9 @@
     }
 
     .wrap {
-      width: min(1600px, 100%);
+      max-width: 1650px;
       margin: 0 auto;
-      padding: 18px;
+      padding: 12px 14px 28px;
     }
 
     .header {
@@ -55,13 +63,13 @@
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .title h1 {
       margin: 0 0 6px 0;
-      font-size: 2.1rem;
-      line-height: 1.1;
+      font-size: 2.2rem;
+      line-height: 1.08;
       color: var(--text-strong);
     }
 
@@ -76,26 +84,31 @@
       gap: 10px;
       align-items: center;
       flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
-    button {
+    button,
+    .button-link {
       background: var(--accent);
-      color: white;
+      color: #fff;
       border: 0;
-      border-radius: 10px;
+      border-radius: 11px;
       padding: 10px 16px;
       font-weight: 800;
       cursor: pointer;
-      box-shadow: var(--shadow);
+      box-shadow: none;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
     }
 
-    button.secondary {
+    button.secondary,
+    .button-link.secondary {
       background: var(--panel-3);
       border: 1px solid var(--border);
-    }
-
-    a.button-link {
-      text-decoration: none;
+      color: var(--text-strong);
     }
 
     .stamp {
@@ -106,50 +119,46 @@
 
     .grid {
       display: grid;
-      gap: 16px;
+      gap: 14px;
     }
 
     .hero-grid {
-      display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+    }
+
+    .grid-2 {
+      grid-template-columns: 1.2fr 1fr;
+      margin-bottom: 14px;
+    }
+
+    .grid-2-even {
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 14px;
+    }
+
+    .grid-1 {
+      grid-template-columns: 1fr;
+      margin-bottom: 14px;
     }
 
     .card {
       background: linear-gradient(180deg, var(--panel), var(--panel-2));
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
+      border-radius: 18px;
+      padding: 14px;
       box-shadow: var(--shadow);
     }
 
     .hero-card {
-      min-height: 126px;
+      min-height: 132px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
     }
 
-    .hero-card .hero-label {
-      font-size: 0.76rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 8px;
-      font-weight: 800;
-    }
-
-    .hero-card .hero-big {
-      font-size: 2rem;
-      line-height: 1.05;
-      font-weight: 900;
-      color: var(--text-strong);
-      margin-bottom: 8px;
-      word-break: break-word;
-    }
-
-    .hero-card .hero-sub {
-      color: var(--muted);
-      font-size: 0.93rem;
-      line-height: 1.45;
+    .hero-forecast {
+      background: linear-gradient(180deg, #111b48 0%, #0b1730 100%);
     }
 
     .label {
@@ -160,110 +169,136 @@
       padding: 4px 10px;
       font-size: 0.85rem;
       font-weight: 900;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      width: fit-content;
+    }
+
+    .hero-big {
+      font-size: 1.95rem;
+      font-weight: 900;
+      line-height: 1.08;
+      color: var(--text-strong);
+      word-break: break-word;
+      margin-bottom: 6px;
+    }
+
+    .hero-big.small {
+      font-size: 1.55rem;
+    }
+
+    .hero-sub {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .hero-sub + .hero-sub {
+      margin-top: 3px;
     }
 
     .status-row {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-      margin-top: 4px;
+      margin-top: 6px;
     }
 
     .status-pill {
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-weight: 900;
+      font-size: 0.94rem;
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      border-radius: 999px;
-      padding: 8px 12px;
-      font-weight: 900;
-      font-size: 0.9rem;
       border: 1px solid transparent;
+      white-space: nowrap;
     }
 
     .status-pill.good {
-      background: var(--good-soft);
-      color: #6ee7b7;
-      border-color: rgba(22, 163, 74, 0.35);
+      background: var(--good-bg);
+      color: #86efac;
+      border-color: var(--good-bd);
     }
 
     .status-pill.warn {
-      background: var(--warn-soft);
+      background: var(--warn-bg);
       color: #fcd34d;
-      border-color: rgba(245, 158, 11, 0.35);
+      border-color: var(--warn-bd);
     }
 
     .status-pill.bad {
-      background: var(--bad-soft);
+      background: var(--bad-bg);
       color: #fca5a5;
-      border-color: rgba(220, 38, 38, 0.35);
+      border-color: var(--bad-bd);
     }
 
     .status-pill.info {
-      background: var(--info-soft);
+      background: var(--info-bg);
       color: #67e8f9;
-      border-color: rgba(6, 182, 212, 0.35);
+      border-color: var(--info-bd);
     }
 
-    .summary-card details {
-      width: 100%;
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 18px;
+      margin-top: 10px;
     }
 
-    .summary-card summary {
-      list-style: none;
-      cursor: pointer;
-      user-select: none;
-      outline: none;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+    .metric-box {
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+      padding-bottom: 10px;
+      min-height: 50px;
     }
 
-    .summary-card summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .summary-chevron {
+    .metric-k {
       color: var(--muted);
-      font-weight: 900;
-      transition: transform 0.2s ease;
+      font-size: 0.9rem;
+      margin-bottom: 4px;
     }
 
-    details[open] .summary-chevron {
-      transform: rotate(180deg);
+    .metric-v {
+      color: var(--text-strong);
+      font-size: 1.02rem;
+      font-weight: 800;
     }
 
-    pre.summary-pre {
+    .chart {
+      width: 100%;
+      min-height: 380px;
+    }
+
+    .chart.small {
+      min-height: 340px;
+    }
+
+    .summary-pre {
+      margin: 0;
       white-space: pre-wrap;
-      word-break: break-word;
-      margin: 12px 0 0 0;
-      padding: 14px;
-      border-radius: 12px;
-      background: rgba(2, 8, 23, 0.35);
-      border: 1px solid rgba(36, 50, 74, 0.8);
-      color: var(--text);
-      line-height: 1.58;
-      font-size: 0.94rem;
-      overflow-x: auto;
+      color: var(--text-strong);
+      font-size: 0.98rem;
+      line-height: 1.55;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      min-height: 120px;
     }
 
     .tabs {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
       margin-bottom: 14px;
     }
 
     .tab-btn {
       background: var(--panel-3);
-      color: var(--text-strong);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      color: var(--text-strong);
+      border-radius: 12px;
       padding: 10px 16px;
-      font-weight: 800;
+      font-weight: 900;
       cursor: pointer;
-      box-shadow: none;
     }
 
     .tab-btn.active {
@@ -279,121 +314,18 @@
       display: block;
     }
 
-    .panel-grid-2 {
-      display: grid;
-      grid-template-columns: 1.15fr 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .panel-grid-2-equal {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .panel-grid-1 {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .chart {
-      width: 100%;
-      min-height: 420px;
-    }
-
-    .chart.medium {
-      min-height: 380px;
-    }
-
-    .chart.small {
-      min-height: 330px;
-    }
-
-    .chart-meta {
-      color: var(--muted);
-      font-size: 0.92rem;
-      margin-top: -2px;
-      margin-bottom: 10px;
-    }
-
-    .snapshot-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-top: 10px;
-    }
-
-    .snapshot-item {
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(36, 50, 74, 0.8);
-    }
-
-    .snapshot-key {
-      color: var(--muted);
-      font-size: 0.9rem;
-      margin-bottom: 4px;
-    }
-
-    .snapshot-val {
-      color: var(--text-strong);
-      font-size: 1.02rem;
-      font-weight: 800;
-    }
-
-    .snapshot-big {
-      font-size: 2rem;
-      line-height: 1.05;
-      font-weight: 900;
-      margin-bottom: 6px;
-      color: var(--text-strong);
-    }
-
-    .snapshot-sub {
-      color: var(--muted);
-      font-size: 0.95rem;
-      margin-bottom: 12px;
-    }
-
-    .pill-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-
-    .mini-pill {
-      padding: 7px 12px;
-      border-radius: 999px;
-      font-weight: 900;
-      font-size: 0.92rem;
-      border: 1px solid rgba(22, 163, 74, 0.35);
-      background: var(--good-soft);
-      color: #6ee7b7;
-    }
-
-    .data-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
     .table-wrap {
-      overflow: auto;
-      border-radius: 12px;
+      overflow-x: auto;
+      border-radius: 14px;
       border: 1px solid var(--border);
       background: var(--panel);
-      max-height: 520px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 960px;
+      min-width: 1100px;
+      background: var(--panel);
     }
 
     thead th {
@@ -404,52 +336,74 @@
       color: var(--text-strong);
       text-align: left;
       padding: 10px 12px;
+      font-size: 0.9rem;
       border-bottom: 1px solid var(--border);
-      font-size: 0.88rem;
       white-space: nowrap;
     }
 
     tbody td {
       padding: 9px 12px;
-      border-bottom: 1px solid rgba(36, 50, 74, 0.75);
-      color: var(--text);
-      font-size: 0.9rem;
+      border-bottom: 1px solid rgba(36, 50, 74, 0.72);
+      color: var(--text-strong);
+      font-size: 0.92rem;
       white-space: nowrap;
-      vertical-align: top;
     }
 
     tbody tr:hover {
-      background: rgba(124, 131, 255, 0.06);
-    }
-
-    .debug-box {
-      color: var(--text);
-      font-size: 0.96rem;
-      line-height: 1.55;
-      white-space: pre-wrap;
-      word-break: break-word;
+      background: rgba(124, 131, 255, 0.07);
     }
 
     .muted { color: var(--muted); }
-    .error { color: #fca5a5; }
+    .error { color: #fca5a5; white-space: pre-wrap; }
 
-    @media (max-width: 1400px) {
-      .hero-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .debug-box {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      color: var(--text-strong);
+    }
+
+    @media (max-width: 1500px) {
+      .hero-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
     }
 
     @media (max-width: 1200px) {
-      .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .panel-grid-2,
-      .panel-grid-2-equal,
-      .data-grid { grid-template-columns: 1fr; }
-      .header { flex-direction: column; }
+      .hero-grid,
+      .grid-2,
+      .grid-2-even {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        flex-direction: column;
+      }
+
+      .controls {
+        justify-content: flex-start;
+      }
     }
 
     @media (max-width: 700px) {
-      .hero-grid { grid-template-columns: 1fr; }
-      .snapshot-grid { grid-template-columns: 1fr; }
-      .wrap { padding: 12px; }
-      .title h1 { font-size: 1.8rem; }
+      .wrap {
+        padding: 10px 10px 24px;
+      }
+
+      .title h1 {
+        font-size: 1.8rem;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-big {
+        font-size: 1.7rem;
+      }
+
+      .hero-big.small {
+        font-size: 1.35rem;
+      }
     }
   </style>
 </head>
@@ -460,165 +414,212 @@
         <h1>Price-Call Monitoring Dashboard</h1>
         <p>GitHub-connected monitor for Tuesday predictions, defense governance, fusion allocations, alpha sleeve behavior, and realized backfill.</p>
       </div>
+
       <div class="controls">
         <button id="refreshBtn">Refresh</button>
-        <a id="repoLink" class="button-link" href="#" target="_blank" rel="noopener">
-          <button class="secondary" type="button">Open Repository</button>
-        </a>
+        <a id="repoLink" class="button-link secondary" href="#" target="_blank" rel="noopener">Open Repository</a>
         <div class="stamp" id="lastUpdated">Last updated: —</div>
       </div>
     </div>
 
-    <div id="heroGrid" class="hero-grid"></div>
+    <div class="grid hero-grid" id="heroGrid"></div>
 
-    <div class="card" style="margin-bottom:16px;">
+    <div class="card" style="margin-bottom: 14px;">
       <div class="label">Run Status</div>
-      <div id="statusRow" class="status-row"></div>
-      <div id="statusLine" class="muted" style="margin-top:10px;">—</div>
+      <div class="status-row" id="statusRow"></div>
+      <div class="hero-sub" id="statusSummaryLine" style="margin-top: 10px;">—</div>
     </div>
 
-    <div class="card summary-card" style="margin-bottom:16px;">
-      <details>
-        <summary>
-          <span class="label" style="margin-bottom:0;">Status / Summary</span>
-          <span class="summary-chevron">▼</span>
-        </summary>
-        <pre id="statusSummaryText" class="summary-pre">Waiting to load data…</pre>
-      </details>
+    <div class="card" style="margin-bottom: 14px;">
+      <div class="label">Status / Summary</div>
+      <pre id="statusSummaryText" class="summary-pre">Waiting to load data…</pre>
     </div>
 
-    <div class="tabs" id="tabs">
+    <div class="tabs">
       <button class="tab-btn active" data-tab="forecastTab">Forecast Centerpiece</button>
       <button class="tab-btn" data-tab="defenseTab">Defense Sleeve</button>
       <button class="tab-btn" data-tab="fusionTab">Fusion / Alpha</button>
-      <button class="tab-btn" data-tab="previewTab">Data Preview</button>
+      <button class="tab-btn" data-tab="dataTab">Data Preview</button>
     </div>
 
     <div id="forecastTab" class="tab-panel active">
-      <div class="panel-grid-2">
+      <div class="grid grid-2-even">
         <div class="card">
           <div class="label">Prediction Log: Calls vs Realized</div>
           <div id="predChart" class="chart"></div>
         </div>
+
         <div class="card">
           <div class="label">7D Forecast Error Panel</div>
-          <div id="errorChart" class="chart medium"></div>
+          <div id="errorChart" class="chart"></div>
         </div>
       </div>
 
-      <div class="panel-grid-2">
+      <div class="grid grid-2-even">
         <div class="card">
           <div class="label">Forecast Error Distribution</div>
-          <div id="distChart" class="chart medium"></div>
+          <div id="errorDistChart" class="chart small"></div>
         </div>
+
         <div class="card">
           <div class="label">Latest Prediction Snapshot</div>
-          <div id="latestPredSnapshot"></div>
+          <div id="latestPredictionSnapshot"></div>
         </div>
       </div>
     </div>
 
     <div id="defenseTab" class="tab-panel">
-      <div class="panel-grid-2">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Defense Signal Probability vs Anchor</div>
-          <div id="signalChart" class="chart"></div>
+          <div id="defenseSignalChart" class="chart"></div>
         </div>
+
         <div class="card">
           <div class="label">Current Governance Snapshot</div>
           <div id="govSnapshot"></div>
         </div>
       </div>
 
-      <div class="panel-grid-1">
+      <div class="grid grid-1">
         <div class="card">
           <div class="label">Defense Governance</div>
-          <div id="govChart" class="chart"></div>
+          <div id="defenseGovChart" class="chart"></div>
         </div>
       </div>
     </div>
 
     <div id="fusionTab" class="tab-panel">
-      <div class="panel-grid-2">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Alpha / Fusion State Timeline</div>
           <div id="alphaStateChart" class="chart"></div>
         </div>
+
         <div class="card">
           <div class="label">Current Alpha Snapshot</div>
           <div id="alphaSnapshot"></div>
         </div>
       </div>
 
-      <div class="panel-grid-2">
+      <div class="grid grid-2-even">
         <div class="card">
           <div class="label">Fusion Funding Path</div>
-          <div id="fusionPathChart" class="chart medium"></div>
+          <div id="fusionPathChart" class="chart"></div>
         </div>
+
         <div class="card">
           <div class="label">Latest Fusion Allocations</div>
-          <div id="fusionAllocMeta" class="chart-meta">—</div>
-          <div id="fusionAllocChart" class="chart medium"></div>
+          <div id="fusionAllocChart" class="chart"></div>
         </div>
       </div>
 
-      <div class="panel-grid-2">
+      <div class="grid grid-2-even">
         <div class="card">
           <div class="label">Alpha Sleeve Summary</div>
-          <div id="alphaSummaryChart" class="chart medium"></div>
+          <div id="alphaSummaryChart" class="chart"></div>
         </div>
+
         <div class="card">
           <div class="label">Alpha Eligibility Breadth</div>
-          <div id="alphaEligMeta" class="chart-meta">Recent window</div>
-          <div id="alphaEligChart" class="chart medium"></div>
+          <div id="alphaEligChart" class="chart"></div>
         </div>
       </div>
 
-      <div class="panel-grid-2">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Recent Alpha Positions</div>
-          <div class="table-wrap"><table id="alphaPosTable"></table></div>
+          <div class="table-wrap">
+            <table id="alphaPosTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
+
         <div class="card">
           <div class="label">Recent Alpha Eligibility</div>
-          <div class="table-wrap"><table id="alphaEligTable"></table></div>
+          <div class="table-wrap">
+            <table id="alphaEligTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <div id="previewTab" class="tab-panel">
-      <div class="data-grid">
+    <div id="dataTab" class="tab-panel">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Prediction Log</div>
-          <div class="table-wrap"><table id="predLogTable"></table></div>
+          <div class="table-wrap">
+            <table id="predTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
+
         <div class="card">
           <div class="label">Fusion Allocations</div>
-          <div class="table-wrap"><table id="allocTable"></table></div>
+          <div class="table-wrap">
+            <table id="allocTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="data-grid">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Governance Tape</div>
-          <div class="table-wrap"><table id="govTable"></table></div>
+          <div class="table-wrap">
+            <table id="govTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
+
         <div class="card">
           <div class="label">Alpha Summary Tape</div>
-          <div class="table-wrap"><table id="alphaSummaryTable"></table></div>
+          <div class="table-wrap">
+            <table id="alphaSummaryTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="data-grid">
+      <div class="grid grid-2">
         <div class="card">
           <div class="label">Production Tape</div>
-          <div class="table-wrap"><table id="prodTapeTable"></table></div>
+          <div class="table-wrap">
+            <table id="prodTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
+
         <div class="card">
-          <div class="label">Debug / Load Status</div>
-          <div id="debugBox" class="debug-box">Waiting to load data…</div>
+          <div class="label">Latest Live Alpha Slice</div>
+          <div class="table-wrap">
+            <table id="alphaLiveTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Debug / Load Status</div>
+      <div id="debugBox" class="debug-box muted">Waiting to load data…</div>
     </div>
   </div>
 
@@ -627,6 +628,7 @@
       owner: "salemmorelli1",
       repo: "Price-Call",
       branch: "main",
+      rollWindow: 10,
       files: {
         predLog: "artifacts_part3/prediction_log.csv",
         prodTape: "artifacts_part3_v1/v1_final_production_tape.csv",
@@ -635,104 +637,87 @@
         alphaSummary: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
         alphaPos: "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv",
         alphaElig: "artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv"
-      },
-      alphaEligibilityRecentDates: 252,
-      minForecastErrorRows: 3
+      }
     };
 
     const repoBase = `https://github.com/${CFG.owner}/${CFG.repo}`;
     const rawBase = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}`;
     document.getElementById("repoLink").href = repoBase;
 
+    // -----------------------------
+    // Tabs
+    // -----------------------------
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        const panel = document.getElementById(btn.dataset.tab);
+        if (panel) panel.classList.add("active");
+        scheduleResponsiveRelayout();
+      });
+    });
+
+    // -----------------------------
+    // Helpers
+    // -----------------------------
     function rawUrl(path) {
       return `${rawBase}/${path}?t=${Date.now()}`;
     }
 
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+    function safeNum(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
     }
 
-    function isDateOnlyString(x) {
-      return typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x);
-    }
-
-    function parseDateValue(x) {
-      if (!x) return null;
-      if (isDateOnlyString(x)) return new Date(`${x}T00:00:00Z`);
-      const d = new Date(x);
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
-
-    function dateKey(x) {
-      const d = parseDateValue(x);
-      return d ? d.getTime() : -Infinity;
-    }
-
-    function fmtDate(x) {
-      if (!x) return "NA";
-      if (isDateOnlyString(x)) return x;
-      const d = parseDateValue(x);
-      if (!d) return String(x);
-      return d.toISOString().slice(0, 10);
-    }
-
-    function fmtDateTimeNow() {
-      return new Date().toLocaleString();
-    }
-
-    function fmtNum(x, digits = 4) {
-      const n = Number(x);
-      return Number.isFinite(n) ? n.toFixed(digits) : "NA";
-    }
-
-    function fmtPct(x, digits = 2) {
-      const n = Number(x);
-      return Number.isFinite(n) ? `${(100 * n).toFixed(digits)}%` : "NA";
-    }
-
-    function fmtPrice(x) {
-      const n = Number(x);
-      return Number.isFinite(n) ? n.toFixed(2) : "NA";
-    }
-
-    function safeNum(x, fallback = NaN) {
-      const n = Number(x);
+    function safeInt(v, fallback = 0) {
+      const n = parseInt(v, 10);
       return Number.isFinite(n) ? n : fallback;
     }
 
-    function safeInt(x, fallback = 0) {
-      const n = Number(x);
-      return Number.isFinite(n) ? Math.trunc(n) : fallback;
+    function isFiniteNum(v) {
+      return Number.isFinite(Number(v));
     }
 
-    function isFiniteNumber(x) {
-      return Number.isFinite(Number(x));
+    function parseDateValue(v) {
+      if (!v) return null;
+      if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d;
     }
 
-    function normalizeDefenseReasonDisplay(reason) {
-      const s = String(reason ?? "").trim();
+    function fmtDate(v) {
+      if (!v) return "NA";
+      if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+      const d = parseDateValue(v);
+      return d ? d.toISOString().slice(0, 10) : String(v);
+    }
+
+    function fmtNum(v, digits = 4) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toFixed(digits) : "NA";
+    }
+
+    function fmtPct(v, digits = 2) {
+      const n = Number(v);
+      return Number.isFinite(n) ? `${(100 * n).toFixed(digits)}%` : "NA";
+    }
+
+    function fmtPrice(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toFixed(2) : "NA";
+    }
+
+    function normalizeGovReason(reason) {
+      if (reason === null || reason === undefined) return "NA";
+      const s = String(reason).trim();
       if (!s || s.toLowerCase() === "nan") return "NA";
-      return s.split("|").map(part => {
-        const p = part.trim();
-        return p.toUpperCase() === "STALE" ? "GOV_STALE_MODE" : p;
-      }).filter(Boolean).join(" | ");
-    }
-
-    function csvToObjects(text) {
-      const rows = text.trim().split(/\r?\n/);
-      if (!rows.length) return [];
-      const header = splitCsvRow(rows[0]);
-      return rows.slice(1).filter(r => r.trim().length > 0).map(row => {
-        const vals = splitCsvRow(row);
-        const obj = {};
-        header.forEach((h, i) => obj[h] = vals[i] ?? "");
-        return obj;
-      });
+      return s
+        .split("|")
+        .map(part => part.trim())
+        .filter(Boolean)
+        .map(part => part.toUpperCase() === "STALE" ? "GOV_STALE_MODE" : part)
+        .join(" | ");
     }
 
     function splitCsvRow(row) {
@@ -759,454 +744,558 @@
       return out;
     }
 
+    function csvToObjects(text) {
+      const rows = text.trim().split(/\r?\n/);
+      if (!rows.length) return [];
+      const header = splitCsvRow(rows[0]);
+      return rows.slice(1).filter(r => r.trim().length > 0).map(row => {
+        const vals = splitCsvRow(row);
+        const obj = {};
+        header.forEach((h, i) => obj[h] = vals[i] ?? "");
+        return obj;
+      });
+    }
+
     async function fetchCsv(path) {
-      const res = await fetch(rawUrl(path), { cache: "no-store" });
+      const res = await fetch(rawUrl(path));
       if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
       return csvToObjects(await res.text());
     }
 
-    function coerceNumeric(rows, cols) {
-      rows.forEach(r => cols.forEach(c => {
-        if (c in r) {
-          const v = r[c];
-          r[c] = v === "" || v === null || v === undefined ? NaN : Number(v);
-        }
-      }));
+    async function fetchCsvOptional(path) {
+      try {
+        const data = await fetchCsv(path);
+        return { data, ok: true, error: null };
+      } catch (err) {
+        return { data: [], ok: false, error: String(err) };
+      }
     }
 
     function sortByDateAsc(rows, col) {
-      return [...rows].sort((a, b) => dateKey(a[col]) - dateKey(b[col]));
+      return [...rows].sort((a, b) => {
+        const da = parseDateValue(a[col]);
+        const db = parseDateValue(b[col]);
+        if (!da && !db) return 0;
+        if (!da) return -1;
+        if (!db) return 1;
+        return da - db;
+      });
     }
 
-    function latestRow(rows, col) {
-      if (!rows?.length) return null;
-      const ordered = sortByDateAsc(rows, col).filter(r => dateKey(r[col]) > -Infinity);
-      return ordered.length ? ordered[ordered.length - 1] : null;
+    function coerceNumeric(rows, cols) {
+      rows.forEach(r => {
+        cols.forEach(c => {
+          if (c in r) {
+            const n = Number(r[c]);
+            r[c] = Number.isFinite(n) ? n : r[c];
+          }
+        });
+      });
     }
 
-    function latestNonNaN(rows, col, dateCol) {
-      const ordered = sortByDateAsc(rows, dateCol);
-      for (let i = ordered.length - 1; i >= 0; i--) {
-        const v = Number(ordered[i][col]);
-        if (Number.isFinite(v)) return v;
+    function latestSlice(rows, dateField) {
+      if (!rows || !rows.length) return [];
+      const valid = rows.filter(r => parseDateValue(r[dateField]));
+      if (!valid.length) return [];
+      const sorted = sortByDateAsc(valid, dateField);
+      const lastKey = fmtDate(sorted[sorted.length - 1][dateField]);
+      return sorted.filter(r => fmtDate(r[dateField]) === lastKey);
+    }
+
+    function latestRow(rows, dateField) {
+      const slice = latestSlice(rows, dateField);
+      return slice.length ? slice[slice.length - 1] : null;
+    }
+
+    function uniqueSortedDates(rows, field) {
+      return [...new Set(rows.map(r => fmtDate(r[field])).filter(v => v !== "NA"))].sort();
+    }
+
+    function byDateMap(rows, field) {
+      const map = new Map();
+      rows.forEach(r => {
+        const key = fmtDate(r[field]);
+        if (key !== "NA") map.set(key, r);
+      });
+      return map;
+    }
+
+    function pickFirstValue(row, candidates) {
+      if (!row) return null;
+      for (const c of candidates) {
+        if (row[c] !== undefined && row[c] !== null && row[c] !== "") return row[c];
       }
-      return NaN;
+      return null;
     }
 
-    function latestSlice(rows, dateCol, liveCol = null) {
-      if (!rows?.length) return [];
-      const ordered = sortByDateAsc(rows, dateCol).filter(r => dateKey(r[dateCol]) > -Infinity);
-      if (!ordered.length) return [];
-      if (liveCol) {
-        const liveRows = ordered.filter(r => safeInt(r[liveCol], 0) === 1);
-        if (liveRows.length) {
-          const dt = liveRows[liveRows.length - 1][dateCol];
-          return liveRows.filter(r => r[dateCol] === dt);
-        }
-      }
-      const dt = ordered[ordered.length - 1][dateCol];
-      return ordered.filter(r => r[dateCol] === dt);
+    function getChartHeight(type = "main") {
+      const h = window.innerHeight || 900;
+      if (type === "small") return Math.max(330, Math.min(Math.round(h * 0.38), 430));
+      return Math.max(400, Math.min(Math.round(h * 0.48), 560));
     }
 
-    function annualizedIR(values, H = 7) {
-      const x = values.map(Number).filter(Number.isFinite);
-      if (x.length < 2) return NaN;
-      const mean = x.reduce((a, b) => a + b, 0) / x.length;
-      const varr = x.reduce((a, b) => a + (b - mean) ** 2, 0) / (x.length - 1);
-      const sd = Math.sqrt(varr);
-      if (!Number.isFinite(sd) || sd <= 0) return NaN;
-      return mean / sd * Math.sqrt(252 / H);
+    function plotBaseLayout(overrides = {}) {
+      return {
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        font: { color: "#f8fafc", size: 14 },
+        hoverlabel: {
+          bgcolor: "#081225",
+          bordercolor: "#24324a",
+          font: { color: "#f8fafc", size: 13 }
+        },
+        margin: { l: 82, r: 34, t: 30, b: 125 },
+        legend: {
+          orientation: "h",
+          yanchor: "top",
+          y: -0.23,
+          xanchor: "left",
+          x: 0,
+          bgcolor: "rgba(0,0,0,0)",
+          font: { color: "#f8fafc", size: 13 }
+        },
+        xaxis: {
+          automargin: true,
+          title: { standoff: 28 },
+          tickfont: { size: 13 },
+          gridcolor: "rgba(148,163,184,0.18)",
+          zerolinecolor: "rgba(148,163,184,0.18)"
+        },
+        yaxis: {
+          automargin: true,
+          title: { standoff: 16 },
+          tickfont: { size: 13 },
+          gridcolor: "rgba(148,163,184,0.18)",
+          zerolinecolor: "rgba(148,163,184,0.18)"
+        },
+        ...overrides
+      };
     }
 
-    function computeSystemBadges(prodTape, predLog) {
-      const lastTape = latestRow(prodTape, "Date");
-      const realizedRows = predLog.filter(r =>
-        isFiniteNumber(r.px_voo_realized) && isFiniteNumber(r.px_ief_realized)
+    function applySingleDatePadding(rows, dateField, layout) {
+      if (!rows || rows.length !== 1) return layout;
+      const d = parseDateValue(rows[0][dateField]);
+      if (!d) return layout;
+      const lo = new Date(d.getTime() - 4 * 86400000).toISOString();
+      const hi = new Date(d.getTime() + 4 * 86400000).toISOString();
+      layout.xaxis = layout.xaxis || {};
+      layout.xaxis.range = [lo, hi];
+      return layout;
+    }
+
+    function renderBlankPlot(targetId, message, height = 420) {
+      Plotly.newPlot(
+        targetId,
+        [],
+        plotBaseLayout({
+          height,
+          margin: { l: 40, r: 40, t: 30, b: 40 },
+          xaxis: { visible: false },
+          yaxis: { visible: false },
+          annotations: [{
+            text: message,
+            x: 0.5,
+            y: 0.5,
+            xref: "paper",
+            yref: "paper",
+            showarrow: false,
+            font: { color: "#cbd5e1", size: 18 }
+          }]
+        }),
+        { responsive: true, displayModeBar: false }
+      );
+    }
+
+    function scheduleResponsiveRelayout() {
+      clearTimeout(window.__pcResizeTimer);
+      window.__pcResizeTimer = setTimeout(() => {
+        [
+          "predChart",
+          "errorChart",
+          "errorDistChart",
+          "defenseSignalChart",
+          "defenseGovChart",
+          "alphaStateChart",
+          "fusionPathChart",
+          "fusionAllocChart",
+          "alphaSummaryChart",
+          "alphaEligChart"
+        ].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) Plotly.Plots.resize(el);
+        });
+      }, 120);
+    }
+
+    window.addEventListener("resize", scheduleResponsiveRelayout);
+
+    function pill(text, cls = "info") {
+      return `<div class="status-pill ${cls}">${text}</div>`;
+    }
+
+    function realizedRowsCount(predLog) {
+      return predLog.filter(r =>
+        isFiniteNum(r.px_voo_realized) && isFiniteNum(r.px_ief_realized)
       ).length;
+    }
 
-      if (!lastTape) {
+    function computeSystemStatus(prodTape, predLog) {
+      const latestProd = latestRow(prodTape, "Date");
+      if (!latestProd) {
         return {
-          systemStatus: "STALE",
+          status: "STALE",
           maturity: "PARTIALLY MATURED",
-          ageDays: NaN,
-          realizedRows,
-          todayUTC: new Date().toISOString().slice(0, 10),
-          lastTapeDate: "NA"
+          ageDays: null,
+          lastDate: "NA",
+          realizedRows: 0,
+          reasons: ["production tape missing or empty", "realized_rows=0"]
         };
       }
 
-      const lastDate = parseDateValue(lastTape.Date);
-      const now = new Date();
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const lastUTC = new Date(Date.UTC(lastDate.getUTCFullYear(), lastDate.getUTCMonth(), lastDate.getUTCDate()));
-      const ageDays = Math.round((todayUTC - lastUTC) / 86400000);
+      const lastDt = parseDateValue(latestProd.Date);
+      const todayUtc = new Date();
+      const todayNorm = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()));
+      const lastNorm = new Date(Date.UTC(lastDt.getUTCFullYear(), lastDt.getUTCMonth(), lastDt.getUTCDate()));
+      const ageDays = Math.round((todayNorm - lastNorm) / 86400000);
 
-      let systemStatus = "STALE";
-      if (ageDays <= 1) systemStatus = "LIVE";
-      else if (ageDays <= 3) systemStatus = "DELAYED";
+      let status = "STALE";
+      if (ageDays <= 1) status = "LIVE";
+      else if (ageDays <= 3) status = "DELAYED";
 
-      const maturity = realizedRows < 10 ? "PARTIALLY MATURED" : "MATURED";
+      const realized = realizedRowsCount(predLog);
+      const maturity = realized < 10 ? "PARTIALLY MATURED" : "MATURED";
 
       return {
-        systemStatus,
+        status,
         maturity,
         ageDays,
-        realizedRows,
-        todayUTC: todayUTC.toISOString().slice(0, 10),
-        lastTapeDate: fmtDate(lastTape.Date)
+        lastDate: fmtDate(lastDt),
+        realizedRows: realized,
+        reasons: [
+          `last_tape_date=${fmtDate(lastDt)}`,
+          `today_utc=${todayNorm.toISOString().slice(0, 10)}`,
+          `age_days=${ageDays}`,
+          `realized_rows=${realized}`
+        ]
       };
     }
 
-    function latestForecastSnapshot(prodTape, predLog) {
-      const lastPred = latestRow(predLog, "decision_date");
-      if (lastPred) {
+    function getForecastSnapshot(predLog, prodTape) {
+      const pred = latestRow(predLog, "decision_date");
+      if (pred) {
         return {
-          decision_date: lastPred.decision_date,
-          target_date: lastPred.target_date || "",
-          px_voo_t: lastPred.px_voo_t,
-          px_ief_t: lastPred.px_ief_t,
-          px_voo_call_7d: lastPred.px_voo_call_7d,
-          px_ief_call_7d: lastPred.px_ief_call_7d,
-          voo_call_src: lastPred.voo_call_src || "",
-          ief_call_src: lastPred.ief_call_src || ""
+          decisionDate: fmtDate(pred.decision_date),
+          targetDate: fmtDate(pred.target_date),
+          pxVooT: pickFirstValue(pred, ["px_voo_t"]),
+          pxIefT: pickFirstValue(pred, ["px_ief_t"]),
+          pxVooCall: pickFirstValue(pred, ["px_voo_call_7d"]),
+          pxIefCall: pickFirstValue(pred, ["px_ief_call_7d"]),
+          vooCallSrc: pickFirstValue(pred, ["voo_call_src"]) || "explicit_call",
+          iefCallSrc: pickFirstValue(pred, ["ief_call_src"]) || "explicit_call",
+          realizedFilled: isFiniteNum(pred.px_voo_realized) && isFiniteNum(pred.px_ief_realized)
         };
       }
-      const lastTape = latestRow(prodTape, "Date");
-      return lastTape ? {
-        decision_date: lastTape.Date,
-        target_date: "",
-        px_voo_t: lastTape.px_voo_t,
-        px_ief_t: lastTape.px_ief_t,
-        px_voo_call_7d: lastTape.voo_call_7d ?? lastTape.px_voo_call_7d,
-        px_ief_call_7d: lastTape.ief_call_7d ?? lastTape.px_ief_call_7d,
-        voo_call_src: "",
-        ief_call_src: ""
-      } : {
-        decision_date: "",
-        target_date: "",
-        px_voo_t: NaN,
-        px_ief_t: NaN,
-        px_voo_call_7d: NaN,
-        px_ief_call_7d: NaN,
-        voo_call_src: "",
-        ief_call_src: ""
+
+      const prod = latestRow(prodTape, "Date");
+      return {
+        decisionDate: prod ? fmtDate(prod.Date) : "NA",
+        targetDate: "NA",
+        pxVooT: pickFirstValue(prod, ["px_voo_t"]),
+        pxIefT: pickFirstValue(prod, ["px_ief_t"]),
+        pxVooCall: pickFirstValue(prod, ["voo_call_7d", "px_voo_call_7d"]),
+        pxIefCall: pickFirstValue(prod, ["ief_call_7d", "px_ief_call_7d"]),
+        vooCallSrc: "production_tape",
+        iefCallSrc: "production_tape",
+        realizedFilled: false
       };
     }
 
-    function latestDefenseSnapshot(prodTape, govRows) {
-      const lastTape = latestRow(prodTape, "Date");
-      const lastGov = latestRow(govRows, "Date");
-
-      const out = {
-        def_date: lastTape?.Date || "",
-        gov_date: lastGov?.Date || "",
-        w_exec: NaN,
-        defense_scale_final: NaN,
-        GovMode: "NA",
-        GovReason: "NA",
-        gov_scale: NaN,
-        is_live: 0
-      };
-
-      if (lastTape) {
-        const wCandidates = ["w_exec", "w_defense_voo", "target_w_postkill", "target_w_raw"];
-        const scaleCandidates = ["defense_scale_final", "defense_scale_preZero", "gov_scale", "alpha_scale"];
-        wCandidates.forEach(c => { if (!Number.isFinite(out.w_exec) && isFiniteNumber(lastTape[c])) out.w_exec = Number(lastTape[c]); });
-        scaleCandidates.forEach(c => { if (!Number.isFinite(out.defense_scale_final) && isFiniteNumber(lastTape[c])) out.defense_scale_final = Number(lastTape[c]); });
-        out.is_live = safeInt(lastTape.is_live, 0);
-      }
-
-      if (lastGov) {
-        out.GovMode = lastGov.GovMode || "NA";
-        out.GovReason = normalizeDefenseReasonDisplay(lastGov.GovReason);
-        if (isFiniteNumber(lastGov.gov_scale)) out.gov_scale = Number(lastGov.gov_scale);
-        if (!Number.isFinite(out.defense_scale_final) && isFiniteNumber(lastGov.defense_scale_final)) {
-          out.defense_scale_final = Number(lastGov.defense_scale_final);
-        }
-      }
-
-      return out;
-    }
-
-    function latestAlphaStateSnapshot(prodTape, govRows) {
-      const lastTape = latestRow(prodTape, "Date");
-      const lastGov = latestRow(govRows, "Date");
-      const src = lastTape || lastGov || {};
-
-      const snap = {
-        alpha_state: String(src.alpha_state ?? "UNAVAILABLE"),
-        alpha_state_display: String(src.alpha_state_display ?? src.alpha_state ?? "UNAVAILABLE"),
-        alpha_live: safeInt(src.alpha_live, 0),
-        fusion_live: safeInt(src.fusion_live, 0),
-        budget_mult: isFiniteNumber(src.budget_mult) ? Number(src.budget_mult) : (isFiniteNumber(src.alpha_scale) ? Number(src.alpha_scale) : NaN),
-        realized_dates: isFiniteNumber(src.realized_dates) ? Number(src.realized_dates) : NaN,
-        mean_rank_ic: isFiniteNumber(src.mean_rank_ic) ? Number(src.mean_rank_ic) : NaN,
-        mean_topk_rel_ret_net: isFiniteNumber(src.mean_topk_rel_ret_net) ? Number(src.mean_topk_rel_ret_net) : NaN,
-        ir_topk_rel_ret_net: isFiniteNumber(src.ir_topk_rel_ret_net) ? Number(src.ir_topk_rel_ret_net) : NaN,
-        alpha_drift_alarm_rate: isFiniteNumber(src.alpha_drift_alarm_rate) ? Number(src.alpha_drift_alarm_rate) : NaN,
-        alpha_quality_ok: safeInt(src.alpha_quality_ok, 0),
-        alpha_drift_ok: safeInt(src.alpha_drift_ok, 0),
-        alpha_trial_gate_open: safeInt(src.alpha_trial_gate_open, 0),
-        alpha_fused_gate_open: safeInt(src.alpha_fused_gate_open, 0),
-        alpha_promotion_ready: safeInt(src.alpha_promotion_ready, 0),
-        alpha_blocker_text: String(src.alpha_blocker_text ?? "NONE")
-      };
-
-      if (["nan", "None", "NA", "UNAVAILABLE"].includes(snap.alpha_state_display)) {
-        const map = { SHADOW: "SHADOW", ELIGIBLE: "CANDIDATE", LIVE_TRIAL: "LIVE_TRIAL", LIVE_FUSED: "LIVE_FUSED" };
-        snap.alpha_state_display = map[snap.alpha_state] || snap.alpha_state;
-      }
-
-      if (!snap.alpha_blocker_text || snap.alpha_blocker_text === "nan") snap.alpha_blocker_text = "NONE";
-      return snap;
-    }
-
-    function latestFusionAllocSnapshot(allocRows) {
-      const latest = latestSlice(allocRows, "Date");
-      const coreVoo = latest.filter(r => r.Ticker === "VOO_CORE").reduce((a, r) => a + safeNum(r.weight, 0), 0);
-      const coreIef = latest.filter(r => r.Ticker === "IEF_CORE").reduce((a, r) => a + safeNum(r.weight, 0), 0);
-      const alphaGross = latest.filter(r => !["VOO_CORE", "IEF_CORE"].includes(String(r.Ticker))).reduce((a, r) => a + safeNum(r.weight, 0), 0);
-      const sumWeight = latest.reduce((a, r) => a + safeNum(r.weight, 0), 0);
+    function getDefenseSnapshot(prodTape, govRows) {
+      const prod = latestRow(prodTape, "Date");
+      const gov = latestRow(govRows, "Date");
 
       return {
-        alloc_date: latest.length ? latest[0].Date : "",
-        n_rows: latest.length,
-        sum_weight: sumWeight,
-        core_voo: coreVoo,
-        core_ief: coreIef,
-        alpha_gross: alphaGross,
-        rows: [...latest].sort((a, b) => safeNum(b.weight, 0) - safeNum(a.weight, 0))
+        date: gov ? fmtDate(gov.Date) : (prod ? fmtDate(prod.Date) : "NA"),
+        GovMode: pickFirstValue(gov, ["GovMode"]) || "NA",
+        GovReason: normalizeGovReason(pickFirstValue(gov, ["GovReason"])),
+        wExec: pickFirstValue(prod, ["w_exec", "w_defense_voo", "target_w_postkill", "target_w_raw"]),
+        defenseScale: pickFirstValue(prod, ["defense_scale_final", "gov_scale", "alpha_scale"]),
+        govScale: pickFirstValue(gov, ["gov_scale"]),
+        alphaEffFinal: pickFirstValue(gov, ["alpha_eff_final"]),
+        govHealthLive: pickFirstValue(gov, ["GovHealthScore_live"]),
+        govHealthRealized: pickFirstValue(gov, ["GovHealthScore_realized"]),
+        liftEnd: pickFirstValue(gov, ["Lift_End"]),
+        dES: pickFirstValue(gov, ["dES_P_End"]),
+        annCostDrag: pickFirstValue(gov, ["AnnCostDrag_Roll"]),
+        turnEff: pickFirstValue(gov, ["TurnEff_Roll"]),
+        zeroActive: safeInt(pickFirstValue(gov, ["ZeRO_Active_End"]), 0),
+        tooGood: safeInt(pickFirstValue(gov, ["TooGood_Alarm_End"]), 0)
       };
     }
 
-    function latestAlphaSummarySnapshot(alphaSummary) {
-      const last = latestRow(alphaSummary, "Date") || {};
-      return {
-        date: last.Date || "",
-        rank_ic_roll: isFiniteNumber(last.rank_ic_roll) ? Number(last.rank_ic_roll) : latestNonNaN(alphaSummary, "rank_ic_roll", "Date"),
-        topk_rel_ret_net_roll: isFiniteNumber(last.topk_rel_ret_net_roll) ? Number(last.topk_rel_ret_net_roll) : latestNonNaN(alphaSummary, "topk_rel_ret_net_roll", "Date"),
-        selection_hit_rate: isFiniteNumber(last.selection_hit_rate) ? Number(last.selection_hit_rate) : latestNonNaN(alphaSummary, "selection_hit_rate", "Date"),
-        breadth_selected: isFiniteNumber(last.breadth_selected) ? Number(last.breadth_selected) : latestNonNaN(alphaSummary, "breadth_selected", "Date"),
-        eligible_breadth: isFiniteNumber(last.eligible_breadth) ? Number(last.eligible_breadth) : latestNonNaN(alphaSummary, "eligible_breadth", "Date"),
-        gross_alpha_budget_used: isFiniteNumber(last.gross_alpha_budget_used) ? Number(last.gross_alpha_budget_used) : latestNonNaN(alphaSummary, "gross_alpha_budget_used", "Date"),
-        alpha_drift_alarm: safeInt(last.alpha_drift_alarm, 0),
-        alpha_overlay_scale: isFiniteNumber(last.alpha_overlay_scale) ? Number(last.alpha_overlay_scale) : latestNonNaN(alphaSummary, "alpha_overlay_scale", "Date")
-      };
-    }
+    function getAlphaSnapshot(prodTape, alphaSummaryRows, alphaPosRows, alphaEligRows) {
+      const prod = latestRow(prodTape, "Date");
+      const alphaSummary = latestRow(alphaSummaryRows, "Date");
+      const livePos = latestSlice(alphaPosRows, "Date");
+      const liveElig = latestSlice(alphaEligRows, "asof_date");
 
-    function latestAlphaPositionSnapshot(alphaPos, alphaElig, alphaSummary) {
-      const livePos = latestSlice(alphaPos, "Date", "is_live");
-      const liveElig = latestSlice(alphaElig, "asof_date");
-      const sumSnap = latestAlphaSummarySnapshot(alphaSummary);
-
-      const selectedNames = livePos
-        .filter(r => safeInt(r.selected, 0) === 1 && safeNum(r.weight, 0) > 0)
-        .sort((a, b) => safeNum(b.weight, 0) - safeNum(a.weight, 0))
-        .map(r => String(r.Ticker));
-
+      const selectedRows = livePos.filter(r => safeInt(r.selected, 0) === 1);
       const eligibleNames = liveElig
         .filter(r => safeInt(r.in_elig_set, 0) === 1)
-        .map(r => String(r.Ticker));
+        .map(r => r.Ticker)
+        .filter(Boolean);
+
+      const selectedNames = selectedRows.map(r => r.Ticker).filter(Boolean);
+
+      const titleText =
+        pickFirstValue(selectedRows[0], ["alpha_governance_tier"]) ||
+        pickFirstValue(alphaSummary, ["alpha_governance_tier"]) ||
+        "NORMAL";
 
       return {
-        date: sumSnap.date || (livePos[0]?.Date || liveElig[0]?.asof_date || ""),
-        driftAlarm: sumSnap.alpha_drift_alarm,
-        selectedCount: selectedNames.length,
-        overlayScale: sumSnap.alpha_overlay_scale,
-        rankIcRoll: sumSnap.rank_ic_roll,
-        meanTopKNet: sumSnap.topk_rel_ret_net_roll,
-        budgetUsed: sumSnap.gross_alpha_budget_used,
-        eligibleBreadth: sumSnap.eligible_breadth,
-        selectionHitRate: sumSnap.selection_hit_rate,
+        titleText,
+        state: pickFirstValue(prod, ["alpha_state_display", "alpha_state"]) || "UNAVAILABLE",
+        alphaLive: safeInt(pickFirstValue(prod, ["alpha_live"]), 0),
+        fusionLive: safeInt(pickFirstValue(prod, ["fusion_live"]), 0),
+        budgetMult: pickFirstValue(prod, ["budget_mult"]),
+        realizedDates: pickFirstValue(prod, ["realized_dates"]),
+        blocker: pickFirstValue(prod, ["alpha_blocker_text"]) || "NONE",
+
+        meanRankIC: pickFirstValue(prod, ["mean_rank_ic"]),
+        meanTopKNet: pickFirstValue(prod, ["mean_topk_rel_ret_net"]),
+        irTopK: pickFirstValue(prod, ["ir_topk_rel_ret_net"]),
+        driftRate: pickFirstValue(prod, ["alpha_drift_alarm_rate"]),
+
+        date: alphaSummary ? fmtDate(alphaSummary.Date) : (prod ? fmtDate(prod.Date) : "NA"),
+        rankIcRoll: pickFirstValue(alphaSummary, ["rank_ic_roll", "rank_ic"]),
+        topkRoll: pickFirstValue(alphaSummary, ["topk_rel_ret_net_roll", "topk_rel_ret_net"]),
+        budgetUsed: pickFirstValue(alphaSummary, ["gross_alpha_budget_used"]),
+        overlayScale: pickFirstValue(alphaSummary, ["alpha_overlay_scale"]),
+        selectionHitRate: pickFirstValue(alphaSummary, ["selection_hit_rate"]),
+        eligibleBreadth: pickFirstValue(alphaSummary, ["eligible_breadth"]),
+        breadthSelected: pickFirstValue(alphaSummary, ["breadth_selected"]),
+        driftAlarm: safeInt(pickFirstValue(alphaSummary, ["alpha_drift_alarm"]), 0),
+
         eligibleNames,
-        selectedNames
+        selectedNames,
+        selectedCount: selectedRows.length
       };
     }
 
-    function buildHeroCards(systemInfo, forecast, defenseSnap, alphaState, fusionMeta) {
-      const vooSpot = safeNum(forecast.px_voo_t);
-      const vooCall = safeNum(forecast.px_voo_call_7d);
-      const iefSpot = safeNum(forecast.px_ief_t);
-      const iefCall = safeNum(forecast.px_ief_call_7d);
-      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
-      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
+    function getFusionMeta(allocRows) {
+      const latestAlloc = latestSlice(allocRows, "Date");
+      if (!latestAlloc.length) {
+        return {
+          latestAlloc,
+          allocDate: "NA",
+          rowCount: 0,
+          sumWeight: null,
+          coreVoo: null,
+          coreIef: null,
+          alphaGross: null,
+          alphaStateDisplay: "NA",
+          fusionLive: null
+        };
+      }
+
+      const sumWeight = latestAlloc.reduce((a, r) => a + (safeNum(r.weight) || 0), 0);
+      const coreVoo = latestAlloc.filter(r => r.Ticker === "VOO_CORE").reduce((a, r) => a + (safeNum(r.weight) || 0), 0);
+      const coreIef = latestAlloc.filter(r => r.Ticker === "IEF_CORE").reduce((a, r) => a + (safeNum(r.weight) || 0), 0);
+      const alphaGross = latestAlloc
+        .filter(r => !["VOO_CORE", "IEF_CORE"].includes(r.Ticker))
+        .reduce((a, r) => a + (safeNum(r.weight) || 0), 0);
+
+      return {
+        latestAlloc: [...latestAlloc].sort((a, b) => (safeNum(b.weight) || 0) - (safeNum(a.weight) || 0)),
+        allocDate: fmtDate(latestAlloc[0].Date),
+        rowCount: latestAlloc.length,
+        sumWeight,
+        coreVoo,
+        coreIef,
+        alphaGross,
+        alphaStateDisplay: pickFirstValue(latestAlloc[0], ["alpha_state_display"]) || "NA",
+        fusionLive: safeInt(pickFirstValue(latestAlloc[0], ["fusion_live"]), 0)
+      };
+    }
+
+    function buildHeroCards(systemMeta, forecast, defense, alpha, fusionMeta) {
+      const pxVooT = safeNum(forecast.pxVooT);
+      const pxVooCall = safeNum(forecast.pxVooCall);
+      const pxIefT = safeNum(forecast.pxIefT);
+      const pxIefCall = safeNum(forecast.pxIefCall);
+
+      const vooDelta = (pxVooT && pxVooCall !== null) ? (pxVooCall / pxVooT - 1) : null;
+      const iefDelta = (pxIefT && pxIefCall !== null) ? (pxIefCall / pxIefT - 1) : null;
 
       const cards = [
         {
           label: "7-Day VOO Forecast",
-          big: fmtPrice(vooCall),
-          sub: `Current: ${fmtPrice(vooSpot)} | Δ: ${fmtPct(vooDelta)}` + (forecast.voo_call_src ? `<br>Source: ${escapeHtml(forecast.voo_call_src)}` : "")
+          big: fmtPrice(forecast.pxVooCall),
+          sub: [
+            `Current: ${fmtPrice(forecast.pxVooT)} | Δ: ${fmtPct(vooDelta)}`,
+            `Source: ${forecast.vooCallSrc || "NA"}`
+          ],
+          forecast: true
         },
         {
           label: "7-Day IEF Forecast",
-          big: fmtPrice(iefCall),
-          sub: `Current: ${fmtPrice(iefSpot)} | Δ: ${fmtPct(iefDelta)}` + (forecast.ief_call_src ? `<br>Source: ${escapeHtml(forecast.ief_call_src)}` : "")
+          big: fmtPrice(forecast.pxIefCall),
+          sub: [
+            `Current: ${fmtPrice(forecast.pxIefT)} | Δ: ${fmtPct(iefDelta)}`,
+            `Source: ${forecast.iefCallSrc || "NA"}`
+          ],
+          forecast: true
         },
         {
           label: "System Status",
-          big: escapeHtml(systemInfo.systemStatus),
-          sub: `Maturity: ${escapeHtml(systemInfo.maturity)}<br>Updated: ${escapeHtml(new Date().toISOString().replace("T", " ").replace("Z", " (UTC)"))}`
+          big: systemMeta.status,
+          sub: [
+            `Maturity: ${systemMeta.maturity}`,
+            `Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`
+          ]
         },
         {
           label: "Decision Date",
-          big: escapeHtml(fmtDate(forecast.decision_date)),
-          sub: `Target date: ${escapeHtml(fmtDate(forecast.target_date))}<br>Realized rows: ${escapeHtml(String(systemInfo.realizedRows))}`
+          big: forecast.decisionDate,
+          sub: [
+            `Target date: ${forecast.targetDate || "NA"}`,
+            `Realized rows: ${systemMeta.realizedRows}`
+          ]
         },
         {
           label: "Defense Sleeve",
-          big: escapeHtml(defenseSnap.GovMode || "NA"),
-          sub: `Gov reason: ${escapeHtml(defenseSnap.GovReason || "NA")}<br>w_exec: ${fmtNum(defenseSnap.w_exec, 4)} | scale: ${fmtNum(defenseSnap.defense_scale_final, 4)}`
+          big: defense.GovMode,
+          sub: [
+            `Gov reason: ${defense.GovReason}`,
+            `w_exec: ${fmtNum(defense.wExec, 4)} | scale: ${fmtNum(defense.govScale ?? defense.defenseScale, 4)}`
+          ]
         },
         {
           label: "Alpha / Fusion State",
-          big: escapeHtml(alphaState.alpha_state_display),
-          sub: `Alpha live: ${alphaState.alpha_live ? "YES" : "NO"} | Fusion live: ${alphaState.fusion_live ? "YES" : "NO"}<br>Budget mult: ${fmtNum(alphaState.budget_mult, 2)}`
+          big: alpha.state,
+          sub: [
+            `Alpha live: ${alpha.alphaLive ? "YES" : "NO"} | Fusion live: ${alpha.fusionLive ? "YES" : "NO"}`,
+            `Budget mult: ${fmtNum(alpha.budgetMult, 2)}`
+          ]
         },
         {
           label: "Promotion Gates",
-          big: escapeHtml(String(safeInt(alphaState.realized_dates, 0))),
-          sub: `quality_ok=${safeInt(alphaState.alpha_quality_ok, 0)} | drift_ok=${safeInt(alphaState.alpha_drift_ok, 0)}<br>trial=${safeInt(alphaState.alpha_trial_gate_open, 0)} | fused=${safeInt(alphaState.alpha_fused_gate_open, 0)} | ready=${safeInt(alphaState.alpha_promotion_ready, 0)}`
+          big: alpha.realizedDates !== null && alpha.realizedDates !== undefined ? String(alpha.realizedDates) : "NA",
+          sub: [
+            `quality_ok=${safeInt(pickFirstValue(latestRow(prodTapeGlobal, "Date"), ["alpha_quality_ok"]), 0)} | drift_ok=${safeInt(pickFirstValue(latestRow(prodTapeGlobal, "Date"), ["alpha_drift_ok"]), 0)}`,
+            `trial=${safeInt(pickFirstValue(latestRow(prodTapeGlobal, "Date"), ["alpha_trial_gate_open"]), 0)} | fused=${safeInt(pickFirstValue(latestRow(prodTapeGlobal, "Date"), ["alpha_fused_gate_open"]), 0)} | ready=${safeInt(pickFirstValue(latestRow(prodTapeGlobal, "Date"), ["alpha_promotion_ready"]), 0)}`
+          ]
         },
         {
           label: "Alpha Blocker",
-          big: escapeHtml(alphaState.alpha_blocker_text || "NONE"),
-          sub: "Thresholds: 26 / 52 / 78"
+          big: alpha.blocker,
+          sub: [
+            "Thresholds: 26 / 52 / 78"
+          ]
         },
         {
           label: "Fusion Allocation Snapshot",
-          big: fmtNum(fusionMeta.sum_weight, 4),
-          sub: `VOO core: ${fmtNum(fusionMeta.core_voo, 4)} | IEF core: ${fmtNum(fusionMeta.core_ief, 4)}<br>Alpha gross: ${fmtNum(fusionMeta.alpha_gross, 4)}`
+          big: fmtNum(fusionMeta.sumWeight, 4),
+          sub: [
+            `VOO core: ${fmtNum(fusionMeta.coreVoo, 4)} | IEF core: ${fmtNum(fusionMeta.coreIef, 4)}`,
+            `Alpha gross: ${fmtNum(fusionMeta.alphaGross, 4)}`
+          ]
         },
         {
           label: "Alpha Metrics",
-          big: fmtNum(alphaState.mean_rank_ic, 4),
-          sub: `TopK net: ${fmtNum(alphaState.mean_topk_rel_ret_net, 6)} | IR: ${fmtNum(alphaState.ir_topk_rel_ret_net, 3)}<br>Drift rate: ${fmtPct(alphaState.alpha_drift_alarm_rate)}`
+          big: fmtNum(alpha.rankIcRoll ?? alpha.meanRankIC, 4),
+          sub: [
+            `TopK net: ${fmtNum(alpha.topkRoll ?? alpha.meanTopKNet, 6)} | IR: ${fmtNum(alpha.irTopK, 3)}`,
+            `Drift rate: ${fmtPct(alpha.driftRate)}`
+          ]
         }
       ];
 
-      document.getElementById("heroGrid").innerHTML = cards.map(card => `
-        <div class="card hero-card">
-          <div class="hero-label">${card.label}</div>
-          <div class="hero-big">${card.big}</div>
-          <div class="hero-sub">${card.sub}</div>
+      const html = cards.map(c => `
+        <div class="card hero-card ${c.forecast ? "hero-forecast" : ""}">
+          <div class="label">${c.label}</div>
+          <div class="hero-big ${String(c.big).length > 12 ? "small" : ""}">${c.big}</div>
+          ${(c.sub || []).map(s => `<p class="hero-sub">${s}</p>`).join("")}
         </div>
       `).join("");
+
+      document.getElementById("heroGrid").innerHTML = html;
     }
 
-    function buildStatusPills(systemInfo, forecast, defenseSnap, alphaState, latestPred) {
-      const targetPending = !latestPred || !latestPred.target_date || String(latestPred.target_date).trim() === "" || String(latestPred.target_date).toUpperCase() === "NA";
-      const realizedFilled = !!latestPred && isFiniteNumber(latestPred.px_voo_realized) && isFiniteNumber(latestPred.px_ief_realized);
+    function renderRunStatus(systemMeta, forecast, defense, alpha, latestPred) {
+      const realizedFilled = forecast.realizedFilled || systemMeta.realizedRows > 0;
+      const maturityCls = systemMeta.maturity === "MATURED" ? "good" : "warn";
+      const systemCls = systemMeta.status === "LIVE" ? "good" : (systemMeta.status === "DELAYED" ? "info" : "bad");
 
       const pills = [
-        {
-          text: systemInfo.systemStatus === "LIVE" ? "SYSTEM LIVE" : systemInfo.systemStatus === "DELAYED" ? "SYSTEM DELAYED" : "SYSTEM STALE",
-          cls: systemInfo.systemStatus === "LIVE" ? "good" : systemInfo.systemStatus === "DELAYED" ? "info" : "bad"
-        },
-        {
-          text: systemInfo.maturity,
-          cls: systemInfo.maturity === "MATURED" ? "good" : "warn"
-        },
-        {
-          text: `α ${alphaState.alpha_state_display}`,
-          cls: ["LIVE_FUSED", "LIVE_TRIAL"].includes(alphaState.alpha_state_display) ? "info" : alphaState.alpha_state_display === "CANDIDATE" ? "warn" : "good"
-        },
-        {
-          text: alphaState.fusion_live ? "Fusion LIVE" : "Fusion OFF",
-          cls: alphaState.fusion_live ? "info" : "warn"
-        },
-        {
-          text: `Governance: ${latestPred?.governance_tier || "NA"}`,
-          cls: String(latestPred?.governance_tier || "").toUpperCase() === "NORMAL" ? "good" : "warn"
-        },
-        {
-          text: `P_FINAL: ${fmtNum(latestPred?.p_final_cal, 4)}`,
-          cls: "good"
-        },
-        {
-          text: `Alpha Scale: ${fmtNum(latestPred?.alpha_scale, 2)}`,
-          cls: safeNum(latestPred?.alpha_scale, 0) >= 1 ? "good" : "warn"
-        },
-        {
-          text: targetPending ? "Target Date Pending" : "Target Date Set",
-          cls: targetPending ? "warn" : "good"
-        },
-        {
-          text: realizedFilled ? "Realized Filled" : "Awaiting Realized",
-          cls: realizedFilled ? "good" : "warn"
-        }
+        pill(`${systemMeta.status === "LIVE" ? "🟢" : systemMeta.status === "DELAYED" ? "🔵" : "🔴"} SYSTEM ${systemMeta.status}`, systemCls),
+        pill(`🟡 ${systemMeta.maturity}`, maturityCls),
+        pill(`α ${alpha.state}`, alpha.state === "LIVE_FUSED" ? "info" : (alpha.state === "CANDIDATE" ? "warn" : "good")),
+        pill(`Fusion ${alpha.fusionLive ? "LIVE" : "OFF"}`, alpha.fusionLive ? "info" : "warn"),
+        pill(`Governance: ${(latestPred && latestPred.governance_tier) || "NORMAL"}`, ((latestPred && latestPred.governance_tier) || "NORMAL") === "NORMAL" ? "good" : "warn"),
+        pill(`P_FINAL: ${fmtNum(pickFirstValue(latestPred, ["p_final_cal", "p_final_use"]), 4)}`, "good"),
+        pill(`Alpha Scale: ${fmtNum(pickFirstValue(latestPred, ["alpha_scale"]), 2)}`, "good"),
+        pill(`Target Date ${forecast.targetDate && forecast.targetDate !== "NA" ? "Set" : "Pending"}`, forecast.targetDate && forecast.targetDate !== "NA" ? "good" : "warn"),
+        pill(`Realized ${realizedFilled ? "Filled" : "Pending"}`, realizedFilled ? "good" : "warn")
       ];
 
-      document.getElementById("statusRow").innerHTML = pills.map(p =>
-        `<div class="status-pill ${p.cls}">${escapeHtml(p.text)}</div>`
-      ).join("");
-
-      const line = latestPred
-        ? `Latest row: decision=${fmtDate(latestPred.decision_date)} | VOO call=${fmtPrice(latestPred.px_voo_call_7d)} | IEF call=${fmtPrice(latestPred.px_ief_call_7d)}`
-        : "No prediction rows found.";
-      document.getElementById("statusLine").textContent = line;
+      document.getElementById("statusRow").innerHTML = pills.join("");
+      document.getElementById("statusSummaryLine").textContent =
+        `Latest row: decision=${forecast.decisionDate} | VOO call=${fmtPrice(forecast.pxVooCall)} | IEF call=${fmtPrice(forecast.pxIefCall)}`;
     }
 
-    function buildStatusSummary(systemInfo, forecast, defenseSnap, alphaState, fusionMeta, alphaSnap, latestPred, counts) {
-      const eligibleNames = alphaSnap.eligibleNames?.length ? alphaSnap.eligibleNames.join(", ") : "NA";
-      const selectedNames = alphaSnap.selectedNames?.length ? alphaSnap.selectedNames.join(", ") : "NA";
+    function renderStatusSummary(systemMeta, forecast, defense, alpha, fusionMeta, counts, latestPred, latestProd, latestGov) {
+      const selectedNames = alpha.selectedNames.length ? alpha.selectedNames.join(", ") : "NA";
+      const eligibleNames = alpha.eligibleNames.length ? alpha.eligibleNames.join(", ") : "NA";
 
       const lines = [
         `Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`,
-        "",
-        `SYSTEM STATUS: ${systemInfo.systemStatus} | MATURITY: ${systemInfo.maturity}`,
-        `- last_tape_date=${systemInfo.lastTapeDate}`,
-        `- today_utc=${systemInfo.todayUTC}`,
-        `- age_days=${Number.isFinite(systemInfo.ageDays) ? systemInfo.ageDays : "NA"}`,
-        `- realized_rows=${systemInfo.realizedRows}`,
-        "",
-        "LATEST FORECAST SNAPSHOT:",
-        `- decision_date=${fmtDate(forecast.decision_date)}`,
-        `- target_date=${fmtDate(forecast.target_date)}`,
-        `- px_voo_t=${fmtPrice(forecast.px_voo_t)}`,
-        `- px_voo_call_7d=${fmtPrice(forecast.px_voo_call_7d)}`,
-        `- px_ief_t=${fmtPrice(forecast.px_ief_t)}`,
-        `- px_ief_call_7d=${fmtPrice(forecast.px_ief_call_7d)}`,
-        "",
-        "DEFENSE GOVERNANCE SNAPSHOT:",
-        `- GovMode=${defenseSnap.GovMode}`,
-        `- GovReason_display=${defenseSnap.GovReason}`,
-        `- w_exec=${fmtNum(defenseSnap.w_exec, 4)}`,
-        `- defense_scale_final=${fmtNum(defenseSnap.defense_scale_final, 4)}`,
-        "",
-        "PART 3 V1 ALPHA / FUSION SNAPSHOT:",
-        `- alpha_state=${alphaState.alpha_state}`,
-        `- alpha_state_display=${alphaState.alpha_state_display}`,
-        `- alpha_live=${safeInt(alphaState.alpha_live, 0)}`,
-        `- fusion_live=${safeInt(alphaState.fusion_live, 0)}`,
-        `- budget_mult=${fmtNum(alphaState.budget_mult, 2)}`,
-        `- realized_dates=${safeInt(alphaState.realized_dates, 0)}`,
-        `- mean_rank_ic=${fmtNum(alphaState.mean_rank_ic, 4)}`,
-        `- mean_topk_rel_ret_net=${fmtNum(alphaState.mean_topk_rel_ret_net, 6)}`,
-        `- ir_topk_rel_ret_net=${fmtNum(alphaState.ir_topk_rel_ret_net, 3)}`,
-        `- alpha_drift_alarm_rate=${fmtPct(alphaState.alpha_drift_alarm_rate)}`,
-        `- alpha_quality_ok=${safeInt(alphaState.alpha_quality_ok, 0)}`,
-        `- alpha_drift_ok=${safeInt(alphaState.alpha_drift_ok, 0)}`,
-        `- alpha_trial_gate_open=${safeInt(alphaState.alpha_trial_gate_open, 0)}`,
-        `- alpha_fused_gate_open=${safeInt(alphaState.alpha_fused_gate_open, 0)}`,
-        `- alpha_promotion_ready=${safeInt(alphaState.alpha_promotion_ready, 0)}`,
-        `- alpha_blocker_text=${alphaState.alpha_blocker_text}`,
-        "",
-        "LATEST FUSION ALLOCATION META:",
-        `- alloc_date=${fmtDate(fusionMeta.alloc_date)}`,
-        `- n_rows=${fusionMeta.n_rows}`,
-        `- sum_weight=${fmtNum(fusionMeta.sum_weight, 4)}`,
-        `- core_voo=${fmtNum(fusionMeta.core_voo, 4)}`,
-        `- core_ief=${fmtNum(fusionMeta.core_ief, 4)}`,
-        `- alpha_gross=${fmtNum(fusionMeta.alpha_gross, 4)}`,
-        "",
-        "LIVE ALPHA SET:",
+        ``,
+        `SYSTEM STATUS: ${systemMeta.status} | MATURITY: ${systemMeta.maturity}`,
+        ...systemMeta.reasons.map(r => `- ${r}`),
+        ``,
+        `LATEST FORECAST SNAPSHOT:`,
+        `- decision_date=${forecast.decisionDate}`,
+        `- target_date=${forecast.targetDate || "NA"}`,
+        `- px_voo_t=${fmtPrice(forecast.pxVooT)}`,
+        `- px_voo_call_7d=${fmtPrice(forecast.pxVooCall)}`,
+        `- px_ief_t=${fmtPrice(forecast.pxIefT)}`,
+        `- px_ief_call_7d=${fmtPrice(forecast.pxIefCall)}`,
+        ``,
+        `DEFENSE GOVERNANCE SNAPSHOT:`,
+        `- GovMode=${defense.GovMode}`,
+        `- GovReason_display=${defense.GovReason}`,
+        `- w_exec=${fmtNum(defense.wExec, 4)}`,
+        `- defense_scale_final=${fmtNum(defense.defenseScale, 4)}`,
+        ``,
+        `PART 3 V1 ALPHA / FUSION SNAPSHOT:`,
+        `- alpha_state=${alpha.state}`,
+        `- alpha_live=${alpha.alphaLive}`,
+        `- fusion_live=${alpha.fusionLive}`,
+        `- budget_mult=${fmtNum(alpha.budgetMult, 2)}`,
+        `- realized_dates=${alpha.realizedDates ?? "NA"}`,
+        `- mean_rank_ic=${fmtNum(alpha.meanRankIC, 4)}`,
+        `- mean_topk_rel_ret_net=${fmtNum(alpha.meanTopKNet, 6)}`,
+        `- ir_topk_rel_ret_net=${fmtNum(alpha.irTopK, 3)}`,
+        `- alpha_drift_alarm_rate=${fmtPct(alpha.driftRate)}`,
+        `- alpha_blocker_text=${alpha.blocker}`,
+        ``,
+        `LATEST FUSION ALLOCATION META:`,
+        `- alloc_date=${fusionMeta.allocDate}`,
+        `- n_rows=${fusionMeta.rowCount}`,
+        `- sum_weight=${fmtNum(fusionMeta.sumWeight, 4)}`,
+        `- core_voo=${fmtNum(fusionMeta.coreVoo, 4)}`,
+        `- core_ief=${fmtNum(fusionMeta.coreIef, 4)}`,
+        `- alpha_gross=${fmtNum(fusionMeta.alphaGross, 4)}`,
+        ``,
+        `LIVE ALPHA SET:`,
         `- eligible_names=${eligibleNames}`,
         `- selected_names=${selectedNames}`,
-        "",
-        "ROW COUNTS:",
-        `- prediction_rows=${counts.prediction}`,
-        `- production_tape_rows=${counts.production}`,
-        `- governance_rows=${counts.governance}`,
+        ``,
+        `ROW COUNTS:`,
+        `- prediction_rows=${counts.pred}`,
+        `- production_tape_rows=${counts.prod}`,
+        `- governance_rows=${counts.gov}`,
         `- allocation_rows=${counts.alloc}`,
         `- alpha_summary_rows=${counts.alphaSummary}`,
         `- alpha_position_rows=${counts.alphaPos}`,
@@ -1216,824 +1305,1120 @@
       document.getElementById("statusSummaryText").textContent = lines.join("\n");
     }
 
-    function plotBaseLayout(extra = {}) {
-      return {
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        font: { color: "#f8fafc", size: 14 },
-        legend: { orientation: "h", bgcolor: "rgba(0,0,0,0)" },
-        margin: { l: 60, r: 60, t: 20, b: 60 },
-        xaxis: { gridcolor: "rgba(148,163,184,0.18)", zerolinecolor: "rgba(148,163,184,0.18)" },
-        yaxis: { gridcolor: "rgba(148,163,184,0.18)", zerolinecolor: "rgba(148,163,184,0.18)" },
-        ...extra
-      };
-    }
-
-    function renderBlankPlot(id, message, height = 360) {
-      Plotly.newPlot(id, [], {
-        ...plotBaseLayout({ height }),
-        annotations: [{
-          text: message,
-          x: 0.5, y: 0.5, xref: "paper", yref: "paper",
-          showarrow: false,
-          font: { color: "#e5e7eb", size: 18 }
-        }],
-        xaxis: { visible: false },
-        yaxis: { visible: false }
-      }, { responsive: true, displayModeBar: false });
-    }
-
-    function shadeIntervals(figLayoutShapes, dates, flags, color) {
-      let start = null;
-      for (let i = 0; i < dates.length; i++) {
-        const on = !!flags[i];
-        if (on && start === null) start = dates[i];
-        const nextOn = i < dates.length - 1 ? !!flags[i + 1] : false;
-        if (on && !nextOn && start !== null) {
-          figLayoutShapes.push({
-            type: "rect",
-            xref: "x",
-            yref: "paper",
-            x0: start,
-            x1: dates[i],
-            y0: 0,
-            y1: 1,
-            fillcolor: color,
-            line: { width: 0 },
-            layer: "below"
-          });
-          start = null;
-        }
+    function renderLatestPredictionSnapshot(latestPred, forecast) {
+      if (!latestPred) {
+        document.getElementById("latestPredictionSnapshot").innerHTML = `<div class="hero-sub">No prediction-log rows found.</div>`;
+        return;
       }
+
+      const realizedFilled = isFiniteNum(latestPred.px_voo_realized) && isFiniteNum(latestPred.px_ief_realized);
+      const govTier = latestPred.governance_tier || "NA";
+
+      document.getElementById("latestPredictionSnapshot").innerHTML = `
+        <div class="hero-big">${forecast.decisionDate}</div>
+        <div class="hero-sub" style="margin-bottom: 10px;">Latest prediction-log row</div>
+
+        <div class="status-row">
+          ${pill(realizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED", realizedFilled ? "good" : "warn")}
+          ${pill(`VOO CALL: ${fmtPrice(latestPred.px_voo_call_7d)}`, "good")}
+          ${pill(`IEF CALL: ${fmtPrice(latestPred.px_ief_call_7d)}`, "good")}
+        </div>
+
+        <div class="metric-grid" style="margin-top: 14px;">
+          <div class="metric-box">
+            <div class="metric-k">Target Date</div>
+            <div class="metric-v">${fmtDate(latestPred.target_date)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Governance Tier</div>
+            <div class="metric-v">${govTier}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">p_final_cal</div>
+            <div class="metric-v">${fmtNum(latestPred.p_final_cal, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">alpha_scale</div>
+            <div class="metric-v">${fmtNum(latestPred.alpha_scale, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">VOO Spot / Call</div>
+            <div class="metric-v">${fmtPrice(latestPred.px_voo_t)} / ${fmtPrice(latestPred.px_voo_call_7d)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">IEF Spot / Call</div>
+            <div class="metric-v">${fmtPrice(latestPred.px_ief_t)} / ${fmtPrice(latestPred.px_ief_call_7d)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderGovernanceSnapshot(defense) {
+      const govModeCls = defense.GovMode === "ACTIVE" ? "good" : "warn";
+      const zeroCls = defense.zeroActive === 1 ? "warn" : "good";
+      const tgCls = defense.tooGood === 1 ? "warn" : "good";
+
+      document.getElementById("govSnapshot").innerHTML = `
+        <div class="hero-big">${defense.GovMode}</div>
+        <div class="hero-sub" style="margin-bottom: 10px;">Reason: ${defense.GovReason}</div>
+
+        <div class="status-row">
+          ${pill(`GovMode: ${defense.GovMode}`, govModeCls)}
+          ${pill(`ZeRO Active: ${defense.zeroActive}`, zeroCls)}
+          ${pill(`TooGood Alarm: ${defense.tooGood}`, tgCls)}
+        </div>
+
+        <div class="metric-grid" style="margin-top: 16px;">
+          <div class="metric-box">
+            <div class="metric-k">Date</div>
+            <div class="metric-v">${defense.date}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">alpha_eff_final</div>
+            <div class="metric-v">${fmtNum(defense.alphaEffFinal, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">gov_scale</div>
+            <div class="metric-v">${fmtNum(defense.govScale, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">GovHealthScore_live</div>
+            <div class="metric-v">${fmtNum(defense.govHealthLive, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">GovHealthScore_realized</div>
+            <div class="metric-v">${fmtNum(defense.govHealthRealized, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Lift_End</div>
+            <div class="metric-v">${fmtNum(defense.liftEnd, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">dES_P_End</div>
+            <div class="metric-v">${fmtNum(defense.dES, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">AnnCostDrag_Roll</div>
+            <div class="metric-v">${fmtNum(defense.annCostDrag, 6)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">TurnEff_Roll</div>
+            <div class="metric-v">${fmtNum(defense.turnEff, 6)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">GovHealthScore</div>
+            <div class="metric-v">${fmtNum(defense.govHealthLive, 4)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAlphaSnapshot(alpha) {
+      document.getElementById("alphaSnapshot").innerHTML = `
+        <div class="hero-big">${alpha.titleText}</div>
+        <div class="hero-sub" style="margin-bottom: 10px;">Live alpha sleeve snapshot</div>
+
+        <div class="status-row">
+          ${pill(`Drift Alarm: ${alpha.driftAlarm}`, alpha.driftAlarm ? "warn" : "good")}
+          ${pill(`Selected: ${alpha.selectedCount}`, "good")}
+          ${pill(`Overlay Scale: ${fmtNum(alpha.overlayScale, 2)}`, "good")}
+        </div>
+
+        <div class="metric-grid" style="margin-top: 16px;">
+          <div class="metric-box">
+            <div class="metric-k">Date</div>
+            <div class="metric-v">${alpha.date}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Rank IC Roll</div>
+            <div class="metric-v">${fmtNum(alpha.rankIcRoll, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Mean TopK Net</div>
+            <div class="metric-v">${fmtNum(alpha.topkRoll ?? alpha.meanTopKNet, 6)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Budget Used</div>
+            <div class="metric-v">${fmtNum(alpha.budgetUsed, 4)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Eligible Breadth</div>
+            <div class="metric-v">${alpha.eligibleBreadth ?? "NA"}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Selection Hit Rate</div>
+            <div class="metric-v">${fmtPct(alpha.selectionHitRate)}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Eligible Names</div>
+            <div class="metric-v">${alpha.eligibleNames.length ? alpha.eligibleNames.join(", ") : "NA"}</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-k">Selected Names</div>
+            <div class="metric-v">${alpha.selectedNames.length ? alpha.selectedNames.join(", ") : "NA"}</div>
+          </div>
+        </div>
+      `;
     }
 
     function renderPredictionChart(predLog) {
       const rows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
-      const chartHeight = Math.max(420, Math.min(Math.round(window.innerHeight * 0.50), 560));
-    
+      const height = getChartHeight("main");
+
       if (!rows.length) {
-        renderBlankPlot("predChart", "No prediction log loaded.", chartHeight);
+        renderBlankPlot("predChart", "No prediction log loaded.", height);
         return;
       }
-    
-      const x = rows.map(r => r.decision_date);
-      const singlePoint = rows.length === 1;
-    
-      const traces = [
+
+      const onePoint = rows.length === 1;
+      let layout = plotBaseLayout({
+        height,
+        xaxis: {
+          title: { text: "Decision Date", standoff: 28 },
+          automargin: true,
+          gridcolor: "rgba(148,163,184,0.18)"
+        },
+        yaxis: {
+          title: { text: "Price", standoff: 16 },
+          automargin: true,
+          gridcolor: "rgba(148,163,184,0.18)"
+        }
+      });
+
+      layout = applySingleDatePadding(rows, "decision_date", layout);
+
+      Plotly.newPlot("predChart", [
         {
-          x,
+          x: rows.map(r => r.decision_date),
           y: rows.map(r => safeNum(r.px_voo_call_7d)),
-          mode: singlePoint ? "markers+text" : "lines+markers",
-          text: singlePoint ? ["VOO call"] : undefined,
+          mode: onePoint ? "markers+text" : "lines+markers",
+          text: onePoint ? ["VOO call"] : undefined,
           textposition: "top center",
-          textfont: { size: 16 },
           cliponaxis: false,
           name: "VOO call"
         },
         {
-          x,
+          x: rows.map(r => r.decision_date),
           y: rows.map(r => safeNum(r.px_ief_call_7d)),
-          mode: singlePoint ? "markers+text" : "lines+markers",
-          text: singlePoint ? ["IEF call"] : undefined,
+          mode: onePoint ? "markers+text" : "lines+markers",
+          text: onePoint ? ["IEF call"] : undefined,
           textposition: "top center",
-          textfont: { size: 16 },
           cliponaxis: false,
           name: "IEF call"
         },
         {
-          x,
+          x: rows.map(r => r.decision_date),
           y: rows.map(r => safeNum(r.px_voo_realized)),
-          mode: singlePoint ? "markers+text" : "lines+markers",
-          text: singlePoint ? ["VOO realized"] : undefined,
+          mode: onePoint ? "markers+text" : "lines+markers",
+          text: onePoint ? ["VOO realized"] : undefined,
           textposition: "bottom center",
-          textfont: { size: 15 },
           cliponaxis: false,
           name: "VOO realized"
         },
         {
-          x,
+          x: rows.map(r => r.decision_date),
           y: rows.map(r => safeNum(r.px_ief_realized)),
-          mode: singlePoint ? "markers+text" : "lines+markers",
-          text: singlePoint ? ["IEF realized"] : undefined,
+          mode: onePoint ? "markers+text" : "lines+markers",
+          text: onePoint ? ["IEF realized"] : undefined,
           textposition: "bottom center",
-          textfont: { size: 15 },
           cliponaxis: false,
           name: "IEF realized"
         }
-      ];
+      ], layout, { responsive: true, displayModeBar: false });
+    }
 
-      const layout = plotBaseLayout({
-              height: chartHeight,
-              margin: { l: 78, r: 28, t: 20, b: 130 },
-              legend: {
-                orientation: "h",
-                yanchor: "top",
-                y: -0.23,
-                xanchor: "left",
-                x: 0,
-                bgcolor: "rgba(0,0,0,0)",
-                font: { color: "#f8fafc", size: 14 }
-              },
-              xaxis: {
-                title: { text: "Decision Date", standoff: 30 },
-                automargin: true,
-                tickangle: 0,
-                gridcolor: "rgba(148,163,184,0.18)"
-              },
-              yaxis: {
-                title: { text: "Price", standoff: 16 },
-                automargin: true,
-                gridcolor: "rgba(148,163,184,0.18)"
-              }
-            })
-          };
-        
-          if (singlePoint) {
-            const x0 = parseDateValue(rows[0].decision_date);
-            if (x0) {
-              const lo = new Date(x0.getTime() - 4 * 86400000).toISOString();
-              const hi = new Date(x0.getTime() + 4 * 86400000).toISOString();
-              layout.xaxis.range = [lo, hi];
-            }
-          }
-        
-          Plotly.newPlot("predChart", traces, layout, {
-            responsive: true,
-            displayModeBar: false
-          });
-        }
-
-    function renderForecastErrorPanel(predLog) {
-      const realized = sortByDateAsc(predLog, "decision_date").filter(r =>
-        isFiniteNumber(r.px_voo_realized) && isFiniteNumber(r.px_ief_realized)
+    function renderErrorChart(predLog) {
+      const allRows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
+      const realized = allRows.filter(r =>
+        isFiniteNum(r.px_voo_realized) && isFiniteNum(r.px_ief_realized)
       );
+      const height = getChartHeight("main");
 
-      if (realized.length < CFG.minForecastErrorRows) {
-        renderBlankPlot("errorChart", `Need at least ${CFG.minForecastErrorRows} matured forecasts for rolling error charts.`, 380);
-        renderBlankPlot("distChart", `Need at least ${CFG.minForecastErrorRows} matured forecasts for the error distribution.`, 380);
+      if (!realized.length) {
+        renderBlankPlot("errorChart", "No matured 7-day forecasts yet.", height);
         return;
       }
 
-      realized.forEach(r => {
-        const vooErr = safeNum(r.px_voo_realized) - safeNum(r.px_voo_call_7d);
-        const iefErr = safeNum(r.px_ief_realized) - safeNum(r.px_ief_call_7d);
-        r._voo_err = vooErr;
-        r._ief_err = iefErr;
-        r._voo_abs_err = Math.abs(vooErr);
-        r._ief_abs_err = Math.abs(iefErr);
-        r._voo_ape = isFiniteNumber(r.px_voo_realized) && safeNum(r.px_voo_realized) !== 0 ? Math.abs(vooErr / safeNum(r.px_voo_realized)) : NaN;
-        r._ief_ape = isFiniteNumber(r.px_ief_realized) && safeNum(r.px_ief_realized) !== 0 ? Math.abs(iefErr / safeNum(r.px_ief_realized)) : NaN;
+      const rows = realized.map(r => {
+        const vooErr = Number(r.px_voo_realized) - Number(r.px_voo_call_7d);
+        const iefErr = Number(r.px_ief_realized) - Number(r.px_ief_call_7d);
+        const vooAbs = Math.abs(vooErr);
+        const iefAbs = Math.abs(iefErr);
+        const vooApe = Math.abs(vooErr) / Math.abs(Number(r.px_voo_realized) || NaN);
+        const iefApe = Math.abs(iefErr) / Math.abs(Number(r.px_ief_realized) || NaN);
+        return { ...r, vooErr, iefErr, vooAbs, iefAbs, vooApe, iefApe };
       });
 
-      const win = Math.min(10, realized.length);
-      function rollingMean(values) {
-        return values.map((_, i) => {
-          const start = Math.max(0, i - win + 1);
-          const seg = values.slice(start, i + 1).filter(Number.isFinite);
-          return seg.length ? seg.reduce((a, b) => a + b, 0) / seg.length : NaN;
+      const roll = CFG.rollWindow;
+      function rollingMean(arr, idx) {
+        const start = Math.max(0, idx - roll + 1);
+        const slice = arr.slice(start, idx + 1).filter(v => Number.isFinite(v));
+        if (!slice.length) return null;
+        return slice.reduce((a, b) => a + b, 0) / slice.length;
+      }
+
+      const x = rows.map(r => r.decision_date);
+      const vooAbsArr = rows.map(r => r.vooAbs);
+      const iefAbsArr = rows.map(r => r.iefAbs);
+      const vooApeArr = rows.map(r => r.vooApe * 100);
+      const iefApeArr = rows.map(r => r.iefApe * 100);
+      const vooBiasArr = rows.map(r => r.vooErr);
+      const iefBiasArr = rows.map(r => r.iefErr);
+
+      const traces = [
+        { name: "VOO MAE (roll)", y: vooAbsArr.map((_, i) => rollingMean(vooAbsArr, i)) },
+        { name: "IEF MAE (roll)", y: iefAbsArr.map((_, i) => rollingMean(iefAbsArr, i)) },
+        { name: "VOO MAPE% (roll)", y: vooApeArr.map((_, i) => rollingMean(vooApeArr, i)) },
+        { name: "IEF MAPE% (roll)", y: iefApeArr.map((_, i) => rollingMean(iefApeArr, i)) },
+        { name: "VOO Bias (roll)", y: vooBiasArr.map((_, i) => rollingMean(vooBiasArr, i)) },
+        { name: "IEF Bias (roll)", y: iefBiasArr.map((_, i) => rollingMean(iefBiasArr, i)) }
+      ];
+
+      let layout = plotBaseLayout({
+        height,
+        xaxis: {
+          title: { text: "Decision Date", standoff: 28 },
+          automargin: true,
+          gridcolor: "rgba(148,163,184,0.18)"
+        },
+        yaxis: {
+          title: { text: "Metric value", standoff: 16 },
+          automargin: true,
+          gridcolor: "rgba(148,163,184,0.18)"
+        }
+      });
+      layout = applySingleDatePadding(rows, "decision_date", layout);
+
+      Plotly.newPlot(
+        "errorChart",
+        traces.map(t => ({
+          x,
+          y: t.y,
+          mode: rows.length === 1 ? "markers+text" : "lines+markers",
+          text: rows.length === 1 ? [t.name] : undefined,
+          textposition: "top center",
+          cliponaxis: false,
+          name: t.name
+        })),
+        layout,
+        { responsive: true, displayModeBar: false }
+      );
+    }
+
+    function renderErrorDistributionChart(predLog) {
+      const allRows = sortByDateAsc(predLog, "decision_date").filter(r => r.decision_date);
+      const realized = allRows.filter(r =>
+        isFiniteNum(r.px_voo_realized) && isFiniteNum(r.px_ief_realized)
+      );
+      const height = getChartHeight("small");
+
+      if (!realized.length) {
+        renderBlankPlot("errorDistChart", "No matured 7-day forecasts yet.", height);
+        return;
+      }
+
+      const vooErr = realized.map(r => Number(r.px_voo_realized) - Number(r.px_voo_call_7d));
+      const iefErr = realized.map(r => Number(r.px_ief_realized) - Number(r.px_ief_call_7d));
+
+      Plotly.newPlot("errorDistChart", [
+        { type: "histogram", x: vooErr, name: "VOO error", opacity: 0.65 },
+        { type: "histogram", x: iefErr, name: "IEF error", opacity: 0.65 }
+      ], plotBaseLayout({
+        height,
+        barmode: "overlay",
+        xaxis: {
+          title: { text: "Realized - Call", standoff: 24 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Count", standoff: 16 },
+          automargin: true
+        }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function buildIntervals(rows, flagField) {
+      const valid = sortByDateAsc(rows, "Date").filter(r => parseDateValue(r.Date));
+      const out = [];
+      let start = null;
+      let prev = null;
+
+      valid.forEach(r => {
+        const d = parseDateValue(r.Date);
+        const flag = !!r[flagField];
+        if (flag && !start) {
+          start = d;
+          prev = d;
+        } else if (flag && start) {
+          prev = d;
+        } else if (!flag && start) {
+          out.push([start, prev]);
+          start = null;
+          prev = null;
+        }
+      });
+
+      if (start) out.push([start, prev]);
+      return out;
+    }
+
+    function addFlagVrects(fig, rows) {
+      const driftIntervals = buildIntervals(rows, "_driftFlag");
+      const zeroIntervals = buildIntervals(rows, "_zeroFlag");
+      const tgIntervals = buildIntervals(rows, "_tgFlag");
+
+      driftIntervals.forEach(([x0, x1]) => {
+        fig.addShape({
+          type: "rect",
+          xref: "x",
+          yref: "paper",
+          x0, x1,
+          y0: 0, y1: 1,
+          fillcolor: "rgba(255,165,0,0.14)",
+          line: { width: 0 },
+          layer: "below"
+        });
+      });
+
+      zeroIntervals.forEach(([x0, x1]) => {
+        fig.addShape({
+          type: "rect",
+          xref: "x",
+          yref: "paper",
+          x0, x1,
+          y0: 0, y1: 1,
+          fillcolor: "rgba(138,43,226,0.10)",
+          line: { width: 0 },
+          layer: "below"
+        });
+      });
+
+      tgIntervals.forEach(([x0, x1]) => {
+        fig.addShape({
+          type: "rect",
+          xref: "x",
+          yref: "paper",
+          x0, x1,
+          y0: 0, y1: 1,
+          fillcolor: "rgba(255,0,0,0.08)",
+          line: { width: 0 },
+          layer: "below"
+        });
+      });
+    }
+
+    function mergeDefenseFlags(prodTape, govRows) {
+      const prod = sortByDateAsc(prodTape, "Date").filter(r => r.Date);
+      const govMap = byDateMap(govRows, "Date");
+
+      return prod.map(r => {
+        const g = govMap.get(fmtDate(r.Date)) || {};
+        const govReason = String(g.GovReason || "").trim().toUpperCase();
+        const govScale = safeNum(g.gov_scale);
+        return {
+          ...r,
+          _driftFlag: (govReason && govReason !== "OK") || (govScale !== null && govScale < 1),
+          _zeroFlag: safeInt(g.ZeRO_Active_End, 0) === 1,
+          _tgFlag: safeInt(g.TooGood_Alarm_End, 0) === 1
+        };
+      });
+    }
+
+    function renderDefenseSignalChart(prodTape, govRows) {
+      const rows = mergeDefenseFlags(prodTape, govRows);
+      const height = getChartHeight("main");
+      if (!rows.length) {
+        renderBlankPlot("defenseSignalChart", "No production tape loaded.", height);
+        return;
+      }
+
+      const pFinalField = ["p_final_use", "p_final_cal", "p_final", "p_final_raw"].find(c => c in rows[0]) || "p_final_use";
+      const p0Field = ["p0_eff", "p0"].find(c => c in rows[0]) || "p0";
+
+      const figData = [
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r[pFinalField])),
+          mode: "lines",
+          name: pFinalField
+        }
+      ];
+
+      if (rows.some(r => safeNum(r[p0Field]) !== null)) {
+        figData.push({
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r[p0Field])),
+          mode: "lines",
+          line: { dash: "dot" },
+          name: p0Field
         });
       }
 
-      const x = realized.map(r => r.decision_date);
-      const vooMae = rollingMean(realized.map(r => r._voo_abs_err));
-      const iefMae = rollingMean(realized.map(r => r._ief_abs_err));
-      const vooMape = rollingMean(realized.map(r => 100 * r._voo_ape));
-      const iefMape = rollingMean(realized.map(r => 100 * r._ief_ape));
-      const vooBias = rollingMean(realized.map(r => r._voo_err));
-      const iefBias = rollingMean(realized.map(r => r._ief_err));
+      const layout = plotBaseLayout({
+        height,
+        xaxis: {
+          title: { text: "Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Probability", standoff: 16 },
+          automargin: true
+        }
+      });
 
-      Plotly.newPlot("errorChart", [
-        { x, y: vooMae, mode: "lines", name: "VOO MAE (roll)" },
-        { x, y: iefMae, mode: "lines", name: "IEF MAE (roll)" },
-        { x, y: vooMape, mode: "lines", name: "VOO MAPE% (roll)" },
-        { x, y: iefMape, mode: "lines", name: "IEF MAPE% (roll)" },
-        { x, y: vooBias, mode: "lines", name: "VOO Bias (roll)" },
-        { x, y: iefBias, mode: "lines", name: "IEF Bias (roll)" }
+      Plotly.newPlot("defenseSignalChart", figData, layout, { responsive: true, displayModeBar: false }).then(fig => {
+        addFlagVrects(fig, rows);
+      });
+    }
+
+    function renderDefenseGovChart(govRows) {
+      const rows = sortByDateAsc(govRows, "Date").filter(r => r.Date);
+      const height = getChartHeight("main");
+
+      if (!rows.length) {
+        renderBlankPlot("defenseGovChart", "No governance data loaded.", height);
+        return;
+      }
+
+      rows.forEach(r => {
+        const govReason = String(r.GovReason || "").trim().toUpperCase();
+        const govScale = safeNum(r.gov_scale);
+        r._driftFlag = (govReason && govReason !== "OK") || (govScale !== null && govScale < 1);
+        r._zeroFlag = safeInt(r.ZeRO_Active_End, 0) === 1;
+        r._tgFlag = safeInt(r.TooGood_Alarm_End, 0) === 1;
+      });
+
+      const traces = [];
+      [
+        "GovHealthScore_live",
+        "GovHealthScore_realized",
+        "gov_scale",
+        "defense_scale_final"
+      ].forEach(col => {
+        if (rows.some(r => safeNum(r[col]) !== null)) {
+          traces.push({
+            x: rows.map(r => r.Date),
+            y: rows.map(r => safeNum(r[col])),
+            mode: "lines",
+            name: col
+          });
+        }
+      });
+
+      ["TurnEff_Roll", "AnnCostDrag_Roll"].forEach(col => {
+        if (rows.some(r => safeNum(r[col]) !== null)) {
+          traces.push({
+            x: rows.map(r => r.Date),
+            y: rows.map(r => safeNum(r[col])),
+            mode: "lines",
+            name: col,
+            yaxis: "y2"
+          });
+        }
+      });
+
+      if (!traces.length) {
+        renderBlankPlot("defenseGovChart", "Expected governance metrics were not found.", height);
+        return;
+      }
+
+      const layout = plotBaseLayout({
+        height,
+        margin: { l: 82, r: 74, t: 30, b: 125 },
+        xaxis: {
+          title: { text: "Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Value", standoff: 16 },
+          automargin: true
+        },
+        yaxis2: {
+          title: { text: "Cost / Turnover", standoff: 12 },
+          overlaying: "y",
+          side: "right",
+          automargin: true
+        }
+      });
+
+      Plotly.newPlot("defenseGovChart", traces, layout, { responsive: true, displayModeBar: false }).then(fig => {
+        addFlagVrects(fig, rows);
+      });
+    }
+
+    function renderAlphaStateChart(prodTape, alphaSummaryRows) {
+      const prodMap = byDateMap(prodTape, "Date");
+      const alphaMap = byDateMap(alphaSummaryRows, "Date");
+      const dates = [...new Set([...prodMap.keys(), ...alphaMap.keys()])].sort();
+      const height = getChartHeight("main");
+
+      if (!dates.length) {
+        renderBlankPlot("alphaStateChart", "No alpha-state data loaded.", height);
+        return;
+      }
+
+      const merged = dates.map(d => {
+        const p = prodMap.get(d) || {};
+        const a = alphaMap.get(d) || {};
+        return {
+          Date: d,
+          mean_rank_ic: pickFirstValue(p, ["mean_rank_ic"]) ?? pickFirstValue(a, ["rank_ic_roll", "rank_ic"]),
+          mean_topk_rel_ret_net: pickFirstValue(p, ["mean_topk_rel_ret_net"]) ?? pickFirstValue(a, ["topk_rel_ret_net_roll", "topk_rel_ret_net"]),
+          ir_topk_rel_ret_net: pickFirstValue(p, ["ir_topk_rel_ret_net"]),
+          budget_mult: pickFirstValue(p, ["budget_mult"]),
+          realized_dates: pickFirstValue(p, ["realized_dates"]),
+          alpha_state_display: pickFirstValue(p, ["alpha_state_display", "alpha_state"]) || "NA",
+          fusion_live: safeInt(pickFirstValue(p, ["fusion_live"]), 0)
+        };
+      });
+
+      const traces = [];
+      if (merged.some(r => safeNum(r.mean_rank_ic) !== null)) {
+        traces.push({ x: dates, y: merged.map(r => safeNum(r.mean_rank_ic)), mode: "lines", name: "mean_rank_ic" });
+      }
+      if (merged.some(r => safeNum(r.mean_topk_rel_ret_net) !== null)) {
+        traces.push({ x: dates, y: merged.map(r => safeNum(r.mean_topk_rel_ret_net)), mode: "lines", name: "mean_topk_rel_ret_net" });
+      }
+      if (merged.some(r => safeNum(r.ir_topk_rel_ret_net) !== null)) {
+        traces.push({ x: dates, y: merged.map(r => safeNum(r.ir_topk_rel_ret_net)), mode: "lines", name: "ir_topk_rel_ret_net" });
+      }
+      if (merged.some(r => safeNum(r.budget_mult) !== null)) {
+        traces.push({ x: dates, y: merged.map(r => safeNum(r.budget_mult)), mode: "lines", name: "budget_mult", yaxis: "y2" });
+      }
+      if (merged.some(r => safeNum(r.realized_dates) !== null)) {
+        traces.push({ x: dates, y: merged.map(r => safeNum(r.realized_dates)), mode: "lines", name: "realized_dates", yaxis: "y2" });
+      }
+
+      if (!traces.length) {
+        renderBlankPlot("alphaStateChart", "Expected alpha-state columns were not found.", height);
+        return;
+      }
+
+      const layout = plotBaseLayout({
+        height,
+        margin: { l: 82, r: 74, t: 30, b: 125 },
+        xaxis: {
+          title: { text: "Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Signal quality / returns", standoff: 16 },
+          automargin: true
+        },
+        yaxis2: {
+          title: { text: "Budget / realized dates", standoff: 12 },
+          overlaying: "y",
+          side: "right",
+          automargin: true
+        }
+      });
+
+      Plotly.newPlot("alphaStateChart", traces, layout, { responsive: true, displayModeBar: false }).then(fig => {
+        const candidateRows = merged.map(r => ({
+          Date: r.Date,
+          _driftFlag: false,
+          _zeroFlag: false,
+          _tgFlag: false,
+          _candidateFlag: String(r.alpha_state_display).toUpperCase() === "CANDIDATE",
+          _fusionFlag: r.fusion_live === 1
+        }));
+
+        const candidateIntervals = buildIntervals(candidateRows.map(r => ({
+          Date: r.Date,
+          _flag: r._candidateFlag
+        })), "_flag");
+
+        const fusionIntervals = buildIntervals(candidateRows.map(r => ({
+          Date: r.Date,
+          _flag: r._fusionFlag
+        })), "_flag");
+
+        candidateIntervals.forEach(([x0, x1]) => {
+          fig.addShape({
+            type: "rect",
+            xref: "x",
+            yref: "paper",
+            x0, x1,
+            y0: 0, y1: 1,
+            fillcolor: "rgba(37,99,235,0.10)",
+            line: { width: 0 },
+            layer: "below"
+          });
+        });
+
+        fusionIntervals.forEach(([x0, x1]) => {
+          fig.addShape({
+            type: "rect",
+            xref: "x",
+            yref: "paper",
+            x0, x1,
+            y0: 0, y1: 1,
+            fillcolor: "rgba(6,182,212,0.10)",
+            line: { width: 0 },
+            layer: "below"
+          });
+        });
+
+        Plotly.redraw(fig);
+      });
+    }
+
+    function renderFusionPathChart(prodTape, allocRows) {
+      const height = getChartHeight("main");
+      const prodRows = sortByDateAsc(prodTape, "Date").filter(r => r.Date);
+
+      let seriesRows = [];
+
+      if (prodRows.length && (
+        prodRows.some(r => safeNum(r.w_defense_voo) !== null) ||
+        prodRows.some(r => safeNum(r.w_core_voo) !== null) ||
+        prodRows.some(r => safeNum(r.w_core_ief) !== null) ||
+        prodRows.some(r => safeNum(r.alpha_gross_weight) !== null)
+      )) {
+        seriesRows = prodRows.map(r => ({
+          Date: r.Date,
+          w_defense_voo: safeNum(r.w_defense_voo),
+          w_core_voo: safeNum(r.w_core_voo),
+          w_core_ief: safeNum(r.w_core_ief),
+          alpha_gross_weight: safeNum(r.alpha_gross_weight)
+        }));
+      } else {
+        const dates = uniqueSortedDates(allocRows, "Date");
+        seriesRows = dates.map(d => {
+          const slice = allocRows.filter(r => fmtDate(r.Date) === d);
+          return {
+            Date: d,
+            w_defense_voo: null,
+            w_core_voo: slice.filter(r => r.Ticker === "VOO_CORE").reduce((a, r) => a + (safeNum(r.weight) || 0), 0),
+            w_core_ief: slice.filter(r => r.Ticker === "IEF_CORE").reduce((a, r) => a + (safeNum(r.weight) || 0), 0),
+            alpha_gross_weight: slice.filter(r => !["VOO_CORE", "IEF_CORE"].includes(r.Ticker)).reduce((a, r) => a + (safeNum(r.weight) || 0), 0)
+          };
+        });
+      }
+
+      if (!seriesRows.length) {
+        renderBlankPlot("fusionPathChart", "No fusion funding path loaded.", height);
+        return;
+      }
+
+      Plotly.newPlot("fusionPathChart", [
+        {
+          x: seriesRows.map(r => r.Date),
+          y: seriesRows.map(r => r.w_defense_voo),
+          mode: "lines",
+          name: "w_defense_voo"
+        },
+        {
+          x: seriesRows.map(r => r.Date),
+          y: seriesRows.map(r => r.w_core_voo),
+          mode: "lines",
+          name: "w_core_voo"
+        },
+        {
+          x: seriesRows.map(r => r.Date),
+          y: seriesRows.map(r => r.w_core_ief),
+          mode: "lines",
+          name: "w_core_ief"
+        },
+        {
+          x: seriesRows.map(r => r.Date),
+          y: seriesRows.map(r => r.alpha_gross_weight),
+          mode: "lines",
+          name: "alpha_gross_weight"
+        }
       ], plotBaseLayout({
-        height: 380,
-        xaxis: { title: "Decision Date", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Metric value", gridcolor: "rgba(148,163,184,0.18)" }
+        height,
+        xaxis: {
+          title: { text: "Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Weight", standoff: 16 },
+          automargin: true
+        }
       }), { responsive: true, displayModeBar: false });
+    }
 
-      Plotly.newPlot("distChart", [
-        { x: realized.map(r => r._voo_err), type: "histogram", name: "VOO error", opacity: 0.65 },
-        { x: realized.map(r => r._ief_err), type: "histogram", name: "IEF error", opacity: 0.65 }
+    function renderFusionAllocChart(fusionMeta) {
+      const rows = fusionMeta.latestAlloc || [];
+      const height = getChartHeight("main");
+
+      if (!rows.length) {
+        renderBlankPlot("fusionAllocChart", "No fusion allocation rows loaded.", height);
+        return;
+      }
+
+      Plotly.newPlot("fusionAllocChart", [
+        {
+          type: "bar",
+          x: rows.map(r => r.Ticker),
+          y: rows.map(r => safeNum(r.weight)),
+          text: rows.map(r => fmtNum(r.weight, 4)),
+          textposition: "outside",
+          cliponaxis: false,
+          name: "weight"
+        }
       ], plotBaseLayout({
-        height: 380,
-        barmode: "overlay",
-        xaxis: { title: "Realized - Call", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Count", gridcolor: "rgba(148,163,184,0.18)" }
+        height,
+        margin: { l: 82, r: 34, t: 56, b: 95 },
+        title: {
+          text: `Latest Fusion Allocations | date=${fusionMeta.allocDate} | state=${fusionMeta.alphaStateDisplay} | fusion_live=${fusionMeta.fusionLive}`
+        },
+        xaxis: {
+          title: { text: "Ticker", standoff: 18 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Weight", standoff: 16 },
+          automargin: true
+        },
+        legend: { orientation: "h", y: -0.18 }
       }), { responsive: true, displayModeBar: false });
     }
 
-    function renderLatestPredictionSnapshot(predLog) {
-      const row = latestRow(predLog, "decision_date");
-      if (!row) {
-        document.getElementById("latestPredSnapshot").innerHTML = `<div class="muted">No prediction-log rows loaded.</div>`;
-        return;
-      }
+    function renderAlphaSummaryChart(alphaSummaryRows) {
+      const rows = sortByDateAsc(alphaSummaryRows, "Date").filter(r => r.Date);
+      const height = getChartHeight("main");
 
-      const realizedFilled = isFiniteNumber(row.px_voo_realized) && isFiniteNumber(row.px_ief_realized);
-
-      document.getElementById("latestPredSnapshot").innerHTML = `
-        <div class="snapshot-big">${escapeHtml(fmtDate(row.decision_date))}</div>
-        <div class="snapshot-sub">Latest prediction-log row</div>
-        <div class="pill-row">
-          <div class="mini-pill">${realizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>
-          <div class="mini-pill">VOO CALL: ${escapeHtml(fmtPrice(row.px_voo_call_7d))}</div>
-          <div class="mini-pill">IEF CALL: ${escapeHtml(fmtPrice(row.px_ief_call_7d))}</div>
-        </div>
-        <div class="snapshot-grid">
-          <div class="snapshot-item"><div class="snapshot-key">Target Date</div><div class="snapshot-val">${escapeHtml(fmtDate(row.target_date))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Governance Tier</div><div class="snapshot-val">${escapeHtml(String(row.governance_tier || "NA"))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">p_final_cal</div><div class="snapshot-val">${escapeHtml(fmtNum(row.p_final_cal, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">alpha_scale</div><div class="snapshot-val">${escapeHtml(fmtNum(row.alpha_scale, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">VOO Spot / Call</div><div class="snapshot-val">${escapeHtml(fmtPrice(row.px_voo_t))} / ${escapeHtml(fmtPrice(row.px_voo_call_7d))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">IEF Spot / Call</div><div class="snapshot-val">${escapeHtml(fmtPrice(row.px_ief_t))} / ${escapeHtml(fmtPrice(row.px_ief_call_7d))}</div></div>
-        </div>
-      `;
-    }
-
-    function renderDefenseSignal(prodTape, govRows) {
-      const rows = sortByDateAsc(prodTape, "Date");
       if (!rows.length) {
-        renderBlankPlot("signalChart", "No production tape loaded.", 420);
-        return;
-      }
-
-      const pCol = rows[0].hasOwnProperty("p_final_use") ? "p_final_use" :
-                   rows[0].hasOwnProperty("p_final_cal") ? "p_final_cal" :
-                   rows[0].hasOwnProperty("p_final") ? "p_final" :
-                   rows[0].hasOwnProperty("p_final_raw") ? "p_final_raw" : null;
-
-      const p0Col = rows[0].hasOwnProperty("p0_eff") ? "p0_eff" :
-                    rows[0].hasOwnProperty("p0") ? "p0" : null;
-
-      if (!pCol) {
-        renderBlankPlot("signalChart", "Tape missing probability columns.", 420);
-        return;
-      }
-
-      const x = rows.map(r => r.Date);
-      const shapes = [];
-
-      const govMap = new Map(sortByDateAsc(govRows, "Date").map(r => [r.Date, r]));
-      const driftFlags = x.map(d => {
-        const g = govMap.get(d);
-        if (!g) return false;
-        if (g.GovReason !== undefined && g.GovReason !== null && String(g.GovReason).trim() !== "") {
-          return String(g.GovReason).trim().toUpperCase() !== "OK";
-        }
-        return safeNum(g.gov_scale, 1) < 1;
-      });
-      const zeroFlags = x.map(d => safeInt(govMap.get(d)?.ZeRO_Active_End, 0) === 1);
-      const tgFlags = x.map(d => safeInt(govMap.get(d)?.TooGood_Alarm_End, 0) === 1);
-
-      shadeIntervals(shapes, x, driftFlags, "rgba(255,165,0,0.14)");
-      shadeIntervals(shapes, x, zeroFlags, "rgba(138,43,226,0.10)");
-      shadeIntervals(shapes, x, tgFlags, "rgba(255,0,0,0.08)");
-
-      const traces = [
-        { x, y: rows.map(r => safeNum(r[pCol])), mode: "lines", name: pCol }
-      ];
-      if (p0Col) {
-        traces.push({ x, y: rows.map(r => safeNum(r[p0Col])), mode: "lines", line: { dash: "dot" }, name: p0Col });
-      }
-
-      Plotly.newPlot("signalChart", traces, plotBaseLayout({
-        height: 420,
-        shapes,
-        xaxis: { title: "Date", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Probability", gridcolor: "rgba(148,163,184,0.18)" }
-      }), { responsive: true, displayModeBar: false });
-    }
-
-    function renderDefenseGovernance(govRows) {
-      const rows = sortByDateAsc(govRows, "Date");
-      if (!rows.length) {
-        renderBlankPlot("govChart", "No governance data loaded.", 420);
-        return;
-      }
-
-      const x = rows.map(r => r.Date);
-      const shapes = [];
-
-      const driftFlags = rows.map(r => {
-        if (r.GovReason !== undefined && r.GovReason !== null && String(r.GovReason).trim() !== "") {
-          return String(r.GovReason).trim().toUpperCase() !== "OK";
-        }
-        return safeNum(r.gov_scale, 1) < 1;
-      });
-      const zeroFlags = rows.map(r => safeInt(r.ZeRO_Active_End, 0) === 1);
-      const tgFlags = rows.map(r => safeInt(r.TooGood_Alarm_End, 0) === 1);
-
-      shadeIntervals(shapes, x, driftFlags, "rgba(255,165,0,0.14)");
-      shadeIntervals(shapes, x, zeroFlags, "rgba(138,43,226,0.10)");
-      shadeIntervals(shapes, x, tgFlags, "rgba(255,0,0,0.08)");
-
-      const traces = [];
-      ["GovHealthScore_live", "GovHealthScore_realized", "gov_scale", "alpha_eff_final"].forEach(col => {
-        if (rows.some(r => isFiniteNumber(r[col]))) {
-          traces.push({ x, y: rows.map(r => safeNum(r[col])), mode: "lines", name: col, yaxis: "y" });
-        }
-      });
-      ["AnnCostDrag_Roll", "TurnEff_Roll"].forEach(col => {
-        if (rows.some(r => isFiniteNumber(r[col]))) {
-          traces.push({ x, y: rows.map(r => safeNum(r[col])), mode: "lines", name: col, yaxis: "y2" });
-        }
-      });
-
-      if (!traces.length) {
-        renderBlankPlot("govChart", "Expected governance metrics were not found.", 420);
-        return;
-      }
-
-      Plotly.newPlot("govChart", traces, {
-        ...plotBaseLayout({
-          height: 420,
-          shapes,
-          xaxis: { title: "Date", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis: { title: "Scale / Health", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis2: {
-            title: "Cost / Turnover",
-            overlaying: "y",
-            side: "right",
-            showgrid: false
-          }
-        })
-      }, { responsive: true, displayModeBar: false });
-    }
-
-    function renderCurrentGovernanceSnapshot(govRows) {
-      const row = latestRow(govRows, "Date");
-      if (!row) {
-        document.getElementById("govSnapshot").innerHTML = `<div class="muted">No governance rows loaded.</div>`;
-        return;
-      }
-
-      document.getElementById("govSnapshot").innerHTML = `
-        <div class="snapshot-big">${escapeHtml(String(row.GovMode || "NA"))}</div>
-        <div class="snapshot-sub">Reason: ${escapeHtml(normalizeDefenseReasonDisplay(row.GovReason))}</div>
-        <div class="pill-row">
-          <div class="mini-pill">GovMode: ${escapeHtml(String(row.GovMode || "NA"))}</div>
-          <div class="mini-pill">ZeRO Active: ${escapeHtml(String(safeInt(row.ZeRO_Active_End, 0)))}</div>
-          <div class="mini-pill">TooGood Alarm: ${escapeHtml(String(safeInt(row.TooGood_Alarm_End, 0)))}</div>
-        </div>
-        <div class="snapshot-grid">
-          <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val">${escapeHtml(fmtDate(row.Date))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">alpha_eff_final</div><div class="snapshot-val">${escapeHtml(fmtNum(row.alpha_eff_final, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">gov_scale</div><div class="snapshot-val">${escapeHtml(fmtNum(row.gov_scale, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_live</div><div class="snapshot-val">${escapeHtml(fmtNum(row.GovHealthScore_live, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_realized</div><div class="snapshot-val">${escapeHtml(fmtNum(row.GovHealthScore_realized, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Lift_End</div><div class="snapshot-val">${escapeHtml(fmtNum(row.Lift_End, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">dES_P_End</div><div class="snapshot-val">${escapeHtml(fmtNum(row.dES_P_End, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">AnnCostDrag_Roll</div><div class="snapshot-val">${escapeHtml(fmtNum(row.AnnCostDrag_Roll, 6))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">TurnEff_Roll</div><div class="snapshot-val">${escapeHtml(fmtNum(row.TurnEff_Roll, 6))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">GovHealthScore</div><div class="snapshot-val">${escapeHtml(fmtNum(row.GovHealthScore_live, 4))}</div></div>
-        </div>
-      `;
-    }
-
-    function renderAlphaStateTimeline(prodTape) {
-      const rows = sortByDateAsc(prodTape, "Date");
-      if (!rows.length) {
-        renderBlankPlot("alphaStateChart", "No Part 3 tape loaded.", 420);
-        return;
-      }
-
-      const x = rows.map(r => r.Date);
-      const shapes = [];
-
-      const candidateFlags = rows.map(r => String(r.alpha_state_display || "").toUpperCase() === "CANDIDATE");
-      const fusionFlags = rows.map(r => safeInt(r.fusion_live, 0) === 1);
-      shadeIntervals(shapes, x, candidateFlags, "rgba(37,99,235,0.10)");
-      shadeIntervals(shapes, x, fusionFlags, "rgba(6,182,212,0.10)");
-
-      const traces = [];
-      ["mean_rank_ic", "mean_topk_rel_ret_net", "ir_topk_rel_ret_net"].forEach(col => {
-        if (rows.some(r => isFiniteNumber(r[col]))) {
-          traces.push({ x, y: rows.map(r => safeNum(r[col])), mode: "lines", name: col, yaxis: "y" });
-        }
-      });
-      ["budget_mult", "realized_dates"].forEach(col => {
-        if (rows.some(r => isFiniteNumber(r[col]))) {
-          traces.push({ x, y: rows.map(r => safeNum(r[col])), mode: "lines", name: col, yaxis: "y2" });
-        }
-      });
-
-      if (!traces.length) {
-        renderBlankPlot("alphaStateChart", "Expected alpha-state columns were not found in Part 3 tape.", 420);
-        return;
-      }
-
-      Plotly.newPlot("alphaStateChart", traces, {
-        ...plotBaseLayout({
-          height: 420,
-          shapes,
-          xaxis: { title: "Date", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis: { title: "Signal quality / returns", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis2: {
-            title: "Budget / realized dates",
-            overlaying: "y",
-            side: "right",
-            showgrid: false
-          }
-        })
-      }, { responsive: true, displayModeBar: false });
-    }
-
-    function buildAllocSeriesFromRows(allocRows) {
-      const grouped = new Map();
-      sortByDateAsc(allocRows, "Date").forEach(r => {
-        const d = r.Date;
-        if (!grouped.has(d)) grouped.set(d, { Date: d, core_voo: 0, core_ief: 0, alpha_gross: 0 });
-        const g = grouped.get(d);
-        const w = safeNum(r.weight, 0);
-        const tk = String(r.Ticker || "");
-        if (tk === "VOO_CORE") g.core_voo += w;
-        else if (tk === "IEF_CORE") g.core_ief += w;
-        else g.alpha_gross += w;
-      });
-      return [...grouped.values()].sort((a, b) => dateKey(a.Date) - dateKey(b.Date));
-    }
-
-    function renderFusionFundingPath(prodTape, allocRows) {
-      const tapeRows = sortByDateAsc(prodTape, "Date");
-      const allocSeries = buildAllocSeriesFromRows(allocRows);
-      const dateSet = new Set([...tapeRows.map(r => r.Date), ...allocSeries.map(r => r.Date)]);
-      const x = [...dateSet].sort((a, b) => dateKey(a) - dateKey(b));
-
-      if (!x.length) {
-        renderBlankPlot("fusionPathChart", "No fusion data loaded.", 380);
-        return;
-      }
-
-      const tapeMap = new Map(tapeRows.map(r => [r.Date, r]));
-      const allocMap = new Map(allocSeries.map(r => [r.Date, r]));
-
-      const traces = [];
-      const wExec = x.map(d => safeNum(tapeMap.get(d)?.w_exec));
-      if (wExec.some(Number.isFinite)) traces.push({ x, y: wExec, mode: "lines", name: "w_exec" });
-
-      const coreVoo = x.map(d => safeNum(allocMap.get(d)?.core_voo));
-      const coreIef = x.map(d => safeNum(allocMap.get(d)?.core_ief));
-      const alphaGross = x.map(d => safeNum(allocMap.get(d)?.alpha_gross));
-
-      if (coreVoo.some(Number.isFinite)) traces.push({ x, y: coreVoo, mode: "lines", name: "w_core_voo" });
-      if (coreIef.some(Number.isFinite)) traces.push({ x, y: coreIef, mode: "lines", name: "w_core_ief" });
-      if (alphaGross.some(Number.isFinite)) traces.push({ x, y: alphaGross, mode: "lines", name: "alpha_gross_weight" });
-
-      if (!traces.length) {
-        renderBlankPlot("fusionPathChart", "Expected fusion allocation path columns were not found.", 380);
-        return;
-      }
-
-      const shapes = [];
-      const fusionFlags = x.map(d => safeInt(tapeMap.get(d)?.fusion_live, 0) === 1);
-      shadeIntervals(shapes, x, fusionFlags, "rgba(6,182,212,0.10)");
-
-      Plotly.newPlot("fusionPathChart", traces, plotBaseLayout({
-        height: 380,
-        shapes,
-        xaxis: { title: "Date", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Weight", gridcolor: "rgba(148,163,184,0.18)" }
-      }), { responsive: true, displayModeBar: false });
-    }
-
-    function renderLatestFusionAllocations(fusionMeta) {
-      const rows = fusionMeta.rows;
-      if (!rows.length) {
-        document.getElementById("fusionAllocMeta").textContent = "No fusion allocation rows loaded.";
-        renderBlankPlot("fusionAllocChart", "No fusion allocation rows loaded.", 380);
-        return;
-      }
-
-      const state = rows[0].alpha_state_display || "NA";
-      const fusionLive = safeInt(rows[0].fusion_live, 0);
-      document.getElementById("fusionAllocMeta").textContent =
-        `date=${fmtDate(fusionMeta.alloc_date)} | state=${state} | fusion_live=${fusionLive}`;
-
-      Plotly.newPlot("fusionAllocChart", [{
-        x: rows.map(r => String(r.Ticker)),
-        y: rows.map(r => safeNum(r.weight)),
-        type: "bar",
-        name: "weight"
-      }], plotBaseLayout({
-        height: 380,
-        xaxis: { title: "Ticker", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Weight", gridcolor: "rgba(148,163,184,0.18)" },
-        margin: { l: 60, r: 30, t: 20, b: 60 }
-      }), { responsive: true, displayModeBar: false });
-    }
-
-    function renderCurrentAlphaSnapshot(alphaPos, alphaElig, alphaSummary) {
-      const snap = latestAlphaPositionSnapshot(alphaPos, alphaElig, alphaSummary);
-
-      document.getElementById("alphaSnapshot").innerHTML = `
-        <div class="snapshot-big">NORMAL</div>
-        <div class="snapshot-sub">Live alpha sleeve snapshot</div>
-        <div class="pill-row">
-          <div class="mini-pill">Drift Alarm: ${escapeHtml(String(snap.driftAlarm))}</div>
-          <div class="mini-pill">Selected: ${escapeHtml(String(snap.selectedCount))}</div>
-          <div class="mini-pill">Overlay Scale: ${escapeHtml(fmtNum(snap.overlayScale, 2))}</div>
-        </div>
-        <div class="snapshot-grid">
-          <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val">${escapeHtml(fmtDate(snap.date))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Rank IC Roll</div><div class="snapshot-val">${escapeHtml(fmtNum(snap.rankIcRoll, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Mean TopK Net</div><div class="snapshot-val">${escapeHtml(fmtNum(snap.meanTopKNet, 6))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Budget Used</div><div class="snapshot-val">${escapeHtml(fmtNum(snap.budgetUsed, 4))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Eligible Breadth</div><div class="snapshot-val">${escapeHtml(String(Number.isFinite(snap.eligibleBreadth) ? snap.eligibleBreadth : "NA"))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Selection Hit Rate</div><div class="snapshot-val">${escapeHtml(fmtPct(snap.selectionHitRate))}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Eligible Names</div><div class="snapshot-val">${escapeHtml(snap.eligibleNames.length ? snap.eligibleNames.join(", ") : "NA")}</div></div>
-          <div class="snapshot-item"><div class="snapshot-key">Selected Names</div><div class="snapshot-val">${escapeHtml(snap.selectedNames.length ? snap.selectedNames.join(", ") : "NA")}</div></div>
-        </div>
-      `;
-    }
-
-    function renderAlphaSummaryChart(alphaSummary) {
-      const rows = sortByDateAsc(alphaSummary, "Date");
-      if (!rows.length) {
-        renderBlankPlot("alphaSummaryChart", "No alpha summary tape loaded.", 380);
+        renderBlankPlot("alphaSummaryChart", "No alpha summary rows loaded.", height);
         return;
       }
 
       Plotly.newPlot("alphaSummaryChart", [
-        { x: rows.map(r => r.Date), y: rows.map(r => safeNum(r.topk_rel_ret_net_roll)), mode: "lines", name: "topk_rel_ret_net_roll", yaxis: "y" },
-        { x: rows.map(r => r.Date), y: rows.map(r => safeNum(r.rank_ic_roll)), mode: "lines", name: "rank_ic_roll", yaxis: "y" },
-        { x: rows.map(r => r.Date), y: rows.map(r => safeNum(r.alpha_overlay_scale)), mode: "lines", name: "alpha_overlay_scale", yaxis: "y" },
-        { x: rows.map(r => r.Date), y: rows.map(r => safeNum(r.breadth_selected)), mode: "lines", name: "breadth_selected", yaxis: "y2" },
-        { x: rows.map(r => r.Date), y: rows.map(r => safeNum(r.eligible_breadth)), mode: "lines", name: "eligible_breadth", yaxis: "y2" }
-      ], {
-        ...plotBaseLayout({
-          height: 380,
-          xaxis: { title: "Date", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis: { title: "Return / IC / Scale", gridcolor: "rgba(148,163,184,0.18)" },
-          yaxis2: {
-            title: "Breadth",
-            overlaying: "y",
-            side: "right",
-            showgrid: false
-          }
-        })
-      }, { responsive: true, displayModeBar: false });
-    }
-
-    function renderAlphaEligibilityBreadth(alphaElig) {
-      const rows = sortByDateAsc(alphaElig, "asof_date");
-      if (!rows.length) {
-        document.getElementById("alphaEligMeta").textContent = "No alpha eligibility rows loaded.";
-        renderBlankPlot("alphaEligChart", "No alpha eligibility rows loaded.", 380);
-        return;
-      }
-
-      const grouped = new Map();
-      rows.forEach(r => {
-        const d = r.asof_date;
-        if (!grouped.has(d)) grouped.set(d, 0);
-        if (safeInt(r.in_elig_set, 0) === 1) grouped.set(d, grouped.get(d) + 1);
-      });
-
-      let points = [...grouped.entries()].map(([date, count]) => ({ date, count }));
-      if (points.length > CFG.alphaEligibilityRecentDates) {
-        points = points.slice(points.length - CFG.alphaEligibilityRecentDates);
-      }
-
-      const windowStart = points[0]?.date || "NA";
-      const windowEnd = points[points.length - 1]?.date || "NA";
-      document.getElementById("alphaEligMeta").textContent = `Recent window: ${fmtDate(windowStart)} to ${fmtDate(windowEnd)}`;
-
-      Plotly.newPlot("alphaEligChart", [{
-        x: points.map(p => p.date),
-        y: points.map(p => p.count),
-        mode: "lines+markers",
-        name: "eligible_count"
-      }], plotBaseLayout({
-        height: 380,
-        xaxis: { title: "As-of Date", gridcolor: "rgba(148,163,184,0.18)" },
-        yaxis: { title: "Eligible Count", gridcolor: "rgba(148,163,184,0.18)" }
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r.topk_rel_ret_net_roll)),
+          mode: "lines",
+          name: "topk_rel_ret_net_roll"
+        },
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r.rank_ic_roll)),
+          mode: "lines",
+          name: "rank_ic_roll"
+        },
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r.alpha_overlay_scale)),
+          mode: "lines",
+          name: "alpha_overlay_scale"
+        },
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r.breadth_selected)),
+          mode: "lines",
+          name: "breadth_selected",
+          yaxis: "y2"
+        },
+        {
+          x: rows.map(r => r.Date),
+          y: rows.map(r => safeNum(r.eligible_breadth)),
+          mode: "lines",
+          name: "eligible_breadth",
+          yaxis: "y2"
+        }
+      ], plotBaseLayout({
+        height,
+        margin: { l: 82, r: 74, t: 30, b: 125 },
+        xaxis: {
+          title: { text: "Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Return / IC / Scale", standoff: 16 },
+          automargin: true
+        },
+        yaxis2: {
+          title: { text: "Breadth", standoff: 12 },
+          overlaying: "y",
+          side: "right",
+          automargin: true
+        }
       }), { responsive: true, displayModeBar: false });
     }
 
-    function renderTable(tableId, rows, preferredCols = null, limit = 20, descendingDateCol = null) {
-      const table = document.getElementById(tableId);
-      if (!table) return;
+    function renderAlphaEligibilityChart(alphaEligRows) {
+      const rows = sortByDateAsc(alphaEligRows, "asof_date").filter(r => r.asof_date);
+      const height = getChartHeight("main");
 
-      if (!rows?.length) {
-        table.innerHTML = `<thead><tr><th>No data</th></tr></thead><tbody><tr><td>—</td></tr></tbody>`;
+      if (!rows.length) {
+        renderBlankPlot("alphaEligChart", "No alpha eligibility rows loaded.", height);
         return;
       }
 
-      let out = [...rows];
-      if (descendingDateCol) {
-        out = sortByDateAsc(out, descendingDateCol).reverse();
+      const countMap = {};
+      rows.forEach(r => {
+        const d = fmtDate(r.asof_date);
+        if (!countMap[d]) countMap[d] = 0;
+        if (safeInt(r.in_elig_set, 0) === 1) countMap[d] += 1;
+      });
+
+      const dates = Object.keys(countMap).sort();
+      const counts = dates.map(d => countMap[d]);
+      const paddedRows = dates.map(d => ({ asof_date: d }));
+
+      let layout = plotBaseLayout({
+        height,
+        xaxis: {
+          title: { text: "As-of Date", standoff: 28 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: "Eligible Count", standoff: 16 },
+          automargin: true
+        }
+      });
+      layout = applySingleDatePadding(paddedRows, "asof_date", layout);
+
+      Plotly.newPlot("alphaEligChart", [
+        {
+          x: dates,
+          y: counts,
+          mode: dates.length === 1 ? "markers+text" : "lines+markers",
+          text: dates.length === 1 ? ["eligible count"] : undefined,
+          textposition: "top center",
+          cliponaxis: false,
+          name: "Eligible Count"
+        }
+      ], layout, { responsive: true, displayModeBar: false });
+    }
+
+    function renderGenericTable(tableId, rows, cols, limit = 20) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+
+      const thead = table.querySelector("thead");
+      const tbody = table.querySelector("tbody");
+
+      if (!rows || !rows.length) {
+        thead.innerHTML = "";
+        tbody.innerHTML = `<tr><td class="muted">No rows loaded.</td></tr>`;
+        return;
       }
-      out = out.slice(0, limit);
 
-      const cols = preferredCols && preferredCols.length
-        ? preferredCols.filter(c => out.some(r => Object.prototype.hasOwnProperty.call(r, c)))
-        : Object.keys(out[0]);
+      const finalCols = cols && cols.length ? cols : Object.keys(rows[0]);
+      const useRows = rows.slice(0, limit);
 
-      const head = `<thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
-      const body = `<tbody>${out.map(r => `
-        <tr>${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join("")}</tr>
-      `).join("")}</tbody>`;
-
-      table.innerHTML = head + body;
+      thead.innerHTML = `<tr>${finalCols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+      tbody.innerHTML = useRows.map(r => `
+        <tr>
+          ${finalCols.map(c => `<td>${formatCell(c, r[c])}</td>`).join("")}
+        </tr>
+      `).join("");
     }
 
     function formatCell(col, val) {
-      if (val === "" || val === null || val === undefined || (typeof val === "number" && Number.isNaN(val))) return "—";
-      if (String(col).toLowerCase().includes("date")) return escapeHtml(fmtDate(val));
+      if (val === "" || val === null || val === undefined) return "—";
       if (typeof val === "number") {
-        if (String(col).toLowerCase().includes("ape") || String(col).toLowerCase().includes("rate")) {
-          return escapeHtml(fmtNum(val, 4));
-        }
-        return escapeHtml(fmtNum(val, 4));
+        if (!Number.isFinite(val)) return "—";
+        if (String(col).toLowerCase().includes("date")) return fmtDate(val);
+        return Math.abs(val) >= 100 ? val.toFixed(2) : val.toFixed(4);
       }
-      const num = Number(val);
-      if (Number.isFinite(num) && String(val).trim() !== "") {
-        return escapeHtml(fmtNum(num, 4));
+      if (String(col).toLowerCase().includes("date")) return fmtDate(val);
+      const n = Number(val);
+      if (Number.isFinite(n) && !String(val).match(/^0\d+/)) {
+        return Math.abs(n) >= 100 ? n.toFixed(2) : n.toFixed(4);
       }
-      return escapeHtml(String(val));
+      return String(val);
     }
 
-    function setActiveTab(tabId) {
-      document.querySelectorAll(".tab-btn").forEach(btn => {
-        btn.classList.toggle("active", btn.dataset.tab === tabId);
-      });
-      document.querySelectorAll(".tab-panel").forEach(panel => {
-        panel.classList.toggle("active", panel.id === tabId);
-      });
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    let prodTapeGlobal = [];
 
     async function loadAll() {
-      const debugBox = document.getElementById("debugBox");
-      debugBox.textContent = "Loading GitHub CSVs...";
+      const debug = document.getElementById("debugBox");
+      debug.textContent = "Loading GitHub CSVs…";
 
       try {
         const [
           predLogRaw,
           prodTapeRaw,
-          govRowsRaw,
-          allocRowsRaw,
-          alphaSummaryRaw,
-          alphaPosRaw,
-          alphaEligRaw
+          govRaw,
+          allocRaw,
+          alphaSummaryRes,
+          alphaPosRes,
+          alphaEligRes
         ] = await Promise.all([
           fetchCsv(CFG.files.predLog),
           fetchCsv(CFG.files.prodTape),
           fetchCsv(CFG.files.govTape),
           fetchCsv(CFG.files.allocTape),
-          fetchCsv(CFG.files.alphaSummary),
-          fetchCsv(CFG.files.alphaPos),
-          fetchCsv(CFG.files.alphaElig)
+          fetchCsvOptional(CFG.files.alphaSummary),
+          fetchCsvOptional(CFG.files.alphaPos),
+          fetchCsvOptional(CFG.files.alphaElig)
         ]);
 
         const predLog = sortByDateAsc(predLogRaw, "decision_date");
         const prodTape = sortByDateAsc(prodTapeRaw, "Date");
-        const govRows = sortByDateAsc(govRowsRaw, "Date");
-        const allocRows = sortByDateAsc(allocRowsRaw, "Date");
-        const alphaSummary = sortByDateAsc(alphaSummaryRaw, "Date");
-        const alphaPos = sortByDateAsc(alphaPosRaw, "Date");
-        const alphaElig = sortByDateAsc(alphaEligRaw, "asof_date");
+        const govRows = sortByDateAsc(govRaw, "Date");
+        const allocRows = sortByDateAsc(allocRaw, "Date");
+        const alphaSummaryRows = sortByDateAsc(alphaSummaryRes.data || [], "Date");
+        const alphaPosRows = sortByDateAsc(alphaPosRes.data || [], "Date");
+        const alphaEligRows = sortByDateAsc(alphaEligRes.data || [], "asof_date");
+
+        prodTapeGlobal = prodTape;
 
         coerceNumeric(predLog, [
-          "h_reb","p_final_cal","p0","alpha_scale","px_voo_t","px_ief_t","px_voo_call_7d","px_ief_call_7d",
-          "px_voo_realized","px_ief_realized","voo_err","ief_err","voo_abs_err","ief_abs_err","voo_ape","ief_ape"
+          "p_final_cal", "p0", "alpha_scale", "px_voo_t", "px_ief_t",
+          "px_voo_call_7d", "px_ief_call_7d", "px_voo_realized", "px_ief_realized",
+          "voo_abs_err", "ief_abs_err", "voo_ape", "ief_ape"
         ]);
 
         coerceNumeric(prodTape, [
-          "is_live","p_final_use","p_final_cal","p0","alpha_scale","budget_mult","w_exec","w_defense_final","w_alpha_sleeve_final",
-          "w_defense_voo","w_core_voo","w_core_ief","alpha_gross_weight","voo_call_7d","ief_call_7d",
-          "mean_rank_ic","mean_topk_rel_ret_net","ir_topk_rel_ret_net","realized_dates","alpha_drift_alarm_rate",
-          "alpha_quality_ok","alpha_drift_ok","alpha_trial_gate_open","alpha_fused_gate_open","alpha_promotion_ready","fusion_live","alpha_live"
+          "is_live", "p_final_use", "p_final_cal", "p0", "p0_eff",
+          "w_exec", "w_defense_voo", "w_core_voo", "w_core_ief", "alpha_gross_weight",
+          "budget_mult", "realized_dates", "alpha_live", "fusion_live",
+          "mean_rank_ic", "mean_topk_rel_ret_net", "ir_topk_rel_ret_net",
+          "alpha_drift_alarm_rate", "alpha_quality_ok", "alpha_drift_ok",
+          "alpha_trial_gate_open", "alpha_fused_gate_open", "alpha_promotion_ready",
+          "voo_call_7d", "ief_call_7d", "px_voo_t", "px_ief_t"
         ]);
 
         coerceNumeric(govRows, [
-          "gov_scale","alpha_eff_final","GovHealthScore_live","GovHealthScore_realized","Lift_End","dES_P_End",
-          "AnnCostDrag_Roll","TurnEff_Roll","ZeRO_Active_End","TooGood_Alarm_End"
+          "gov_scale", "alpha_eff_final", "GovHealthScore_live", "GovHealthScore_realized",
+          "Lift_End", "dES_P_End", "AnnCostDrag_Roll", "TurnEff_Roll",
+          "ZeRO_Active_End", "TooGood_Alarm_End"
         ]);
 
-        coerceNumeric(allocRows, [
-          "weight","fusion_live"
+        coerceNumeric(allocRows, ["weight", "fusion_live"]);
+        coerceNumeric(alphaSummaryRows, [
+          "rank_ic", "rank_ic_roll", "topk_rel_ret_net", "topk_rel_ret_net_roll",
+          "selection_hit_rate", "breadth_selected", "eligible_breadth",
+          "gross_alpha_budget_used", "alpha_drift_alarm", "alpha_overlay_scale",
+          "mean_topk_rel_ret_net"
+        ]);
+        coerceNumeric(alphaPosRows, [
+          "selected", "weight", "alpha_score", "score_mu", "score_prob",
+          "p_alpha_final", "mu_alpha_hat_final", "eligible_name"
+        ]);
+        coerceNumeric(alphaEligRows, [
+          "eligible", "in_elig_set", "n_obs", "hit_rate", "mean_alpha_target", "mean_score"
         ]);
 
-        coerceNumeric(alphaSummary, [
-          "rank_ic","rank_ic_roll","topk_rel_ret_net","topk_rel_ret_net_roll","selection_hit_rate",
-          "breadth_selected","eligible_breadth","gross_alpha_budget_used","alpha_drift_alarm","alpha_overlay_scale"
-        ]);
-
-        coerceNumeric(alphaPos, [
-          "selected","weight","weight_raw","alpha_score","score_mu","score_prob","p_alpha_final","mu_alpha_hat_final","eligible_name","is_live"
-        ]);
-
-        coerceNumeric(alphaElig, [
-          "eligible","in_elig_set","n_obs","hit_rate","mean_alpha_target","mean_score"
-        ]);
-
-        const systemInfo = computeSystemBadges(prodTape, predLog);
-        const forecast = latestForecastSnapshot(prodTape, predLog);
-        const defenseSnap = latestDefenseSnapshot(prodTape, govRows);
-        const alphaState = latestAlphaStateSnapshot(prodTape, govRows);
-        const fusionMeta = latestFusionAllocSnapshot(allocRows);
-        const alphaSnap = latestAlphaPositionSnapshot(alphaPos, alphaElig, alphaSummary);
         const latestPred = latestRow(predLog, "decision_date");
+        const latestProd = latestRow(prodTape, "Date");
+        const latestGov = latestRow(govRows, "Date");
 
-        buildHeroCards(systemInfo, forecast, defenseSnap, alphaState, fusionMeta);
-        buildStatusPills(systemInfo, forecast, defenseSnap, alphaState, latestPred);
+        const systemMeta = computeSystemStatus(prodTape, predLog);
+        const forecast = getForecastSnapshot(predLog, prodTape);
+        const defense = getDefenseSnapshot(prodTape, govRows);
+        const alpha = getAlphaSnapshot(prodTape, alphaSummaryRows, alphaPosRows, alphaEligRows);
+        const fusionMeta = getFusionMeta(allocRows);
 
-        buildStatusSummary(
-          systemInfo,
+        buildHeroCards(systemMeta, forecast, defense, alpha, fusionMeta);
+        renderRunStatus(systemMeta, forecast, defense, alpha, latestPred);
+        renderStatusSummary(
+          systemMeta,
           forecast,
-          defenseSnap,
-          alphaState,
+          defense,
+          alpha,
           fusionMeta,
-          alphaSnap,
-          latestPred,
           {
-            prediction: predLog.length,
-            production: prodTape.length,
-            governance: govRows.length,
+            pred: predLog.length,
+            prod: prodTape.length,
+            gov: govRows.length,
             alloc: allocRows.length,
-            alphaSummary: alphaSummary.length,
-            alphaPos: alphaPos.length,
-            alphaElig: alphaElig.length
-          }
+            alphaSummary: alphaSummaryRows.length,
+            alphaPos: alphaPosRows.length,
+            alphaElig: alphaEligRows.length
+          },
+          latestPred,
+          latestProd,
+          latestGov
         );
 
+        renderLatestPredictionSnapshot(latestPred, forecast);
+        renderGovernanceSnapshot(defense);
+        renderAlphaSnapshot(alpha);
+
         renderPredictionChart(predLog);
-        renderForecastErrorPanel(predLog);
-        renderLatestPredictionSnapshot(predLog);
+        renderErrorChart(predLog);
+        renderErrorDistributionChart(predLog);
 
-        renderDefenseSignal(prodTape, govRows);
-        renderDefenseGovernance(govRows);
-        renderCurrentGovernanceSnapshot(govRows);
+        renderDefenseSignalChart(prodTape, govRows);
+        renderDefenseGovChart(govRows);
 
-        renderAlphaStateTimeline(prodTape);
-        renderFusionFundingPath(prodTape, allocRows);
-        renderLatestFusionAllocations(fusionMeta);
-        renderCurrentAlphaSnapshot(alphaPos, alphaElig, alphaSummary);
-        renderAlphaSummaryChart(alphaSummary);
-        renderAlphaEligibilityBreadth(alphaElig);
+        renderAlphaStateChart(prodTape, alphaSummaryRows);
+        renderFusionPathChart(prodTape, allocRows);
+        renderFusionAllocChart(fusionMeta);
+        renderAlphaSummaryChart(alphaSummaryRows);
+        renderAlphaEligibilityChart(alphaEligRows);
 
-        renderTable("alphaPosTable", latestSlice(alphaPos, "Date", "is_live"), [
-          "Date","Ticker","selected","weight","alpha_score","score_mu","score_prob","p_alpha_final","mu_alpha_hat_final","eligible_name","alpha_governance_tier"
-        ], 25, "Date");
+        renderGenericTable("predTable", [...predLog].reverse(), [
+          "decision_date", "target_date", "p_final_cal", "p0", "alpha_scale",
+          "governance_tier", "px_voo_t", "px_voo_call_7d", "px_voo_realized",
+          "voo_abs_err", "voo_ape", "px_ief_t", "px_ief_call_7d", "px_ief_realized",
+          "ief_abs_err", "ief_ape"
+        ], 20);
 
-        renderTable("alphaEligTable", latestSlice(alphaElig, "asof_date"), [
-          "asof_date","Ticker","eligible","in_elig_set","n_obs","hit_rate","mean_alpha_target","mean_score","eligibility_mode"
-        ], 25, "asof_date");
+        renderGenericTable("allocTable", [...fusionMeta.latestAlloc], [
+          "Date", "Ticker", "weight", "bucket", "alpha_state_display", "fusion_live"
+        ], 20);
 
-        renderTable("predLogTable", predLog, [
-          "decision_date","target_date","p_final_cal","p0","alpha_scale","governance_tier","px_voo_t","px_voo_call_7d","px_voo_realized","voo_abs_err","voo_ape",
-          "px_ief_t","px_ief_call_7d","px_ief_realized","ief_abs_err","ief_ape"
-        ], 20, "decision_date");
+        renderGenericTable("govTable", [...govRows].reverse(), [
+          "Date", "GovMode", "GovReason", "gov_scale", "alpha_eff_final",
+          "GovHealthScore_live", "GovHealthScore_realized", "Lift_End", "dES_P_End",
+          "AnnCostDrag_Roll", "TurnEff_Roll", "ZeRO_Active_End", "TooGood_Alarm_End"
+        ], 20);
 
-        renderTable("allocTable", allocRows, [
-          "Date","Ticker","weight","bucket","alpha_state_display","fusion_live"
-        ], 25, "Date");
+        renderGenericTable("alphaSummaryTable", [...alphaSummaryRows].reverse(), [
+          "Date", "rank_ic", "rank_ic_roll", "topk_rel_ret_net", "topk_rel_ret_net_roll",
+          "selection_hit_rate", "breadth_selected", "eligible_breadth",
+          "gross_alpha_budget_used", "alpha_drift_alarm", "alpha_overlay_scale"
+        ], 20);
 
-        renderTable("govTable", govRows, [
-          "Date","GovMode","GovReason","gov_scale","alpha_eff_final","GovHealthScore_live","GovHealthScore_realized","Lift_End","dES_P_End","AnnCostDrag_Roll","TurnEff_Roll","ZeRO_Active_End","TooGood_Alarm_End"
-        ], 25, "Date");
+        renderGenericTable("prodTable", [...prodTape].reverse(), [
+          "Date", "is_live", "alpha_state_display", "p_final_use", "p0", "alpha_scale",
+          "w_exec", "w_defense_voo", "w_core_voo", "w_core_ief", "alpha_gross_weight",
+          "budget_mult", "realized_dates", "alpha_blocker_text"
+        ], 20);
 
-        renderTable("alphaSummaryTable", alphaSummary, [
-          "Date","rank_ic","rank_ic_roll","topk_rel_ret_net","topk_rel_ret_net_roll","selection_hit_rate","breadth_selected","eligible_breadth","gross_alpha_budget_used","alpha_drift_alarm","alpha_overlay_scale"
-        ], 25, "Date");
+        const latestAlphaPos = latestSlice(alphaPosRows, "Date").sort((a, b) => {
+          return (safeInt(b.selected, 0) - safeInt(a.selected, 0)) || ((safeNum(b.weight) || 0) - (safeNum(a.weight) || 0));
+        });
+        const latestAlphaElig = latestSlice(alphaEligRows, "asof_date").sort((a, b) => {
+          return (safeInt(b.in_elig_set, 0) - safeInt(a.in_elig_set, 0)) || (String(a.Ticker || "").localeCompare(String(b.Ticker || "")));
+        });
 
-        renderTable("prodTapeTable", prodTape, null, 25, "Date");
+        renderGenericTable("alphaPosTable", latestAlphaPos, [
+          "Date", "Ticker", "selected", "weight", "alpha_score", "score_mu",
+          "score_prob", "p_alpha_final", "mu_alpha_hat_final", "eligible_name",
+          "alpha_governance_tier"
+        ], 20);
 
-        document.getElementById("lastUpdated").textContent = `Last updated: ${fmtDateTimeNow()}`;
-        debugBox.textContent =
-          `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, ${govRows.length} governance rows, ${allocRows.length} allocation rows, ${alphaSummary.length} alpha summary rows, ${alphaPos.length} alpha position rows, and ${alphaElig.length} alpha eligibility rows from ${repoBase}.`;
+        renderGenericTable("alphaEligTable", latestAlphaElig, [
+          "asof_date", "Ticker", "eligible", "in_elig_set", "n_obs", "hit_rate",
+          "mean_alpha_target", "mean_score", "eligibility_mode"
+        ], 20);
+
+        renderGenericTable("alphaLiveTable", latestAlphaPos, [
+          "Date", "Ticker", "selected", "weight", "alpha_score", "score_mu",
+          "score_prob", "p_alpha_final", "mu_alpha_hat_final", "eligible_name",
+          "alpha_governance_tier"
+        ], 20);
+
+        document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
+
+        const optionalNotes = [];
+        if (!alphaSummaryRes.ok) optionalNotes.push(`alpha_summary missing: ${alphaSummaryRes.error}`);
+        if (!alphaPosRes.ok) optionalNotes.push(`alpha_positions missing: ${alphaPosRes.error}`);
+        if (!alphaEligRes.ok) optionalNotes.push(`alpha_eligibility missing: ${alphaEligRes.error}`);
+
+        debug.textContent =
+          `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, ${govRows.length} governance rows, ` +
+          `${allocRows.length} allocation rows, ${alphaSummaryRows.length} alpha summary rows, ` +
+          `${alphaPosRows.length} alpha position rows, and ${alphaEligRows.length} alpha eligibility rows from ${repoBase}.` +
+          (optionalNotes.length ? `\n\nOptional-file notes:\n- ${optionalNotes.join("\n- ")}` : "");
+
+        scheduleResponsiveRelayout();
       } catch (err) {
         console.error(err);
-        document.getElementById("statusSummaryText").textContent = `ERROR\n\n${String(err)}`;
-        document.getElementById("heroGrid").innerHTML = `
-          <div class="card hero-card" style="grid-column:1/-1;">
-            <div class="hero-label">ERROR</div>
-            <div class="hero-big">Load failed</div>
-            <div class="hero-sub">${escapeHtml(String(err))}</div>
-          </div>
-        `;
-        document.getElementById("statusRow").innerHTML = `<div class="status-pill bad">Dashboard load failed</div>`;
-        document.getElementById("statusLine").textContent = "See debug box below.";
-        document.getElementById("debugBox").innerHTML = `<span class="error">Failed to load dashboard data.\n${escapeHtml(String(err))}</span>`;
-
-        [
-          "predChart","errorChart","distChart","signalChart","govChart",
-          "alphaStateChart","fusionPathChart","fusionAllocChart"
-        ].forEach(id => renderBlankPlot(id, "Load failed.", 360));
+        document.getElementById("debugBox").innerHTML =
+          `<div class="error">Failed to load dashboard data.\n${String(err)}</div>`;
       }
     }
 
     document.getElementById("refreshBtn").addEventListener("click", loadAll);
-
-    document.querySelectorAll(".tab-btn").forEach(btn => {
-      btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
-    });
-
     loadAll();
   </script>
 </body>
