@@ -31,7 +31,7 @@
     }
 
     .wrap {
-      max-width: 1400px;
+      max-width: 1500px;
       margin: 0 auto;
       padding: 20px;
     }
@@ -88,6 +88,11 @@
 
     .grid.top {
       grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: 1fr 1fr;
       margin-bottom: 16px;
     }
 
@@ -161,6 +166,29 @@
       min-height: 360px;
     }
 
+    .chart.tall {
+      min-height: 480px;
+    }
+
+    .snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 18px;
+      margin-top: 8px;
+    }
+
+    .kv {
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(36, 50, 74, 0.7);
+    }
+
+    .kv strong {
+      display: block;
+      font-size: 0.83rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
     .table-wrap {
       overflow-x: auto;
       border-radius: 12px;
@@ -200,9 +228,10 @@
     .muted { color: var(--muted); }
     .error { color: #fca5a5; white-space: pre-wrap; }
 
-    @media (max-width: 1100px) {
-      .grid.top, .grid.mid { grid-template-columns: 1fr; }
+    @media (max-width: 1200px) {
+      .grid.top, .grid.mid, .grid.two { grid-template-columns: 1fr; }
       .header { flex-direction: column; }
+      .snapshot-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -211,7 +240,7 @@
     <div class="header">
       <div class="title">
         <h1>Price-Call Monitoring Dashboard</h1>
-        <p>GitHub-connected monitor for Tuesday predictions, governance, and realized backfill.</p>
+        <p>GitHub-connected monitor for Tuesday predictions, governance, fusion allocations, alpha sleeve behavior, and realized backfill.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn">Refresh</button>
@@ -239,9 +268,9 @@
         <div class="metric-sub" id="latestIefSpot">Spot: —</div>
       </div>
       <div class="card">
-        <div class="label">Forecast Accuracy</div>
-        <div class="metric-value" id="realizedRows">0</div>
-        <div class="metric-sub" id="errorSummary">Realized rows in prediction log</div>
+        <div class="label">Alpha Live State</div>
+        <div class="metric-value" id="alphaLiveState">—</div>
+        <div class="metric-sub" id="alphaLiveMeta">Budget multiplier: —</div>
       </div>
     </div>
 
@@ -273,11 +302,53 @@
       </div>
     </div>
 
-    <div class="grid bottom">
+    <div class="grid two">
       <div class="card">
+        <div class="label">Fusion Allocations</div>
+        <div id="allocChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="label">Alpha Sleeve Summary</div>
+        <div id="alphaSummaryChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div class="card">
+        <div class="label">Alpha Eligibility Breadth</div>
+        <div id="alphaEligibilityChart" class="chart small"></div>
+      </div>
+      <div class="card">
+        <div class="label">Current Alpha Snapshot</div>
+        <div id="alphaSnapshot"></div>
+      </div>
+    </div>
+
+    <div class="grid bottom">
+      <div class="card" style="margin-bottom:16px;">
         <div class="label">Prediction Log</div>
         <div class="table-wrap">
           <table id="predTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="label">Recent Fusion Tape</div>
+        <div class="table-wrap">
+          <table id="fusionTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Recent Alpha Positions</div>
+        <div class="table-wrap">
+          <table id="alphaPosTable">
             <thead></thead>
             <tbody></tbody>
           </table>
@@ -299,7 +370,11 @@
       files: {
         predLog: 'artifacts_part3/prediction_log.csv',
         prodTape: 'artifacts_part3_v1/v1_final_production_tape.csv',
-        govTape: 'artifacts_part3_v1/v1_final_production_governance.csv'
+        govTape: 'artifacts_part3_v1/v1_final_production_governance.csv',
+        allocTape: 'artifacts_part3_v1/v1_fusion_allocations.csv',
+        alphaSummary: 'artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv',
+        alphaPositions: 'artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv',
+        alphaEligibility: 'artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv'
       }
     };
 
@@ -313,6 +388,10 @@
 
     function fmtNum(x, digits = 4) {
       return (x === null || x === undefined || Number.isNaN(+x)) ? '—' : Number(x).toFixed(digits);
+    }
+
+    function fmtPct(x, digits = 2) {
+      return (x === null || x === undefined || Number.isNaN(+x)) ? '—' : `${(100 * Number(x)).toFixed(digits)}%`;
     }
 
     function fmtDate(x) {
@@ -371,42 +450,50 @@
       return [...rows].sort((a, b) => new Date(a[col]) - new Date(b[col]));
     }
 
+    function uniqueSorted(rows, col) {
+      return [...new Set(rows.map(r => r[col]).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b));
+    }
+
     async function fetchCsv(path) {
       const res = await fetch(rawUrl(path));
       if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
       return csvToObjects(await res.text());
     }
 
-    function buildStatusPills(predLog, prodTape) {
+    function buildStatusPills(predLog, prodTape, alphaSummary) {
       const row = predLog.length ? predLog[predLog.length - 1] : null;
       const latestTape = prodTape.length ? prodTape[prodTape.length - 1] : null;
+      const alphaRow = alphaSummary.length ? alphaSummary[alphaSummary.length - 1] : null;
       const targetFilled = row && row.target_date ? true : false;
       const realizedFilled = row && Number.isFinite(row.px_voo_realized) && Number.isFinite(row.px_ief_realized);
       const govTier = row ? (row.governance_tier || '—') : '—';
       const alphaScale = row ? row.alpha_scale : NaN;
       const pFinal = row ? row.p_final_cal : NaN;
       const isLive = latestTape ? Number(latestTape.is_live || 0) === 1 : false;
+      const alphaState = latestTape ? (latestTape.alpha_state_display || latestTape.alpha_state || '—') : '—';
+      const alphaDrift = alphaRow ? Number(alphaRow.alpha_drift_alarm || 0) : 0;
 
       const pills = [
         { text: isLive ? 'LIVE ROW PRESENT' : 'NO LIVE ROW', cls: isLive ? 'good' : 'warn' },
         { text: `GOVERNANCE: ${govTier}`, cls: govTier === 'NORMAL' ? 'good' : 'warn' },
         { text: `ALPHA SCALE: ${fmtNum(alphaScale, 2)}`, cls: Number(alphaScale) >= 1 ? 'good' : 'warn' },
         { text: `P_FINAL_CAL: ${fmtNum(pFinal, 4)}`, cls: 'good' },
+        { text: `ALPHA STATE: ${alphaState}`, cls: alphaState.includes('LIVE') ? 'good' : 'warn' },
+        { text: `ALPHA DRIFT: ${alphaDrift}`, cls: alphaDrift === 0 ? 'good' : 'warn' },
         { text: targetFilled ? 'TARGET DATE SET' : 'TARGET DATE PENDING', cls: targetFilled ? 'good' : 'warn' },
         { text: realizedFilled ? 'REALIZED FILLED' : 'AWAITING REALIZED', cls: realizedFilled ? 'good' : 'warn' }
       ];
 
-      const rowHtml = pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join('');
-      document.getElementById('statusRow').innerHTML = rowHtml;
-
-      const summary = row
+      document.getElementById('statusRow').innerHTML = pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join('');
+      document.getElementById('statusSummary').textContent = row
         ? `Latest row: decision=${fmtDate(row.decision_date)} | VOO call=${fmtNum(row.px_voo_call_7d, 2)} | IEF call=${fmtNum(row.px_ief_call_7d, 2)}`
         : 'No prediction rows found.';
-      document.getElementById('statusSummary').textContent = summary;
     }
 
-    function fillTopCards(predLog) {
+    function fillTopCards(predLog, prodTape, alphaSummary) {
       const row = predLog.length ? predLog[predLog.length - 1] : null;
+      const latestTape = prodTape.length ? prodTape[prodTape.length - 1] : null;
+      const alphaRow = alphaSummary.length ? alphaSummary[alphaSummary.length - 1] : null;
       const realized = predLog.filter(r => Number.isFinite(r.voo_abs_err) && Number.isFinite(r.ief_abs_err));
 
       document.getElementById('latestDecisionDate').textContent = row ? fmtDate(row.decision_date) : '—';
@@ -415,28 +502,27 @@
       document.getElementById('latestVooSpot').textContent = row ? `Spot: ${fmtNum(row.px_voo_t, 2)}` : 'Spot: —';
       document.getElementById('latestIefCall').textContent = row ? fmtNum(row.px_ief_call_7d, 2) : '—';
       document.getElementById('latestIefSpot').textContent = row ? `Spot: ${fmtNum(row.px_ief_t, 2)}` : 'Spot: —';
-      document.getElementById('realizedRows').textContent = String(realized.length);
+      document.getElementById('alphaLiveState').textContent = latestTape ? (latestTape.alpha_state_display || latestTape.alpha_state || '—') : '—';
+      document.getElementById('alphaLiveMeta').textContent = alphaRow
+        ? `Budget multiplier: ${fmtNum(alphaRow.alpha_overlay_scale, 2)} | breadth: ${fmtNum(alphaRow.breadth_selected, 0)}`
+        : 'Budget multiplier: —';
 
       if (realized.length) {
         const vooMae = realized.reduce((a, r) => a + r.voo_abs_err, 0) / realized.length;
         const iefMae = realized.reduce((a, r) => a + r.ief_abs_err, 0) / realized.length;
         document.getElementById('errorSummary').textContent = `VOO MAE ${fmtNum(vooMae, 3)} | IEF MAE ${fmtNum(iefMae, 3)}`;
-      } else {
-        document.getElementById('errorSummary').textContent = 'Realized rows in prediction log';
       }
     }
 
     function renderPredictionChart(predLog) {
       const rows = predLog.filter(r => r.decision_date);
       const x = rows.map(r => r.decision_date);
-      const traces = [
+      Plotly.newPlot('predChart', [
         { x, y: rows.map(r => r.px_voo_call_7d), mode: 'lines+markers', name: 'VOO call' },
         { x, y: rows.map(r => r.px_ief_call_7d), mode: 'lines+markers', name: 'IEF call' },
         { x, y: rows.map(r => r.px_voo_realized), mode: 'lines+markers', name: 'VOO realized' },
         { x, y: rows.map(r => r.px_ief_realized), mode: 'lines+markers', name: 'IEF realized' }
-      ];
-
-      Plotly.newPlot('predChart', traces, {
+      ], {
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#f8fafc' },
@@ -450,7 +536,6 @@
     function renderErrorChart(predLog) {
       const realized = predLog.filter(r => Number.isFinite(r.voo_abs_err) || Number.isFinite(r.ief_abs_err));
       const x = realized.map(r => r.decision_date);
-
       Plotly.newPlot('errorChart', [
         { x, y: realized.map(r => r.voo_abs_err), mode: 'lines+markers', name: 'VOO abs err' },
         { x, y: realized.map(r => r.ief_abs_err), mode: 'lines+markers', name: 'IEF abs err' },
@@ -496,7 +581,6 @@
         el.innerHTML = '<div class="muted">No governance rows found.</div>';
         return;
       }
-
       el.innerHTML = `
         <div class="metric-value">${row.GovMode || '—'}</div>
         <div class="metric-sub" style="margin-bottom:14px;">Reason: ${row.GovReason || '—'}</div>
@@ -505,43 +589,120 @@
           <div class="status-pill ${Number(row.ZeRO_Active_End) === 1 ? 'warn' : 'good'}">ZeRO Active: ${row.ZeRO_Active_End || 0}</div>
           <div class="status-pill ${Number(row.TooGood_Alarm_End) === 1 ? 'warn' : 'good'}">TooGood Alarm: ${row.TooGood_Alarm_End || 0}</div>
         </div>
-        <div style="margin-top:16px; line-height:1.9;">
-          <div><strong>Date:</strong> ${fmtDate(row.Date)}</div>
-          <div><strong>alpha_eff_final:</strong> ${fmtNum(row.alpha_eff_final, 4)}</div>
-          <div><strong>gov_scale:</strong> ${fmtNum(row.gov_scale, 4)}</div>
-          <div><strong>GovHealthScore_live:</strong> ${fmtNum(row.GovHealthScore_live, 4)}</div>
-          <div><strong>GovHealthScore_realized:</strong> ${fmtNum(row.GovHealthScore_realized, 4)}</div>
-          <div><strong>Lift_End:</strong> ${fmtNum(row.Lift_End, 4)}</div>
-          <div><strong>dES_P_End:</strong> ${fmtNum(row.dES_P_End, 4)}</div>
-          <div><strong>AnnCostDrag_Roll:</strong> ${fmtNum(row.AnnCostDrag_Roll, 6)}</div>
-          <div><strong>TurnEff_Roll:</strong> ${fmtNum(row.TurnEff_Roll, 6)}</div>
+        <div class="snapshot-grid">
+          <div class="kv"><strong>Date</strong>${fmtDate(row.Date)}</div>
+          <div class="kv"><strong>alpha_eff_final</strong>${fmtNum(row.alpha_eff_final, 4)}</div>
+          <div class="kv"><strong>gov_scale</strong>${fmtNum(row.gov_scale, 4)}</div>
+          <div class="kv"><strong>GovHealthScore_live</strong>${fmtNum(row.GovHealthScore_live, 4)}</div>
+          <div class="kv"><strong>GovHealthScore_realized</strong>${fmtNum(row.GovHealthScore_realized, 4)}</div>
+          <div class="kv"><strong>Lift_End</strong>${fmtNum(row.Lift_End, 4)}</div>
+          <div class="kv"><strong>dES_P_End</strong>${fmtNum(row.dES_P_End, 4)}</div>
+          <div class="kv"><strong>AnnCostDrag_Roll</strong>${fmtNum(row.AnnCostDrag_Roll, 6)}</div>
+          <div class="kv"><strong>TurnEff_Roll</strong>${fmtNum(row.TurnEff_Roll, 6)}</div>
+          <div class="kv"><strong>GovHealthScore</strong>${fmtNum(row.GovHealthScore_live, 4)}</div>
         </div>
       `;
     }
 
-    function renderTable(predLog) {
-      const rows = [...predLog].reverse();
-      const cols = [
-        'decision_date', 'target_date', 'p_final_cal', 'p0', 'alpha_scale', 'governance_tier',
-        'px_voo_t', 'px_voo_call_7d', 'px_voo_realized', 'voo_abs_err', 'voo_ape',
-        'px_ief_t', 'px_ief_call_7d', 'px_ief_realized', 'ief_abs_err', 'ief_ape'
-      ];
+    function renderAllocationsChart(allocRows) {
+      const rows = allocRows.filter(r => r.Date);
+      const x = rows.map(r => r.Date);
+      Plotly.newPlot('allocChart', [
+        { x, y: rows.map(r => r.w_voo_final), stackgroup: 'one', mode: 'lines', name: 'VOO final' },
+        { x, y: rows.map(r => r.w_ief_final), stackgroup: 'one', mode: 'lines', name: 'IEF final' },
+        { x, y: rows.map(r => r.w_alpha_final), stackgroup: 'one', mode: 'lines', name: 'Alpha final' }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Portfolio Weight', gridcolor: 'rgba(255,255,255,0.08)', range: [0, 1.05] },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 20, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
 
-      const thead = document.querySelector('#predTable thead');
-      const tbody = document.querySelector('#predTable tbody');
+    function renderAlphaSummaryChart(alphaSummary) {
+      const rows = alphaSummary.filter(r => r.Date);
+      const x = rows.map(r => r.Date);
+      Plotly.newPlot('alphaSummaryChart', [
+        { x, y: rows.map(r => r.mean_topk_rel_ret_net), mode: 'lines', name: 'mean_topk_rel_ret_net' },
+        { x, y: rows.map(r => r.rank_ic_roll), mode: 'lines', name: 'rank_ic_roll' },
+        { x, y: rows.map(r => r.alpha_overlay_scale), mode: 'lines', name: 'alpha_overlay_scale' },
+        { x, y: rows.map(r => r.breadth_selected), mode: 'lines', name: 'breadth_selected', yaxis: 'y2' }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Return / IC / Scale', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis2: { title: 'Breadth', overlaying: 'y', side: 'right' },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 60, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderEligibilityChart(alphaEligibility) {
+      const dates = uniqueSorted(alphaEligibility, 'asof_date');
+      const counts = dates.map(dt => alphaEligibility.filter(r => r.asof_date === dt && Number(r.in_elig_set) === 1).length);
+      Plotly.newPlot('alphaEligibilityChart', [
+        { x: dates, y: counts, mode: 'lines+markers', name: 'Eligible names' }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#f8fafc' },
+        xaxis: { title: 'As-of Date', gridcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: 'Eligible Count', gridcolor: 'rgba(255,255,255,0.08)' },
+        legend: { orientation: 'h' },
+        margin: { l: 60, r: 20, t: 20, b: 60 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderAlphaSnapshot(alphaSummary, alphaEligibility, alphaPositions) {
+      const summaryRow = alphaSummary.length ? alphaSummary[alphaSummary.length - 1] : null;
+      const liveDate = summaryRow ? summaryRow.Date : null;
+      const eligNow = liveDate ? alphaEligibility.filter(r => r.asof_date === liveDate && Number(r.in_elig_set) === 1).map(r => r.Ticker) : [];
+      const posNow = liveDate ? alphaPositions.filter(r => r.Date === liveDate && Number(r.selected) === 1) : [];
+      const el = document.getElementById('alphaSnapshot');
+      if (!summaryRow) {
+        el.innerHTML = '<div class="muted">No alpha summary rows found.</div>';
+        return;
+      }
+      el.innerHTML = `
+        <div class="metric-value">${summaryRow.alpha_governance_tier || '—'}</div>
+        <div class="metric-sub" style="margin-bottom:14px;">Live alpha sleeve snapshot</div>
+        <div class="status-row">
+          <div class="status-pill ${Number(summaryRow.alpha_drift_alarm || 0) === 0 ? 'good' : 'warn'}">Drift Alarm: ${summaryRow.alpha_drift_alarm || 0}</div>
+          <div class="status-pill ${Number(summaryRow.breadth_selected || 0) > 0 ? 'good' : 'warn'}">Selected: ${fmtNum(summaryRow.breadth_selected, 0)}</div>
+          <div class="status-pill ${Number(summaryRow.alpha_overlay_scale || 0) >= 1 ? 'good' : 'warn'}">Overlay Scale: ${fmtNum(summaryRow.alpha_overlay_scale, 2)}</div>
+        </div>
+        <div class="snapshot-grid">
+          <div class="kv"><strong>Date</strong>${fmtDate(summaryRow.Date)}</div>
+          <div class="kv"><strong>Rank IC Roll</strong>${fmtNum(summaryRow.rank_ic_roll, 4)}</div>
+          <div class="kv"><strong>Mean TopK Net</strong>${fmtNum(summaryRow.mean_topk_rel_ret_net, 6)}</div>
+          <div class="kv"><strong>Budget Used</strong>${fmtNum(summaryRow.gross_alpha_budget_used, 4)}</div>
+          <div class="kv"><strong>Eligible Breadth</strong>${fmtNum(summaryRow.eligible_breadth, 0)}</div>
+          <div class="kv"><strong>Selection Hit Rate</strong>${fmtPct(summaryRow.selection_hit_rate, 2)}</div>
+          <div class="kv"><strong>Eligible Names</strong>${eligNow.length ? eligNow.join(', ') : '—'}</div>
+          <div class="kv"><strong>Selected Names</strong>${posNow.length ? posNow.map(r => r.Ticker).join(', ') : '—'}</div>
+        </div>
+      `;
+    }
+
+    function renderTable(tableId, rows, cols, reverse = true) {
+      const data = reverse ? [...rows].reverse() : [...rows];
+      const table = document.getElementById(tableId);
+      const thead = table.querySelector('thead');
+      const tbody = table.querySelector('tbody');
       thead.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
-      tbody.innerHTML = rows.map(r => `
-        <tr>
-          ${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join('')}
-        </tr>
-      `).join('');
+      tbody.innerHTML = data.map(r => `<tr>${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join('')}</tr>`).join('');
     }
 
     function formatCell(col, val) {
       if (val === '' || val === null || val === undefined || (typeof val === 'number' && Number.isNaN(val))) return '—';
-      if (col.includes('date')) return fmtDate(val);
+      if (col.toLowerCase().includes('date')) return fmtDate(val);
       if (typeof val === 'number') {
-        if (col.includes('ape')) return fmtNum(100 * val, 2) + '%';
+        if (col.toLowerCase().includes('ape') || col.toLowerCase().includes('rate')) return fmtNum(val, 4);
         return fmtNum(val, 4);
       }
       return String(val);
@@ -551,15 +712,23 @@
       const debug = document.getElementById('debugBox');
       debug.textContent = 'Loading GitHub CSVs...';
       try {
-        const [predLogRaw, prodTapeRaw, govRaw] = await Promise.all([
+        const [predLogRaw, prodTapeRaw, govRaw, allocRaw, alphaSummaryRaw, alphaPositionsRaw, alphaEligibilityRaw] = await Promise.all([
           fetchCsv(CFG.files.predLog),
           fetchCsv(CFG.files.prodTape),
-          fetchCsv(CFG.files.govTape)
+          fetchCsv(CFG.files.govTape),
+          fetchCsv(CFG.files.allocTape),
+          fetchCsv(CFG.files.alphaSummary),
+          fetchCsv(CFG.files.alphaPositions),
+          fetchCsv(CFG.files.alphaEligibility)
         ]);
 
         const predLog = sortByDateAsc(predLogRaw, 'decision_date');
         const prodTape = sortByDateAsc(prodTapeRaw, 'Date');
         const govRows = sortByDateAsc(govRaw, 'Date');
+        const allocRows = sortByDateAsc(allocRaw, 'Date');
+        const alphaSummary = sortByDateAsc(alphaSummaryRaw, 'Date');
+        const alphaPositions = sortByDateAsc(alphaPositionsRaw, 'Date');
+        const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, 'asof_date');
 
         coerceNumeric(predLog, [
           'h_reb','p_final_cal','p0','alpha_scale','px_voo_t','px_ief_t','px_voo_call_7d','px_ief_call_7d',
@@ -575,16 +744,56 @@
           'Lift_End','dES_P_End','AnnCostDrag_Roll','TurnEff_Roll','ZeRO_Active_End','TooGood_Alarm_End'
         ]);
 
-        fillTopCards(predLog);
-        buildStatusPills(predLog, prodTape);
+        coerceNumeric(allocRows, [
+          'w_voo_final','w_ief_final','w_alpha_final','budget_mult','defense_notional','alpha_notional'
+        ]);
+
+        coerceNumeric(alphaSummary, [
+          'rank_ic','topk_rel_ret','topk_rel_ret_net','selection_hit_rate','breadth_selected','eligible_breadth',
+          'gross_alpha_budget_used','turnover','rank_ic_roll','topk_rel_ret_net_roll','breadth_roll',
+          'alpha_drift_alarm','alpha_overlay_scale','is_live'
+        ]);
+
+        coerceNumeric(alphaPositions, [
+          'p_alpha_raw','p_alpha_cal_candidate','p_alpha_final','mu_alpha_hat_raw','mu_alpha_hat_final',
+          'alpha_sigma_train','selected','weight_raw','weight','eligible_name','eligible_set_size','score_mu',
+          'score_prob','alpha_score_raw','alpha_score','alpha_overlay_scale','alpha_drift_alarm','is_live'
+        ]);
+
+        coerceNumeric(alphaEligibility, [
+          'n_obs','hit_rate','mean_alpha_target','mean_score','eligible','in_elig_set'
+        ]);
+
+        fillTopCards(predLog, prodTape, alphaSummary);
+        buildStatusPills(predLog, prodTape, alphaSummary);
         renderPredictionChart(predLog);
         renderErrorChart(predLog);
         renderGovernanceChart(govRows);
         renderGovSnapshot(govRows);
-        renderTable(predLog);
+        renderAllocationsChart(allocRows);
+        renderAlphaSummaryChart(alphaSummary);
+        renderEligibilityChart(alphaEligibility);
+        renderAlphaSnapshot(alphaSummary, alphaEligibility, alphaPositions);
+
+        renderTable('predTable', predLog, [
+          'decision_date', 'target_date', 'p_final_cal', 'p0', 'alpha_scale', 'governance_tier',
+          'px_voo_t', 'px_voo_call_7d', 'px_voo_realized', 'voo_abs_err', 'voo_ape',
+          'px_ief_t', 'px_ief_call_7d', 'px_ief_realized', 'ief_abs_err', 'ief_ape'
+        ]);
+
+        renderTable('fusionTable', prodTape.slice(-25), [
+          'Date', 'is_live', 'alpha_state_display', 'p_final_use', 'p0', 'alpha_scale',
+          'w_exec', 'w_defense_final', 'w_alpha_sleeve_final', 'voo_call_7d', 'ief_call_7d'
+        ]);
+
+        const alphaRecent = alphaPositions.filter(r => Number(r.selected) === 1 || Number(r.is_live) === 1).slice(-50);
+        renderTable('alphaPosTable', alphaRecent, [
+          'Date', 'Ticker', 'selected', 'weight', 'alpha_score', 'score_mu', 'score_prob',
+          'p_alpha_final', 'mu_alpha_hat_final', 'eligible_name', 'alpha_governance_tier'
+        ]);
 
         document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleString()}`;
-        debug.textContent = `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, and ${govRows.length} governance rows from ${repoBase}.`;
+        debug.textContent = `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, ${govRows.length} governance rows, ${allocRows.length} allocation rows, ${alphaSummary.length} alpha summary rows, ${alphaPositions.length} alpha position rows, and ${alphaEligibility.length} alpha eligibility rows from ${repoBase}.`;
       } catch (err) {
         console.error(err);
         debug.innerHTML = `<div class="error">Failed to load dashboard data.\n${String(err)}</div>`;
