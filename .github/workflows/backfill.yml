@@ -12,9 +12,6 @@ concurrency:
   group: daily-backfill
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   backfill:
     runs-on: ubuntu-latest
@@ -22,7 +19,7 @@ jobs:
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -62,3 +59,4 @@ jobs:
           git commit -m "Automated realized backfill update"
           git pull --rebase origin main || true
           git push origin HEAD:main
+          
