@@ -2,6 +2,12 @@ name: Daily Backfill Realized
 
 on:
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Force backfill even if the script would otherwise skip"
+        required: true
+        default: false
+        type: boolean
   schedule:
     - cron: "17 22 * * *"
 
@@ -36,7 +42,11 @@ jobs:
 
       - name: Run realized backfill
         run: |
-          python backfill_realized.py
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_run }}" = "true" ]; then
+            python backfill_realized.py --force
+          else
+            python backfill_realized.py
+          fi
 
       - name: Commit updated prediction log if changed
         run: |
@@ -59,4 +69,3 @@ jobs:
           git commit -m "Automated realized backfill update"
           git pull --rebase origin main || true
           git push origin HEAD:main
-          
