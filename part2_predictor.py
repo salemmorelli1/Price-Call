@@ -1198,49 +1198,69 @@ def main(cfg: Part22Config):
             m.loc[live_date, "p_final_cal"] = p_final_live
             m.loc[live_date, "calibration_gate_on"] = gate_last
         else:
-            live_row = pd.Series({c: np.nan for c in m.columns}, name=live_date)
+            live_payload = {c: np.nan for c in m.columns}
 
             for c in m.columns:
                 if c in base.index and pd.notna(base[c]):
-                    live_row[c] = base[c]
+                    live_payload[c] = base[c]
 
-            live_row["z_raw"] = z_live
-            live_row["p0"] = p0_live
-            live_row["sign"] = s_live
-            live_row["T"] = T_live
-            live_row["b"] = b_live
-            live_row["lam"] = lam_live
-            live_row["p_final_raw"] = p_raw_live
-            live_row["p_final_cal_candidate"] = p_cal_live_cand
-            live_row["p_final_cal"] = p_final_live
-            live_row["cal_a"] = a_last
-            live_row["cal_b"] = b_last
-            live_row["cal_n"] = m["cal_n"].dropna().iloc[-1] if m["cal_n"].notna().any() else 0
+            live_payload["z_raw"] = z_live
+            live_payload["p0"] = p0_live
+            live_payload["sign"] = s_live
+            live_payload["T"] = T_live
+            live_payload["b"] = b_live
+            live_payload["lam"] = lam_live
+            live_payload["p_final_raw"] = p_raw_live
+            live_payload["p_final_cal_candidate"] = p_cal_live_cand
+            live_payload["p_final_cal"] = p_final_live
+            live_payload["cal_a"] = a_last
+            live_payload["cal_b"] = b_last
+            live_payload["cal_n"] = m["cal_n"].dropna().iloc[-1] if m["cal_n"].notna().any() else 0
 
-            live_row["calibration_gate_on"] = gate_last
-            live_row["calibration_gate_n"] = m["calibration_gate_n"].dropna().iloc[-1] if "calibration_gate_n" in m.columns and m["calibration_gate_n"].notna().any() else 0
-            live_row["cal_gate_brier_raw"] = m["cal_gate_brier_raw"].dropna().iloc[-1] if "cal_gate_brier_raw" in m.columns and m["cal_gate_brier_raw"].notna().any() else np.nan
-            live_row["cal_gate_brier_cal"] = m["cal_gate_brier_cal"].dropna().iloc[-1] if "cal_gate_brier_cal" in m.columns and m["cal_gate_brier_cal"].notna().any() else np.nan
-            live_row["cal_gate_ece_raw"] = m["cal_gate_ece_raw"].dropna().iloc[-1] if "cal_gate_ece_raw" in m.columns and m["cal_gate_ece_raw"].notna().any() else np.nan
-            live_row["cal_gate_ece_cal"] = m["cal_gate_ece_cal"].dropna().iloc[-1] if "cal_gate_ece_cal" in m.columns and m["cal_gate_ece_cal"].notna().any() else np.nan
+            live_payload["calibration_gate_on"] = gate_last
+            live_payload["calibration_gate_n"] = (
+                m["calibration_gate_n"].dropna().iloc[-1]
+                if "calibration_gate_n" in m.columns and m["calibration_gate_n"].notna().any()
+                else 0
+            )
+            live_payload["cal_gate_brier_raw"] = (
+                m["cal_gate_brier_raw"].dropna().iloc[-1]
+                if "cal_gate_brier_raw" in m.columns and m["cal_gate_brier_raw"].notna().any()
+                else np.nan
+            )
+            live_payload["cal_gate_brier_cal"] = (
+                m["cal_gate_brier_cal"].dropna().iloc[-1]
+                if "cal_gate_brier_cal" in m.columns and m["cal_gate_brier_cal"].notna().any()
+                else np.nan
+            )
+            live_payload["cal_gate_ece_raw"] = (
+                m["cal_gate_ece_raw"].dropna().iloc[-1]
+                if "cal_gate_ece_raw" in m.columns and m["cal_gate_ece_raw"].notna().any()
+                else np.nan
+            )
+            live_payload["cal_gate_ece_cal"] = (
+                m["cal_gate_ece_cal"].dropna().iloc[-1]
+                if "cal_gate_ece_cal" in m.columns and m["cal_gate_ece_cal"].notna().any()
+                else np.nan
+            )
 
             last = m.sort_index().iloc[-1]
-            live_row["drift_alarm"] = int(last.get("drift_alarm", 0))
-            live_row["drift_base_ece"] = float(last.get("drift_base_ece", np.nan))
-            live_row["drift_base_brier"] = float(last.get("drift_base_brier", np.nan))
-            live_row["alpha_scale"] = float(last.get("alpha_scale", 1.0))
-            live_row["governance_tier"] = last.get("governance_tier", "NORMAL")
+            live_payload["drift_alarm"] = int(last.get("drift_alarm", 0))
+            live_payload["drift_base_ece"] = float(last.get("drift_base_ece", np.nan))
+            live_payload["drift_base_brier"] = float(last.get("drift_base_brier", np.nan))
+            live_payload["alpha_scale"] = float(last.get("alpha_scale", 1.0))
+            live_payload["governance_tier"] = str(last.get("governance_tier", "NORMAL"))
 
             if cfg.DO_REGRESSION and (reg_voo is not None) and (reg_ief is not None) and (reg_spd is not None):
                 f_voo = float(reg_voo.predict(X_live_row)[0])
                 f_ief = float(reg_ief.predict(X_live_row)[0])
                 f_spd = float(reg_spd.predict(X_live_row)[0])
 
-                live_row["fwd_voo_hat"] = f_voo
-                live_row["fwd_ief_hat"] = f_ief
-                live_row["fwd_spread_hat"] = f_spd
-                live_row["fwd_spread_hat_from_legs"] = f_voo - f_ief
-                live_row["spread_model_gap"] = f_spd - (f_voo - f_ief)
+                live_payload["fwd_voo_hat"] = f_voo
+                live_payload["fwd_ief_hat"] = f_ief
+                live_payload["fwd_spread_hat"] = f_spd
+                live_payload["fwd_spread_hat_from_legs"] = f_voo - f_ief
+                live_payload["spread_model_gap"] = f_spd - (f_voo - f_ief)
 
                 if px_live is not None and live_date in px_live.index:
                     pxv = px_live.loc[live_date]
@@ -1253,20 +1273,23 @@ def main(cfg: Part22Config):
                 g_voo = float(m["gamma_voo"].dropna().iloc[-1]) if ("gamma_voo" in m.columns and m["gamma_voo"].notna().any()) else 0.0
                 g_ief = float(m["gamma_ief"].dropna().iloc[-1]) if ("gamma_ief" in m.columns and m["gamma_ief"].notna().any()) else 0.0
 
-                live_row["px_voo_t"] = px_voo_t
-                live_row["px_ief_t"] = px_ief_t
-                live_row["gamma_voo"] = g_voo
-                live_row["gamma_ief"] = g_ief
-                live_row["fwd_voo_hat_final"] = g_voo * f_voo
-                live_row["fwd_ief_hat_final"] = g_ief * f_ief
-                live_row["px_voo_call_7d"] = float(px_voo_t * np.exp(g_voo * f_voo)) if np.isfinite(px_voo_t) else np.nan
-                live_row["px_ief_call_7d"] = float(px_ief_t * np.exp(g_ief * f_ief)) if np.isfinite(px_ief_t) else np.nan
+                live_payload["px_voo_t"] = px_voo_t
+                live_payload["px_ief_t"] = px_ief_t
+                live_payload["gamma_voo"] = g_voo
+                live_payload["gamma_ief"] = g_ief
+                live_payload["fwd_voo_hat_final"] = g_voo * f_voo
+                live_payload["fwd_ief_hat_final"] = g_ief * f_ief
+                live_payload["px_voo_call_7d"] = float(px_voo_t * np.exp(g_voo * f_voo)) if np.isfinite(px_voo_t) else np.nan
+                live_payload["px_ief_call_7d"] = float(px_ief_t * np.exp(g_ief * f_ief)) if np.isfinite(px_ief_t) else np.nan
 
-            live_row["y_avail"] = np.nan
-            live_row["is_live"] = 1
+            live_payload["y_avail"] = np.nan
+            live_payload["is_live"] = 1
 
-            m = pd.concat([m, live_row.to_frame().T], axis=0).sort_index()
-
+            live_row = pd.Series(live_payload, name=live_date, dtype="object")
+            live_df = live_row.to_frame().T
+            m = pd.concat([m, live_df], axis=0).sort_index()
+            m = m.infer_objects(copy=False)
+            
         # Recompute strategy fields so live row gets weights / state diagnostics
         m = _strategy_from_edge(m, cfg)
         m.loc[live_date, "is_live"] = 1
@@ -1320,9 +1343,14 @@ def main(cfg: Part22Config):
     t = pd.read_csv(out_path)
     t["Date"] = pd.to_datetime(t["Date"])
 
-    assert t["Date"].max() == pd.to_datetime(X.index.max()).normalize()
-    assert int(t.sort_values("Date").iloc[-1]["is_live"]) == 1
+    x_last = pd.to_datetime(X.index.max()).normalize()
+    t_last = pd.to_datetime(t["Date"], errors="coerce").max().normalize()
+    last_is_live_val = pd.to_numeric(t.sort_values("Date").iloc[-1]["is_live"], errors="coerce")
 
+    assert t_last == x_last, f"tape max date {t_last} != X max date {x_last}"
+    assert np.isfinite(last_is_live_val) and int(last_is_live_val) == 1, \
+        f"last tape row is_live={last_is_live_val}, expected 1"
+    
     last_row = t.sort_values("Date").tail(1)
     is_live_last = last_row["is_live"].values[0] if "is_live" in last_row.columns else None
     print("Tape last date:", t["Date"].max(), "| is_live at end:", [is_live_last])
