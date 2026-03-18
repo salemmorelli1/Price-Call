@@ -1,7 +1,7 @@
 {
   "part": "part1",
   "version": "V19",
-  "asof_date": "2026-03-16",
+  "asof_date": "2026-03-17",
   "horizon": 7,
   "tail_threshold": -0.015,
   "tail_label_name": "y_rel_tail_voo_vs_ief",
@@ -42,8 +42,8 @@
     "EFA",
     "EEM"
   ],
-  "n_X_live": 3892,
-  "n_y_reg_revealed": 3895,
-  "n_reg_train": 3885,
-  "n_alpha_panel": 56433
+  "n_X_live": 3893,
+  "n_y_reg_revealed": 3896,
+  "n_reg_train": 3886,
+  "n_alpha_panel": 56448
 }
