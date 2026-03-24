@@ -1,458 +1,293 @@
-
-
-
 #!/usr/bin/env python3
-"""
-run_tuesday_prediction_current_model.py
-===============================================================================
-Colab/Jupyter-safe Tuesday runner for the CURRENT canonical model.
-
-Current canonical pipeline
---------------------------
-1) Part 2  : part2_predictor_gen4_v7h_active_ir_stability_patch.py
-2) Part 2A : part2a23_alpha_selective_repair.py
-3) Part 3  : part3_v3d_filename_cleanup.py
-
-What this fixes
----------------
-- Ignores notebook launcher args (-f kernel.json)
-- Works when __file__ is unavailable
-- Searches robustly across /content, /mnt/data, and Drive
-- Supports explicit overrides for each stage
-- Runs the full current pipeline, not just Part 2A + Part 3
-"""
-
 from __future__ import annotations
 
+"""
+backfill_realized.py
+==============================================================================
+Backfill realized prices and forecast error metrics into prediction_log.csv.
+
+This version is workflow-safe and supports both artifact families:
+- ./artifacts_part3/prediction_log.csv
+- ./artifacts_part3_v3b/prediction_log.csv
+"""
+
 import argparse
-import csv
-import json
-import os
-import subprocess
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional, Sequence
 
+import numpy as np
 import pandas as pd
-
-try:
-    from zoneinfo import ZoneInfo
-except Exception as exc:
-    raise RuntimeError("zoneinfo is required (Python 3.9+).") from exc
+import yfinance as yf
 
 
-TRUE_SET = {"1", "true", "True", "YES", "yes", "y", "Y"}
-
-
-def env_bool(name: str, default: str = "0") -> bool:
-    return os.environ.get(name, default).strip() in TRUE_SET
-
-
-def default_root_dir() -> Path:
+def resolve_root() -> Path:
     if "__file__" in globals():
         try:
             return Path(__file__).resolve().parent
         except Exception:
             pass
-
-    drive_root = Path("/content/drive/MyDrive/PriceCallProject")
-    if drive_root.exists():
-        return drive_root.resolve()
-
     return Path.cwd().resolve()
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Tuesday prediction pipeline for the current model.")
-    parser.add_argument("--force", action="store_true", help="Run even if it is not Tuesday.")
-    parser.add_argument("--timezone", default=None, help="Override local scheduler timezone.")
-    parser.add_argument("--artifact-dir", default=None, help="Override Part 3 artifact directory.")
-    parser.add_argument("--strict-final-pass", dest="strict_final_pass", action="store_true",
-                        help="Require Part 3 final_pass == True.")
-    parser.add_argument("--no-strict-final-pass", dest="strict_final_pass", action="store_false",
-                        help="Do not require Part 3 final_pass == True.")
-    parser.set_defaults(strict_final_pass=None)
-    parser.add_argument("--require-normal-mode", dest="require_normal_mode", action="store_true",
-                        help="Require Part 3 publish_mode == NORMAL.")
-    parser.add_argument("--no-require-normal-mode", dest="require_normal_mode", action="store_false",
-                        help="Do not require Part 3 publish_mode == NORMAL.")
-    parser.set_defaults(require_normal_mode=None)
-
-    parser.add_argument("--part2-script", default=None, help="Explicit path to Part 2 script.")
-    parser.add_argument("--part2a-script", default=None, help="Explicit path to Part 2A script.")
-    parser.add_argument("--part3-script", default=None, help="Explicit path to Part 3 script.")
-
-    args, unknown = parser.parse_known_args(argv)
-    if unknown:
-        print(f"[INFO] Ignoring unknown notebook/launcher args: {unknown}")
-    return args
+ROOT = resolve_root()
 
 
-@dataclass(frozen=True)
-class RunnerConfig:
-    timezone_name: str = os.environ.get("RUN_TIMEZONE", "America/Phoenix")
-    force_run: bool = env_bool("FORCE_RUN", "0")
-    strict_final_pass: bool = env_bool("STRICT_FINAL_PASS", "1")
-    require_normal_mode: bool = env_bool("REQUIRE_NORMAL_MODE", "1")
-    root_dir: Path = field(default_factory=default_root_dir)
-    artifact_dir_name: str = os.environ.get("ARTIFACT_DIR", "./artifacts_part3_v3b")
-    part2_script_override: Optional[str] = os.environ.get("PART2_SCRIPT")
-    part2a_script_override: Optional[str] = os.environ.get("PART2A_SCRIPT")
-    part3_script_override: Optional[str] = os.environ.get("PART3_SCRIPT")
-
-
-def build_config(args: argparse.Namespace) -> RunnerConfig:
-    base = RunnerConfig()
-    return RunnerConfig(
-        timezone_name=args.timezone or base.timezone_name,
-        force_run=bool(args.force) or base.force_run,
-        strict_final_pass=base.strict_final_pass if args.strict_final_pass is None else bool(args.strict_final_pass),
-        require_normal_mode=base.require_normal_mode if args.require_normal_mode is None else bool(args.require_normal_mode),
-        root_dir=base.root_dir,
-        artifact_dir_name=args.artifact_dir or base.artifact_dir_name,
-        part2_script_override=args.part2_script or base.part2_script_override,
-        part2a_script_override=args.part2a_script or base.part2a_script_override,
-        part3_script_override=args.part3_script or base.part3_script_override,
-    )
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def candidate_roots(cfg: RunnerConfig) -> List[Path]:
-    roots = [
-        cfg.root_dir,
-        Path.cwd(),
-        Path("/mnt/data"),
-        Path("/content"),
-        Path("/content/drive/MyDrive/PriceCallProject"),
-        Path("./drive/MyDrive/PriceCallProject"),
+def discover_pred_log() -> str:
+    candidates = [
+        ROOT / "artifacts_part3" / "prediction_log.csv",
+        ROOT / "artifacts_part3_v3b" / "prediction_log.csv",
+        Path("./artifacts_part3/prediction_log.csv"),
+        Path("./artifacts_part3_v3b/prediction_log.csv"),
     ]
-    seen = set()
-    out = []
-    for r in roots:
-        s = str(r)
-        if s not in seen:
-            seen.add(s)
-            out.append(r)
-    return out
+    existing = [p.resolve() for p in candidates if p.exists()]
+    if existing:
+        existing.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return str(existing[0])
+    return str((ROOT / "artifacts_part3" / "prediction_log.csv").resolve())
 
 
-def build_script_candidates(cfg: RunnerConfig, stage: str) -> List[Path]:
-    mapping = {
-        "part2": [
-            cfg.part2_script_override,
-            "part2_predictor_gen4_v7h_active_ir_stability_patch.py",
-            "part2_predictor.py",
-            "part2_predictor_gen4_v7h_production_hardened.py",
-        ],
-        "part2a": [
-            cfg.part2a_script_override,
-            "part2a23_alpha_selective_repair.py",
-            "part2a22_alpha_summary_backfill.py",
-            "part2a21_alpha_production_ready.py",
-        ],
-        "part3": [
-            cfg.part3_script_override,
-            "part3_v3d_filename_cleanup.py",
-            "part3_v3c_micro_cleanup.py",
-            "part3_v3b_provenance_cleanup.py",
-            "part3_v3a_directional_donor_tuned.py",
-            "part3_v2f_family_locked_fix1.py",
-        ],
-    }
-    names = [x for x in mapping[stage] if x]
-
-    cands: List[Path] = []
-    for root in candidate_roots(cfg):
-        for nm in names:
-            p = Path(nm)
-            if p.is_absolute():
-                cands.append(p)
-            else:
-                cands.append(root / nm)
-
-    seen = set()
-    out = []
-    for p in cands:
-        s = str(p)
-        if s not in seen:
-            seen.add(s)
-            out.append(p)
-    return out
+@dataclass
+class BackfillConfig:
+    pred_log_path: str = field(default_factory=discover_pred_log)
+    tickers: tuple[str, str] = ("VOO", "IEF")
+    price_start_buffer_days: int = 14
+    price_end_buffer_days: int = 3
 
 
-def discover_first_existing(candidates: List[Path]) -> Path:
-    for path in candidates:
-        if path.exists() and path.is_file():
-            return path.resolve()
-    raise FileNotFoundError(
-        "None of the candidate files were found:\n- " + "\n- ".join(str(x) for x in candidates)
-    )
+CFG = BackfillConfig()
 
 
-def run_python_script(script_path: Path, label: str) -> None:
-    print(f"\n[{label}] Running: {script_path}")
-    proc = subprocess.run(
-        [sys.executable, str(script_path)],
-        cwd=str(script_path.parent),
-        text=True,
-        capture_output=True,
-    )
-    if proc.stdout:
-        print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
-    if proc.stderr:
-        print(proc.stderr, file=sys.stderr, end="" if proc.stderr.endswith("\n") else "\n")
-    if proc.returncode != 0:
-        raise RuntimeError(f"{label} failed with exit code {proc.returncode}.")
-
-
-def load_json(path: Path) -> Dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def ensure_columns(df: pd.DataFrame, needed: List[str], label: str) -> None:
-    missing = [c for c in needed if c not in df.columns]
-    if missing:
-        raise ValueError(f"{label} is missing required columns: {missing}")
-
-
-def safe_float(x: Any, default: float = float("nan")) -> float:
+def safe_num(x: object) -> float:
     try:
-        if pd.isna(x):
-            return default
-        return float(x)
+        x = float(x)
+        return x if np.isfinite(x) else np.nan
     except Exception:
-        return default
+        return np.nan
 
 
-def latest_row(df: pd.DataFrame, date_col: str = "Date") -> pd.Series:
-    if date_col not in df.columns:
-        raise ValueError(f"Expected '{date_col}' in dataframe.")
-    x = df.copy()
-    x[date_col] = pd.to_datetime(x[date_col], errors="coerce")
-    x = x.loc[x[date_col].notna()].sort_values(date_col)
-    if x.empty:
-        raise ValueError("No valid dated rows found.")
-    return x.iloc[-1]
-
-
-def filter_latest_date(df: pd.DataFrame, date_col: str = "Date") -> pd.DataFrame:
-    x = df.copy()
-    x[date_col] = pd.to_datetime(x[date_col], errors="coerce")
-    x = x.loc[x[date_col].notna()]
-    if x.empty:
-        return x.iloc[0:0].copy()
-    last_dt = x[date_col].max()
-    return x.loc[x[date_col] == last_dt].copy()
-
-
-def export_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-
-
-def export_csv(path: Path, row: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        writer.writeheader()
-        writer.writerow(row)
-
-
-def check_tuesday_guard(cfg: RunnerConfig) -> Dict[str, Any]:
-    tz = ZoneInfo(cfg.timezone_name)
-    local_now = datetime.now(tz)
-    is_tuesday = local_now.weekday() == 1
-
-    info = {
-        "runner_utc": utc_now_iso(),
-        "runner_local": local_now.replace(microsecond=0).isoformat(),
-        "timezone": cfg.timezone_name,
-        "weekday_name": local_now.strftime("%A"),
-        "is_tuesday": bool(is_tuesday),
-        "force_run": bool(cfg.force_run),
+def ensure_columns(log: pd.DataFrame) -> pd.DataFrame:
+    required = {
+        "decision_date": pd.NaT,
+        "h_reb": 7,
+        "p_final_cal": np.nan,
+        "p0": np.nan,
+        "alpha_scale": np.nan,
+        "governance_tier": np.nan,
+        "px_voo_t": np.nan,
+        "px_ief_t": np.nan,
+        "px_voo_call_7d": np.nan,
+        "px_ief_call_7d": np.nan,
+        "voo_call_src": np.nan,
+        "ief_call_src": np.nan,
+        "target_date": pd.NaT,
+        "px_voo_realized": np.nan,
+        "px_ief_realized": np.nan,
+        "voo_err": np.nan,
+        "ief_err": np.nan,
+        "voo_abs_err": np.nan,
+        "ief_abs_err": np.nan,
+        "voo_ape": np.nan,
+        "ief_ape": np.nan,
+        "spread_err": np.nan,
+        "hit_direction": np.nan,
     }
-
-    if (not is_tuesday) and (not cfg.force_run):
-        print("[SKIP] Not Tuesday in local scheduler timezone.")
-        print(json.dumps(info, indent=2))
-        return {**info, "skipped": True}
-
-    print("[RUN] Tuesday guard passed.")
-    print(json.dumps(info, indent=2))
-    return {**info, "skipped": False}
+    for col, default in required.items():
+        if col not in log.columns:
+            log[col] = default
+    return log
 
 
-def resolve_artifact_dir(cfg: RunnerConfig) -> Path:
-    cands = [
-        cfg.root_dir / cfg.artifact_dir_name,
-        Path(cfg.artifact_dir_name),
-        Path("/content") / cfg.artifact_dir_name.strip("./"),
-        Path("/content/drive/MyDrive/PriceCallProject") / cfg.artifact_dir_name.strip("./"),
-    ]
-    for p in cands:
-        if p.exists():
-            return p.resolve()
-    return (cfg.root_dir / cfg.artifact_dir_name).resolve()
+def load_log(cfg: BackfillConfig) -> pd.DataFrame:
+    path = Path(cfg.pred_log_path)
+    if not path.exists():
+        raise FileNotFoundError(f"prediction_log.csv not found: {path}")
+
+    log = pd.read_csv(path)
+    log = ensure_columns(log)
+    log["decision_date"] = pd.to_datetime(log["decision_date"], errors="coerce").dt.normalize()
+    log["target_date"] = pd.to_datetime(log["target_date"], errors="coerce").dt.normalize()
+    return log
 
 
-def main(argv: Optional[List[str]] = None) -> None:
-    args = parse_args(argv)
-    cfg = build_config(args)
+def extract_close_panel(raw: pd.DataFrame, tickers: tuple[str, str]) -> pd.DataFrame:
+    if isinstance(raw.columns, pd.MultiIndex):
+        if "Close" not in raw.columns.get_level_values(0):
+            raise RuntimeError("Downloaded price data is missing 'Close' level.")
+        px = raw["Close"].copy()
+    else:
+        px = raw.copy()
 
-    guard = check_tuesday_guard(cfg)
-    if guard["skipped"]:
+    px.index = pd.to_datetime(px.index).tz_localize(None).normalize()
+
+    for t in tickers:
+        if t not in px.columns:
+            raise RuntimeError(f"Downloaded price data is missing ticker: {t}")
+
+    px = px[list(tickers)].dropna().sort_index()
+    if px.empty:
+        raise RuntimeError("Downloaded close panel is empty after cleaning.")
+    return px
+
+
+def download_close_panel(cfg: BackfillConfig, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    raw = yf.download(
+        list(cfg.tickers),
+        start=start_date.strftime("%Y-%m-%d"),
+        end=(end_date + pd.Timedelta(days=cfg.price_end_buffer_days)).strftime("%Y-%m-%d"),
+        progress=False,
+        auto_adjust=True,
+    )
+    return extract_close_panel(raw, cfg.tickers)
+
+
+def idx_of_date(index: pd.Index, dt: pd.Timestamp) -> Optional[int]:
+    matches = np.where(index == pd.Timestamp(dt).normalize())[0]
+    if len(matches) == 0:
+        return None
+    return int(matches[-1])
+
+
+def backfill_log(log: pd.DataFrame, prices: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    updated_rows = 0
+    px_index = prices.index
+
+    for i in range(len(log)):
+        d0 = log.loc[i, "decision_date"]
+        if pd.isna(d0):
+            continue
+
+        already_done = pd.notna(log.loc[i, "px_voo_realized"]) and pd.notna(log.loc[i, "px_ief_realized"])
+        if already_done:
+            continue
+
+        h = int(safe_num(log.loc[i, "h_reb"])) if pd.notna(log.loc[i, "h_reb"]) else 7
+        idx0 = idx_of_date(px_index, pd.Timestamp(d0))
+        if idx0 is None:
+            continue
+
+        idxT = idx0 + h
+        if idxT >= len(px_index):
+            continue
+
+        target_date = px_index[idxT]
+        px_voo_real = float(prices.loc[target_date, "VOO"])
+        px_ief_real = float(prices.loc[target_date, "IEF"])
+
+        log.loc[i, "target_date"] = target_date
+        log.loc[i, "px_voo_realized"] = px_voo_real
+        log.loc[i, "px_ief_realized"] = px_ief_real
+
+        pv = safe_num(log.loc[i, "px_voo_call_7d"])
+        pi = safe_num(log.loc[i, "px_ief_call_7d"])
+
+        if np.isfinite(pv):
+            err = px_voo_real - pv
+            log.loc[i, "voo_err"] = err
+            log.loc[i, "voo_abs_err"] = abs(err)
+            log.loc[i, "voo_ape"] = abs(err) / (abs(px_voo_real) + 1e-12)
+
+        if np.isfinite(pi):
+            err = px_ief_real - pi
+            log.loc[i, "ief_err"] = err
+            log.loc[i, "ief_abs_err"] = abs(err)
+            log.loc[i, "ief_ape"] = abs(err) / (abs(px_ief_real) + 1e-12)
+
+        if np.isfinite(pv) and np.isfinite(pi):
+            pred_spread = pv - pi
+            real_spread = px_voo_real - px_ief_real
+            log.loc[i, "spread_err"] = real_spread - pred_spread
+            log.loc[i, "hit_direction"] = int(np.sign(real_spread) == np.sign(pred_spread))
+
+        updated_rows += 1
+
+    return log, updated_rows
+
+
+def print_summary(log: pd.DataFrame) -> None:
+    realized = log.dropna(subset=["px_voo_realized", "px_ief_realized"]).copy()
+    if realized.empty:
+        print("No matured rows available yet.")
         return
 
-    part2_script = discover_first_existing(build_script_candidates(cfg, "part2"))
-    part2a_script = discover_first_existing(build_script_candidates(cfg, "part2a"))
-    part3_script = discover_first_existing(build_script_candidates(cfg, "part3"))
+    voo_mae = float(realized["voo_abs_err"].mean()) if "voo_abs_err" in realized else np.nan
+    ief_mae = float(realized["ief_abs_err"].mean()) if "ief_abs_err" in realized else np.nan
+    voo_mape = float(100.0 * realized["voo_ape"].mean()) if "voo_ape" in realized else np.nan
+    ief_mape = float(100.0 * realized["ief_ape"].mean()) if "ief_ape" in realized else np.nan
 
-    print(f"[DISCOVER] Part 2 script:  {part2_script}")
-    print(f"[DISCOVER] Part 2A script: {part2a_script}")
-    print(f"[DISCOVER] Part 3 script:  {part3_script}")
+    hit_rate = np.nan
+    if "hit_direction" in realized.columns and realized["hit_direction"].notna().any():
+        hit_rate = float(realized["hit_direction"].dropna().mean())
 
-    run_python_script(part2_script, "PART2")
-    run_python_script(part2a_script, "PART2A23")
-    run_python_script(part3_script, "PART3V3D")
+    print(f"Realized rows: {len(realized)}")
+    print(f"VOO MAE:  {voo_mae:.4f} | VOO MAPE:  {voo_mape:.2f}%")
+    print(f"IEF MAE:  {ief_mae:.4f} | IEF MAPE:  {ief_mape:.2f}%")
+    if np.isfinite(hit_rate):
+        print(f"Direction hit rate: {100.0 * hit_rate:.2f}%")
 
-    artifact_dir = resolve_artifact_dir(cfg)
 
-    summary_path = artifact_dir / "part3_summary.json"
-    tape_path = artifact_dir / "v3c_final_production_tape.csv"
-    gov_path = artifact_dir / "v3c_final_production_governance.csv"
-    alloc_path = artifact_dir / "v3c_fusion_allocations.csv"
-    pred_log_path = artifact_dir / "prediction_log.csv"
+def print_path_status(cfg: BackfillConfig) -> None:
+    print(f"ROOT:     {ROOT}")
+    print(f"PRED_LOG: {cfg.pred_log_path} | exists={Path(cfg.pred_log_path).exists()}")
 
-    needed_paths = [summary_path, tape_path, gov_path, alloc_path]
-    missing_paths = [str(p) for p in needed_paths if not p.exists()]
-    if missing_paths:
-        raise FileNotFoundError("Expected production outputs missing:\n- " + "\n- ".join(missing_paths))
 
-    summary = load_json(summary_path)
-    if cfg.require_normal_mode and str(summary.get("publish_mode")) != "NORMAL":
-        raise RuntimeError(f"Part 3 publish_mode is not NORMAL: {summary.get('publish_mode')}")
-    if cfg.strict_final_pass and not bool(summary.get("final_pass", False)):
-        raise RuntimeError("Part 3 final_pass is False.")
+def main(force: bool = False, show_paths: bool = True, pred_log_path: Optional[str] = None) -> int:
+    cfg = BackfillConfig(pred_log_path=pred_log_path or CFG.pred_log_path)
 
-    tape = pd.read_csv(tape_path)
-    gov = pd.read_csv(gov_path)
-    alloc = pd.read_csv(alloc_path)
+    if show_paths:
+        print_path_status(cfg)
 
-    ensure_columns(
-        tape,
-        [
-            "Date", "px_voo_call_7d", "px_ief_call_7d", "w_fused_voo", "w_fused_ief",
-            "alpha_state", "alpha_state_display", "fusion_live", "part3_version"
-        ],
-        "production tape",
-    )
-    ensure_columns(gov, ["Date", "alpha_state", "alpha_blocker_text", "budget_mult"], "governance")
-    ensure_columns(alloc, ["Date", "Ticker", "weight", "alpha_state"], "fusion allocations")
+    if not Path(cfg.pred_log_path).exists():
+        print("prediction_log.csv not found yet. Nothing to backfill.")
+        return 0
 
-    latest_tape = latest_row(tape)
-    latest_gov = latest_row(gov)
-    latest_alloc = filter_latest_date(alloc)
+    log = load_log(cfg)
+    if log.empty:
+        print("prediction_log.csv is empty. Nothing to backfill.")
+        return 0
 
-    alloc_map: Dict[str, float] = {}
-    for _, row in latest_alloc.iterrows():
-        tk = str(row.get("Ticker", "")).strip()
-        wt = safe_float(row.get("weight"), 0.0)
-        if tk:
-            alloc_map[tk] = round(wt, 8)
+    valid_decisions = log["decision_date"].dropna()
+    if valid_decisions.empty:
+        print("prediction_log.csv has no valid decision_date values.")
+        return 0
 
-    prediction_payload: Dict[str, Any] = {
-        "part": "tuesday_prediction",
-        "built_at_utc": utc_now_iso(),
-        "runner": {
-            "timezone": cfg.timezone_name,
-            "force_run": bool(cfg.force_run),
-            "part2_script": str(part2_script),
-            "part2a_script": str(part2a_script),
-            "part3_script": str(part3_script),
-        },
-        "part3": {
-            "version": summary.get("version"),
-            "publish_mode": summary.get("publish_mode"),
-            "final_pass": bool(summary.get("final_pass", False)),
-            "latest_alpha_state": summary.get("latest_alpha_state"),
-            "latest_alpha_state_display": summary.get("latest_alpha_state_display"),
-            "fusion_live_rate": safe_float(summary.get("fusion_live_rate")),
-            "defense_ir_net": safe_float(summary.get("defense_ir_net")),
-            "fused_ir_net": safe_float(summary.get("fused_ir_net")),
-            "active_ir_vs_60_40": safe_float(summary.get("active_ir_vs_60_40")),
-            "alpha_incremental_ir_net": safe_float(summary.get("alpha_incremental_ir_net")),
-            "alpha_family_token_locked": summary.get("alpha_family_token_locked"),
-            "summary_path": str(summary_path),
-            "tape_path": str(tape_path),
-            "governance_path": str(gov_path),
-            "allocations_path": str(alloc_path),
-            "prediction_log_path": str(pred_log_path),
-        },
-        "latest_decision": {
-            "date": str(pd.to_datetime(latest_tape["Date"]).date()),
-            "px_voo_call_7d": round(safe_float(latest_tape["px_voo_call_7d"]), 6),
-            "px_ief_call_7d": round(safe_float(latest_tape["px_ief_call_7d"]), 6),
-            "w_fused_voo": round(safe_float(latest_tape["w_fused_voo"]), 6),
-            "w_fused_ief": round(safe_float(latest_tape["w_fused_ief"]), 6),
-            "alpha_state": str(latest_tape["alpha_state"]),
-            "alpha_state_display": str(latest_tape["alpha_state_display"]),
-            "fusion_live": int(safe_float(latest_tape["fusion_live"], 0.0)),
-            "part3_version": str(latest_tape["part3_version"]),
-        },
-        "latest_governance": {
-            "date": str(pd.to_datetime(latest_gov["Date"]).date()),
-            "alpha_state": str(latest_gov["alpha_state"]),
-            "alpha_blocker_text": str(latest_gov.get("alpha_blocker_text", "")),
-            "budget_mult": round(safe_float(latest_gov.get("budget_mult")), 6),
-        },
-        "latest_allocations": alloc_map,
-    }
+    start_date = valid_decisions.min() - pd.Timedelta(days=cfg.price_start_buffer_days)
+    end_date = pd.Timestamp.today().normalize()
+    prices = download_close_panel(cfg, start_date, end_date)
 
-    csv_row: Dict[str, Any] = {
-        "built_at_utc": prediction_payload["built_at_utc"],
-        "decision_date": prediction_payload["latest_decision"]["date"],
-        "px_voo_call_7d": prediction_payload["latest_decision"]["px_voo_call_7d"],
-        "px_ief_call_7d": prediction_payload["latest_decision"]["px_ief_call_7d"],
-        "w_fused_voo": prediction_payload["latest_decision"]["w_fused_voo"],
-        "w_fused_ief": prediction_payload["latest_decision"]["w_fused_ief"],
-        "alpha_state": prediction_payload["latest_decision"]["alpha_state"],
-        "alpha_state_display": prediction_payload["latest_decision"]["alpha_state_display"],
-        "fusion_live": prediction_payload["latest_decision"]["fusion_live"],
-        "publish_mode": prediction_payload["part3"]["publish_mode"],
-        "final_pass": prediction_payload["part3"]["final_pass"],
-        "fusion_live_rate": prediction_payload["part3"]["fusion_live_rate"],
-        "defense_ir_net": prediction_payload["part3"]["defense_ir_net"],
-        "fused_ir_net": prediction_payload["part3"]["fused_ir_net"],
-        "active_ir_vs_60_40": prediction_payload["part3"]["active_ir_vs_60_40"],
-        "alpha_incremental_ir_net": prediction_payload["part3"]["alpha_incremental_ir_net"],
-        "alpha_family_token_locked": prediction_payload["part3"]["alpha_family_token_locked"],
-        "budget_mult": prediction_payload["latest_governance"]["budget_mult"],
-        "alpha_blocker_text": prediction_payload["latest_governance"]["alpha_blocker_text"],
-    }
+    before = int(log["px_voo_realized"].notna().sum()) if "px_voo_realized" in log.columns else 0
+    log, updated_rows = backfill_log(log, prices)
+    after = int(log["px_voo_realized"].notna().sum()) if "px_voo_realized" in log.columns else before
 
-    json_out = artifact_dir / "tuesday_prediction.json"
-    csv_out = artifact_dir / "tuesday_prediction.csv"
-    latest_json_alias = artifact_dir / "latest_prediction.json"
+    log = log.sort_values("decision_date").reset_index(drop=True)
+    Path(cfg.pred_log_path).parent.mkdir(parents=True, exist_ok=True)
+    log.to_csv(cfg.pred_log_path, index=False)
 
-    export_json(json_out, prediction_payload)
-    export_json(latest_json_alias, prediction_payload)
-    export_csv(csv_out, csv_row)
+    print(f"Backfill updated {updated_rows} row(s).")
+    print(f"Realized rows before: {before} | after: {after}")
+    print(f"Saved: {cfg.pred_log_path}")
+    print_summary(log)
+    return 0
 
-    print("\n[OK] Tuesday prediction artifacts written:")
-    print(f"- {json_out}")
-    print(f"- {latest_json_alias}")
-    print(f"- {csv_out}")
-    print("\n[SUMMARY]")
-    print(json.dumps(prediction_payload, indent=2))
+
+def cli(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Backfill realized prices and error metrics in prediction_log.csv.")
+    parser.add_argument("--force", action="store_true", help="Reserved for future use.")
+    parser.add_argument("--no-paths", action="store_true", help="Suppress path-status printing.")
+    parser.add_argument("--pred-log-path", type=str, default=None, help="Override prediction_log.csv path.")
+
+    if "ipykernel" in sys.modules or "google.colab" in sys.modules:
+        args, _ = parser.parse_known_args(args=[] if argv is None else list(argv))
+    else:
+        args = parser.parse_args(argv)
+
+    return main(force=args.force, show_paths=not args.no_paths, pred_log_path=args.pred_log_path)
 
 
 if __name__ == "__main__":
-    main()
+    rc = cli()
+    if "ipykernel" not in sys.modules and "google.colab" not in sys.modules:
+        raise SystemExit(rc)
+
 
