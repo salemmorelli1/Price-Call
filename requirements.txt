@@ -1,10 +1,8 @@
-numpy
-pandas
-pyarrow
+numpy>=1.26
+pandas>=2.2
+pyarrow>=16.0
 yfinance==0.2.66
-xgboost
-scipy
-scikit-learn
-plotly
-gradio
-tzdata
+scipy>=1.11
+scikit-learn>=1.4
+xgboost>=2.0
+tzdata>=2024.1
