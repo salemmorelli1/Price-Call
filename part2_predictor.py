@@ -1328,7 +1328,7 @@ def main(cfg: Part22Config):
     print("Tape last date:", t["Date"].max(), "| is_live at end:", [is_live_last])
 
 def cli() -> int:
-    cfg = V77Config()
+    cfg = Part22Config()
     summary = main(cfg)
     print("\nPart 2 summary:", summary)
     return 0
