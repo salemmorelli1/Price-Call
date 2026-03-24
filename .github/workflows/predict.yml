@@ -1,16 +1,17 @@
-name: Tuesday Prediction
+name: Tuesday Prediction Pipeline
 
 on:
   workflow_dispatch:
     inputs:
       force_run:
-        description: "Force pipeline even outside Tuesday 09:35–09:39 ET"
-        required: true
+        description: "Run even if the script would normally skip"
+        required: false
         default: false
         type: boolean
   schedule:
-    - cron: "35 13 * * 2"
-    - cron: "35 14 * * 2"
+    # Tuesday 14:39 UTC.
+    # GitHub Actions cron is UTC only, so this does not auto-adjust for DST.
+    - cron: "39 14 * * 2"
 
 permissions:
   contents: write
@@ -41,56 +42,53 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Prepare artifact folders
+        run: |
+          mkdir -p artifacts_part1
+          mkdir -p artifacts_part2a_alpha
+          mkdir -p artifacts_part3
+          mkdir -p artifacts_part3_v1
+
       - name: Run Tuesday prediction pipeline
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_run }}" = "true" ]; then
+          if [ "${{ github.event.inputs.force_run || 'false' }}" = "true" ]; then
             python run_tuesday_prediction.py --force
           else
             python run_tuesday_prediction.py
           fi
 
-      - name: Run realized backfill
+      - name: Show generated files
+        if: always()
         run: |
-          python backfill_realized.py --force
-
-      - name: Commit updated artifacts if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          echo "=== files created by pipeline ==="
+          echo "=== artifacts_part1 ==="
           find artifacts_part1 -maxdepth 2 -type f | sort || true
-          find artifacts_part2_v77 -maxdepth 3 -type f | sort || true
-          find artifacts_part2a_alpha -maxdepth 3 -type f | sort || true
+          echo "=== artifacts_part2a_alpha ==="
+          find artifacts_part2a_alpha -maxdepth 2 -type f | sort || true
+          echo "=== artifacts_part3 ==="
           find artifacts_part3 -maxdepth 2 -type f | sort || true
+          echo "=== artifacts_part3_v1 ==="
           find artifacts_part3_v1 -maxdepth 2 -type f | sort || true
-          ls -l artifacts_part3_v1/v1_final_production_tape.csv artifacts_part3_v1/v1_final_production_governance.csv artifacts_part3_v1/v1_fusion_allocations.csv || true
 
-          echo "=== git status before add ==="
-          git status --short
-
-          git add artifacts_part1 artifacts_part2_v77 artifacts_part2a_alpha artifacts_part3 artifacts_part3_v1
-
-          echo "=== git status after add ==="
-          git status --short
-
-          if git diff --cached --quiet; then
-            echo "No changes staged."
-            exit 0
-          fi
-
-          git commit -m "Automated Tuesday prediction update"
-          git pull --rebase origin main || true
-          git push origin HEAD:main
-
-      - name: Upload generated outputs
-        uses: actions/upload-artifact@v6
+      - name: Upload workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: tuesday-prediction-outputs
+          name: tuesday-pipeline-artifacts
           path: |
             artifacts_part1/**
-            artifacts_part2_v77/**
             artifacts_part2a_alpha/**
             artifacts_part3/**
             artifacts_part3_v1/**
           if-no-files-found: warn
+
+      - name: Commit updated tracked files if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No tracked file changes to commit."
+          else
+            git commit -m "Update Tuesday prediction artifacts"
+            git push
+          fi
