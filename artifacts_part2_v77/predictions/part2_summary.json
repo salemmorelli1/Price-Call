@@ -8,39 +8,39 @@
   "rows_audit": 223,
   "classification_raw": {
     "auc": 0.5489815062985796,
-    "pr": 0.2516649332818476,
-    "lift": 1.3688117102890733,
-    "brier": 0.15749142170247332,
-    "ece": 0.09006854117612878
+    "pr": 0.2516438095833675,
+    "lift": 1.3686968179778283,
+    "brier": 0.15752798494775125,
+    "ece": 0.08995895319768779
   },
   "classification_cal_candidate": {
-    "auc": 0.5099839185205038,
-    "pr": 0.21809771156170493,
-    "lift": 1.1862387726404926,
-    "brier": 0.23872035099393107,
-    "ece": 0.1848626785264843
+    "auc": 0.5194317877244706,
+    "pr": 0.22492897393053626,
+    "lift": 1.2233941752807216,
+    "brier": 0.24769619964226766,
+    "ece": 0.1939080314285351
   },
   "classification_final_used": {
     "auc": 0.5449611364245512,
-    "pr": 0.2497016953044592,
-    "lift": 1.358133611046205,
-    "brier": 0.1576809836222445,
-    "ece": 0.08901072397790327
+    "pr": 0.24968063608059143,
+    "lift": 1.3580190694139485,
+    "brier": 0.15771807989385656,
+    "ece": 0.08890097401515468
   },
   "calibration_gate_on_rate": 0.03571428571428571,
   "high_risk_state_rate": 0.19642857142857142,
-  "drift_base_ece": 0.1625604863501385,
-  "drift_base_brier": 0.1963961693123915,
+  "drift_base_ece": 0.16255895462077877,
+  "drift_base_brier": 0.19639545147555923,
   "drift_alarm_rate": 0.4666666666666667,
-  "active_ret_net_mean": 0.00023477310935372342,
-  "active_ret_net_ir": 0.06641678081261024,
-  "strategy_ret_net_ir": 0.5820614528474111,
-  "negative_benchmark_active_mean": 0.008114724054847396,
+  "active_ret_net_mean": 0.00023282125197813993,
+  "active_ret_net_ir": 0.06585552820515696,
+  "strategy_ret_net_ir": 0.5812891953785047,
+  "negative_benchmark_active_mean": 0.008109443482921306,
   "negative_benchmark_hit_rate": 0.6666666666666666,
-  "downside_capture_ratio": -0.612560484238187,
-  "avg_abs_active_weight_raw": 0.4872204149374478,
-  "avg_abs_active_weight_capped": 0.0915437036168883,
-  "shuffle_auc_median": 0.49544358080943446,
+  "downside_capture_ratio": -0.6115148274690775,
+  "avg_abs_active_weight_raw": 0.48669107856475213,
+  "avg_abs_active_weight_capped": 0.09144229321203912,
+  "shuffle_auc_median": 0.49557759313856875,
   "final_pass": true,
   "out_path": "./artifacts_part2_v77/predictions/v77_final_consensus_tape.csv"
 }
