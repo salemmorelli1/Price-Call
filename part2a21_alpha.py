@@ -1,4 +1,5 @@
 
+
 #!/usr/bin/env python3
 from __future__ import annotations
 
@@ -395,7 +396,7 @@ def compute_ticker_eligibility(history_df: pd.DataFrame, cfg: Part2A21Config):
     Expected columns:
       Date, Ticker, alpha_score, alpha_target_realized, selected
     """
-    base = pd.DataFrame({"Ticker": list(cfg.ALPHA_UNIVERSE)})
+    base = pd.DataFrame({"Ticker": list(cfg.alpha_universe)})
 
     if len(history_df) == 0:
         out = base.copy()
@@ -461,7 +462,7 @@ def eligible_ticker_set(elig_df: pd.DataFrame, cfg: Part2A21Config):
     Return the eligible ticker set, with fallback if too few names survive.
     """
     if len(elig_df) == 0:
-        return set(cfg.ALPHA_UNIVERSE)
+        return set(cfg.alpha_universe)
 
     keep = set(elig_df.loc[elig_df["eligible"] == 1, "Ticker"].astype(str))
 
@@ -480,7 +481,7 @@ def eligible_ticker_set(elig_df: pd.DataFrame, cfg: Part2A21Config):
         keep = set(ranked.head(cfg.ELIGIBILITY_MIN_NAMES)["Ticker"].astype(str))
 
     if len(keep) == 0:
-        keep = set(cfg.ALPHA_UNIVERSE)
+        keep = set(cfg.alpha_universe)
 
     return keep
 
@@ -1319,9 +1320,9 @@ def apply_dynamic_hardened_selection(
         g = g.copy()
 
         if hist_df is None or len(hist_df) == 0:
-            elig_set = set(cfg.ALPHA_UNIVERSE)
+            elig_set = set(cfg.alpha_universe)
             elig_df = pd.DataFrame({
-                "Ticker": list(cfg.ALPHA_UNIVERSE),
+                "Ticker": list(cfg.alpha_universe),
                 "n_obs": 0,
                 "hit_rate": np.nan,
                 "mean_alpha_target": np.nan,
@@ -1374,9 +1375,9 @@ def main(cfg: Part2A21Config):
     panel["Date"] = pd.to_datetime(panel["Date"]).dt.normalize()
     panel = panel.sort_values(["Date", "Ticker"]).reset_index(drop=True)
 
-    panel = panel[panel["Ticker"].isin(cfg.ALPHA_UNIVERSE)].copy()
+    panel = panel[panel["Ticker"].isin(cfg.alpha_universe)].copy()
     if len(panel) == 0:
-        raise RuntimeError("Filtered alpha panel is empty after applying ALPHA_UNIVERSE.")
+        raise RuntimeError("Filtered alpha panel is empty after applying alpha_universe.")
 
     required_cols = ["Date", "Ticker", "px_t", "fwd_ret", "benchmark_fwd_ret", "rel_ret"] + list(cfg.RISK_COLS)
     missing = [c for c in required_cols if c not in panel.columns]
@@ -1703,3 +1704,4 @@ print({k: getattr(CFG, k, None) for k in needed})
 
 if __name__ == "__main__":
     main(CFG)
+
