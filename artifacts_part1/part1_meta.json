@@ -1,7 +1,7 @@
 {
   "part": "part1",
   "version": "V19",
-  "asof_date": "2026-03-23",
+  "asof_date": "2026-03-24",
   "horizon": 7,
   "tail_threshold": -0.015,
   "tail_label_name": "y_rel_tail_voo_vs_ief",
@@ -24,26 +24,7 @@
     "px_voo_fwd",
     "px_ief_fwd"
   ],
-  "benchmark_ticker": "VOO",
-  "alpha_universe": [
-    "XLK",
-    "XLF",
-    "XLI",
-    "XLY",
-    "XLP",
-    "XLV",
-    "XLE",
-    "XLU",
-    "XLB",
-    "XLC",
-    "SMH",
-    "IWM",
-    "MDY",
-    "EFA",
-    "EEM"
-  ],
-  "n_X_live": 3897,
-  "n_y_reg_revealed": 3900,
-  "n_reg_train": 3890,
-  "n_alpha_panel": 56508
+  "n_X_live": 3898,
+  "n_y_reg_revealed": 3901,
+  "n_reg_train": 3891
 }
