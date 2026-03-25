@@ -1,5 +1,8 @@
 name: Daily Backfill Realized
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
 on:
   workflow_dispatch:
   schedule:
@@ -53,7 +56,7 @@ jobs:
 
       - name: Upload workflow artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: daily-backfill-artifacts
           path: |
