@@ -131,15 +131,69 @@ def extract_close_panel(raw: pd.DataFrame, tickers: tuple[str, str]) -> pd.DataF
     return px
 
 
-def download_close_panel(cfg: BackfillConfig, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+def _download_one_ticker(ticker: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
     raw = yf.download(
-        list(cfg.tickers),
+        ticker,
         start=start_date.strftime("%Y-%m-%d"),
-        end=(end_date + pd.Timedelta(days=cfg.price_end_buffer_days)).strftime("%Y-%m-%d"),
+        end=end_date.strftime("%Y-%m-%d"),
         progress=False,
         auto_adjust=True,
+        threads=False,
     )
-    return extract_close_panel(raw, cfg.tickers)
+    if isinstance(raw, pd.DataFrame):
+        if "Close" in raw.columns:
+            s = pd.to_numeric(raw["Close"], errors="coerce")
+        elif raw.shape[1] == 1:
+            s = pd.to_numeric(raw.iloc[:, 0], errors="coerce")
+        else:
+            raise RuntimeError(f"Single-ticker download for {ticker} is missing a usable close column.")
+    else:
+        s = pd.to_numeric(raw, errors="coerce")
+    s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+    s.name = ticker
+    return s.dropna().sort_index()
+
+
+def download_close_panel(cfg: BackfillConfig, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    end_plus = end_date + pd.Timedelta(days=cfg.price_end_buffer_days)
+
+    try:
+        raw = yf.download(
+            list(cfg.tickers),
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_plus.strftime("%Y-%m-%d"),
+            progress=False,
+            auto_adjust=True,
+            threads=False,
+        )
+        px = extract_close_panel(raw, cfg.tickers)
+        if not px.empty:
+            return px
+    except Exception as e:
+        print(f"[WARN] Batch price download failed: {e}")
+
+    # Fallback: download tickers one-by-one to avoid yfinance cache/SQLite lock issues.
+    series_list = []
+    for ticker in cfg.tickers:
+        try:
+            s = _download_one_ticker(ticker, start_date, end_plus)
+            if s.empty:
+                print(f"[WARN] Single-ticker download returned empty for {ticker}.")
+            series_list.append(s)
+        except Exception as e:
+            print(f"[WARN] Single-ticker download failed for {ticker}: {e}")
+
+    if not series_list:
+        raise RuntimeError("All yfinance downloads failed.")
+
+    px = pd.concat(series_list, axis=1)
+    for ticker in cfg.tickers:
+        if ticker not in px.columns:
+            px[ticker] = np.nan
+    px = px[list(cfg.tickers)].dropna().sort_index()
+    if px.empty:
+        raise RuntimeError("Downloaded close panel is empty after cleaning.")
+    return px
 
 
 def idx_of_date(index: pd.Index, dt: pd.Timestamp) -> Optional[int]:
@@ -289,5 +343,6 @@ if __name__ == "__main__":
     rc = cli()
     if "ipykernel" not in sys.modules and "google.colab" not in sys.modules:
         raise SystemExit(rc)
+
 
 
