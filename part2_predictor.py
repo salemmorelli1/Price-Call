@@ -1198,7 +1198,12 @@ def main(cfg: Part22Config):
             m.loc[live_date, "p_final_cal"] = p_final_live
             m.loc[live_date, "calibration_gate_on"] = gate_last
         else:
-            live_row = pd.Series({c: np.nan for c in m.columns}, name=live_date)
+            # Build the live row as a mixed-type object row so text fields like
+            # governance_tier="NORMAL" do not fail against an all-float Series.
+            last = m.sort_index().iloc[-1].copy()
+            live_row = last.copy()
+            live_row.name = live_date
+            live_row[:] = np.nan
 
             for c in m.columns:
                 if c in base.index and pd.notna(base[c]):
@@ -1224,7 +1229,6 @@ def main(cfg: Part22Config):
             live_row["cal_gate_ece_raw"] = m["cal_gate_ece_raw"].dropna().iloc[-1] if "cal_gate_ece_raw" in m.columns and m["cal_gate_ece_raw"].notna().any() else np.nan
             live_row["cal_gate_ece_cal"] = m["cal_gate_ece_cal"].dropna().iloc[-1] if "cal_gate_ece_cal" in m.columns and m["cal_gate_ece_cal"].notna().any() else np.nan
 
-            last = m.sort_index().iloc[-1]
             live_row["drift_alarm"] = int(last.get("drift_alarm", 0))
             live_row["drift_base_ece"] = float(last.get("drift_base_ece", np.nan))
             live_row["drift_base_brier"] = float(last.get("drift_base_brier", np.nan))
@@ -1265,7 +1269,17 @@ def main(cfg: Part22Config):
             live_row["y_avail"] = np.nan
             live_row["is_live"] = 1
 
-            m = pd.concat([m, live_row.to_frame().T], axis=0).sort_index()
+            live_row_df = live_row.to_frame().T
+
+            # Cast back to the existing DataFrame dtypes where possible so the append
+            # does not accidentally upcast the whole tape.
+            for c in m.columns:
+                try:
+                    live_row_df[c] = live_row_df[c].astype(m[c].dtype)
+                except Exception:
+                    pass
+
+            m = pd.concat([m, live_row_df], axis=0).sort_index()
 
         # Recompute strategy fields so live row gets weights / state diagnostics
         m = _strategy_from_edge(m, cfg)
@@ -1342,3 +1356,4 @@ def cli() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(cli())
+
