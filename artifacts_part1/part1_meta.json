@@ -1,7 +1,7 @@
 {
   "part": "part1",
   "version": "V19",
-  "asof_date": "2026-03-24",
+  "asof_date": "2026-03-27",
   "horizon": 7,
   "tail_threshold": -0.015,
   "tail_label_name": "y_rel_tail_voo_vs_ief",
@@ -24,7 +24,7 @@
     "px_voo_fwd",
     "px_ief_fwd"
   ],
-  "n_X_live": 3898,
-  "n_y_reg_revealed": 3901,
-  "n_reg_train": 3891
+  "n_X_live": 3901,
+  "n_y_reg_revealed": 3904,
+  "n_reg_train": 3894
 }
