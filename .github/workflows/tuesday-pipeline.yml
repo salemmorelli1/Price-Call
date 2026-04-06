@@ -96,5 +96,3 @@ jobs:
             git push
           fi
 
-      - name: Claude Code Base Action
-        uses: anthropics/claude-code-base-action@beta
