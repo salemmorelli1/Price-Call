@@ -75,6 +75,4 @@ jobs:
             git commit -m "Update realized backfill"
             git push
           fi
-      - name: Claude Code Base Action
-        uses: anthropics/claude-code-base-action@beta
-        
+
