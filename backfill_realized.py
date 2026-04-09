@@ -210,14 +210,24 @@ def main() -> int:
     if target_col is not None:
         df[target_col] = _to_datetime_series(df[target_col])
 
-    for col in [
+
+    numeric_cols = [
         "px_voo_realized", "px_ief_realized", "voo_realized", "ief_realized",
         "voo_err", "ief_err", "voo_abs_err", "ief_abs_err", "voo_ape", "ief_ape",
-        "spread_err", "hit_direction", "realized_target_date",
-    ]:
+        "spread_err", "hit_direction",
+    ]
+    
+    for col in numeric_cols:
         if col not in df.columns:
             df[col] = np.nan
-
+        else:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        
+    if "realized_target_date" not in df.columns:
+        df["realized_target_date"] = pd.Series(pd.NA, index=df.index, dtype="string")
+    else:
+        df["realized_target_date"] = df["realized_target_date"].astype("string")
+    
     start = df[decision_col].dropna().min() - pd.Timedelta(days=20)
     end = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
     close = _download_close_history(start, end)
