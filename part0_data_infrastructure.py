@@ -72,7 +72,8 @@ class Part0Config:
         "UMCSENT": "consumer_sentiment",
         "USREC": "recession_flag",
     })
-    fred_api_key: str = "09c48c7ed1bb6d3e9811c8e85bd5c48d"
+    fred_api_key_env_var: str = "FRED_API_KEY"
+ 
 
     allow_ffill_limit: int = 2
     max_pre_clean_warn_frac: float = 0.10
@@ -262,12 +263,14 @@ def download_market_data(cfg: Part0Config):
 
 
 def download_fred_data(cfg: Part0Config) -> pd.DataFrame:
-    api_key = cfg.fred_api_key or os.environ.get("FRED_API_KEY", "")
+    api_key = os.environ.get(cfg.fred_api_key_env_var, "").strip()
     if not HAVE_FRED or not api_key:
         print("[Part 0] Skipping FRED download (fredapi not installed or FRED_API_KEY missing).")
         return pd.DataFrame(index=_business_day_calendar(cfg.start, cfg.end))
 
     fred = Fred(api_key=api_key)
+
+    
     bidx = _business_day_calendar(cfg.start, cfg.end)
     cols = []
     for series_id, col_name in cfg.fred_series.items():
