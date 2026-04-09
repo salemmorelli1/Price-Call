@@ -335,7 +335,7 @@
     <div class="header">
       <div class="title">
         <h1>Price-Call — Production Dashboard</h1>
-        <p>Monitoring system for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once consistent, create a trading strategy and create a bot to trade 1000 for 6 months.</p>
+        <p>GitHub-connected monitor for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn" class="primary">Refresh</button>
@@ -828,6 +828,23 @@
     async function fetchCsvOptional(path) {
       try { return await fetchCsv(path); } catch (e) { return []; }
     }
+    function firstValue(row, candidates, fallback = null) {
+      if (!row) return fallback;
+      for (const key of candidates) {
+        if (!isMissing(row?.[key])) return row[key];
+      }
+      return fallback;
+    }
+    function firstNumber(row, candidates, fallback = NaN) {
+      const v = firstValue(row, candidates, null);
+      const n = toNumber(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+    function boolText01(v, yes = "YES", no = "NO") {
+      const n = toNumber(v);
+      if (!Number.isFinite(n)) return "NO";
+      return n === 1 ? yes : no;
+    }
     function sortByDateAsc(rows, col) {
       return [...rows].sort((a,b) => new Date(a[col]) - new Date(b[col]));
     }
@@ -974,107 +991,214 @@
       return { status, maturity, lastDate: latestTape ? fmtDate(latestTape.Date) : "NA", todayUtc: todayUtc.toISOString().slice(0,10), ageDays: Number.isFinite(ageDays) ? ageDays : "NA", realizedRows };
     }
 
-    function buildForecastSnapshot(predLog, prodTape) {
+    function buildForecastSnapshot(predLog, prodTape, part3Summary = null) {
       const row = latestRow(predLog, "decision_date") || latestRow(prodTape, "Date");
       if (!row) return null;
-      const decisionDate = !isMissing(row.decision_date) ? fmtDate(row.decision_date) : fmtDate(row.Date);
-      const vooSpot = Number.isFinite(toNumber(row.px_voo_t)) ? toNumber(row.px_voo_t) : NaN;
-      const iefSpot = Number.isFinite(toNumber(row.px_ief_t)) ? toNumber(row.px_ief_t) : NaN;
-      const vooCall = Number.isFinite(toNumber(row.px_voo_call_7d)) ? toNumber(row.px_voo_call_7d) : Number.isFinite(toNumber(row.voo_call_7d)) ? toNumber(row.voo_call_7d) : NaN;
-      const iefCall = Number.isFinite(toNumber(row.px_ief_call_7d)) ? toNumber(row.px_ief_call_7d) : Number.isFinite(toNumber(row.ief_call_7d)) ? toNumber(row.ief_call_7d) : NaN;
-      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
-      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
-      return { row, decisionDate, targetDate: deriveTargetDate(row), vooSpot, iefSpot, vooCall, iefCall, vooDelta, iefDelta, vooSrc: !isMissing(row.voo_call_src) ? row.voo_call_src : "NA", iefSrc: !isMissing(row.ief_call_src) ? row.ief_call_src : "NA" };
+
+      const decisionDate = fmtDate(firstValue(row, ["decision_date", "Date"], part3Summary?.last_date || "NA"));
+
+      const vooSpot = firstNumber(row, [
+        "px_voo_t",
+        "voo_spot",
+        "px_voo_spot",
+        "current_voo",
+        "spot_voo"
+      ]);
+
+      const iefSpot = firstNumber(row, [
+        "px_ief_t",
+        "ief_spot",
+        "px_ief_spot",
+        "current_ief",
+        "spot_ief"
+      ]);
+
+      const vooCall = firstNumber(row, [
+        "px_voo_call_7d",
+        "voo_call_7d",
+        "voo_target_price",
+        "voo_call",
+        "voo_explicit_call",
+        "px_voo_explicit_call"
+      ]);
+
+      const iefCall = firstNumber(row, [
+        "px_ief_call_7d",
+        "ief_call_7d",
+        "ief_target_price",
+        "ief_call",
+        "ief_explicit_call",
+        "px_ief_explicit_call"
+      ]);
+
+      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall)
+        ? (vooCall / vooSpot) - 1
+        : NaN;
+
+      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall)
+        ? (iefCall / iefSpot) - 1
+        : NaN;
+
+      let vooSrc = firstValue(row, ["voo_call_src", "price_call_source_voo"], null);
+      let iefSrc = firstValue(row, ["ief_call_src", "price_call_source_ief"], null);
+
+      if (isMissing(vooSrc) && Number.isFinite(vooCall)) vooSrc = "explicit_call";
+      if (isMissing(iefSrc) && Number.isFinite(iefCall)) iefSrc = "explicit_call";
+
+      return {
+        row,
+        decisionDate,
+        targetDate: deriveTargetDate(row),
+        vooSpot,
+        iefSpot,
+        vooCall,
+        iefCall,
+        vooDelta,
+        iefDelta,
+        vooSrc: !isMissing(vooSrc) ? String(vooSrc) : "NA",
+        iefSrc: !isMissing(iefSrc) ? String(iefSrc) : "NA"
+      };
     }
 
-    function buildDefenseSnapshot(prodTape, govTape) {
+    function buildDefenseSnapshot(prodTape, govTape, part3Summary = null) {
       const tapeRow = latestRow(prodTape, "Date");
       const govRow = latestRow(govTape, "Date");
       const row = govRow || tapeRow;
       if (!row) return null;
-      const alphaEffFinal = Number.isFinite(toNumber(govRow?.alpha_eff_final)) ? toNumber(govRow.alpha_eff_final) :
-                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final)) ? toNumber(tapeRow.alpha_eff_final) :
-                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final_live)) ? toNumber(tapeRow.alpha_eff_final_live) : NaN;
+
+      const govMode = firstValue(
+        govRow,
+        ["GovMode", "gov_mode", "publish_mode"],
+        firstValue(tapeRow, ["GovMode", "gov_mode", "publish_mode"], part3Summary?.publish_mode || "NA")
+      );
+
+      const govReasonRaw = firstValue(
+        govRow,
+        ["GovReason", "gov_reason"],
+        firstValue(tapeRow, ["GovReason", "gov_reason"], "NA")
+      );
+
+      const alphaEffFinal = firstNumber(govRow, ["alpha_eff_final"],
+        firstNumber(tapeRow, ["alpha_eff_final", "alpha_eff_final_live"])
+      );
+
+      const govScale = firstNumber(govRow, ["gov_scale", "scale"],
+        firstNumber(tapeRow, ["defense_scale_final", "alpha_scale", "gov_scale"])
+      );
+
       return {
-        date: row ? fmtDate(row.Date) : "NA",
-        GovMode: !isMissing(govRow?.GovMode) ? govRow.GovMode : "NA",
-        GovReason: !isMissing(govRow?.GovReason) ? String(govRow.GovReason) : "NA",
-        wExec: Number.isFinite(toNumber(tapeRow?.w_exec)) ? toNumber(tapeRow.w_exec) : NaN,
-        scale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
-               Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) :
-               Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) : NaN,
+        date: fmtDate(firstValue(row, ["Date"], "NA")),
+        GovMode: !isMissing(govMode) ? String(govMode) : "NA",
+        GovReason: normalizeGovReasonDisplay(govReasonRaw),
+        wExec: firstNumber(tapeRow, ["w_exec", "w_target_voo", "core_voo"]),
+        scale: govScale,
         alphaEffFinal,
-        healthLive: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
-        healthReal: toNumber(govRow?.GovHealthScore_realized),
-        healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
-        liftEnd: toNumber(govRow?.Lift_End),
-        desEnd: toNumber(govRow?.dES_P_End),
-        costRoll: Number.isFinite(toNumber(govRow?.AnnCostDrag_Roll)) ? toNumber(govRow.AnnCostDrag_Roll) : toNumber(govRow?.ann_cost_drag_roll),
-        turnEff: Number.isFinite(toNumber(govRow?.TurnEff_Roll)) ? toNumber(govRow.TurnEff_Roll) : toNumber(govRow?.turn_eff_roll),
-        zeroActive: toNumber(govRow?.ZeRO_Active_End),
-        tooGood: toNumber(govRow?.TooGood_Alarm_End),
-        govScale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
-                  Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) : NaN
+        healthLive: firstNumber(govRow, ["GovHealthScore_live", "GovHealthScore"]),
+        healthReal: firstNumber(govRow, ["GovHealthScore_realized"]),
+        healthAny: firstNumber(govRow, ["GovHealthScore_live", "GovHealthScore"]),
+        liftEnd: firstNumber(govRow, ["Lift_End"]),
+        desEnd: firstNumber(govRow, ["dES_P_End"]),
+        costRoll: firstNumber(govRow, ["AnnCostDrag_Roll", "ann_cost_drag_roll"]),
+        turnEff: firstNumber(govRow, ["TurnEff_Roll", "turn_eff_roll"]),
+        zeroActive: firstNumber(govRow, ["ZeRO_Active_End", "zero_active"]),
+        tooGood: firstNumber(govRow, ["TooGood_Alarm_End", "too_good"]),
+        govScale
       };
     }
 
-    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility) {
+    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility, alphaSummaryJson = null) {
       const tapeRow = latestRow(prodTape, "Date");
       const summaryRow = latestRow(alphaSummaryTape, "Date");
       const posLive = latestRowsByDate(alphaPositions, "Date");
       const eligLive = latestRowsByDate(alphaEligibility, "asof_date");
+
       const selectedRows = posLive.filter(r => toNumber(r.selected) === 1);
       const selectedNames = selectedRows.map(r => String(r.Ticker || "")).filter(Boolean);
-      const eligibleNames = eligLive.filter(r => toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1).map(r => String(r.Ticker || "")).filter(Boolean);
+
+      const eligibleRows = eligLive.filter(r => {
+        const inSet = toNumber(r.in_elig_set);
+        const eligible = toNumber(r.eligible);
+        return inSet === 1 || eligible === 1;
+      });
+      const eligibleNames = eligibleRows.map(r => String(r.Ticker || "")).filter(Boolean);
+
       return {
-        alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : (!isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE"),
-        alphaLive: toNumber(tapeRow?.alpha_live),
-        fusionLive: toNumber(tapeRow?.fusion_live),
-        budgetMult: toNumber(tapeRow?.budget_mult),
-        realizedDates: toNumber(tapeRow?.realized_dates),
-        meanRankIc: Number.isFinite(toNumber(tapeRow?.mean_rank_ic)) ? toNumber(tapeRow.mean_rank_ic) : toNumber(summaryRow?.rank_ic_roll),
-        meanTopkNet: Number.isFinite(toNumber(tapeRow?.mean_topk_rel_ret_net)) ? toNumber(tapeRow.mean_topk_rel_ret_net) : Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
-        irTopk: toNumber(tapeRow?.ir_topk_rel_ret_net),
-        driftRate: toNumber(tapeRow?.alpha_drift_alarm_rate),
-        qualityOk: toNumber(tapeRow?.alpha_quality_ok),
-        driftOk: toNumber(tapeRow?.alpha_drift_ok),
-        trialOpen: toNumber(tapeRow?.alpha_trial_gate_open),
-        fusedOpen: toNumber(tapeRow?.alpha_fused_gate_open),
-        ready: toNumber(tapeRow?.alpha_promotion_ready),
-        blocker: !isMissing(tapeRow?.alpha_blocker_text) ? tapeRow.alpha_blocker_text : "NONE",
-        tier: !isMissing(summaryRow?.alpha_governance_tier) ? summaryRow.alpha_governance_tier : (!isMissing(selectedRows[0]?.alpha_governance_tier) ? selectedRows[0].alpha_governance_tier : "NA"),
-        driftAlarm: toNumber(summaryRow?.alpha_drift_alarm),
-        overlayScale: toNumber(summaryRow?.alpha_overlay_scale),
-        rankIcRoll: toNumber(summaryRow?.rank_ic_roll),
-        topkRoll: Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
-        budgetUsed: toNumber(summaryRow?.gross_alpha_budget_used),
-        eligibleBreadth: toNumber(summaryRow?.eligible_breadth),
-        hitRate: toNumber(summaryRow?.selection_hit_rate),
-        date: summaryRow ? fmtDate(summaryRow.Date) : (tapeRow ? fmtDate(tapeRow.Date) : "NA"),
+        alphaState: firstValue(tapeRow, ["alpha_state_display", "alpha_state"], "UNAVAILABLE"),
+        alphaLive: firstNumber(tapeRow, ["alpha_live"]),
+        fusionLive: firstNumber(tapeRow, ["fusion_live"]),
+        budgetMult: firstNumber(tapeRow, ["budget_mult"], firstNumber(alphaSummaryJson, ["latest_alpha_scale_effective"])),
+        realizedDates: firstNumber(tapeRow, ["realized_dates"], firstNumber(alphaSummaryJson, ["realized_dates"])),
+
+        meanRankIc: firstNumber(
+          tapeRow,
+          ["mean_rank_ic"],
+          firstNumber(summaryRow, ["rank_ic_roll", "rank_ic"], firstNumber(alphaSummaryJson, ["mean_rank_ic"]))
+        ),
+
+        meanTopkNet: firstNumber(
+          tapeRow,
+          ["mean_topk_rel_ret_net"],
+          firstNumber(summaryRow, ["topk_rel_ret_net_roll", "topk_rel_ret_net"], firstNumber(alphaSummaryJson, ["mean_topk_rel_ret_net"]))
+        ),
+
+        irTopk: firstNumber(
+          tapeRow,
+          ["ir_topk_rel_ret_net"],
+          firstNumber(alphaSummaryJson, ["ir_topk_rel_ret_net"])
+        ),
+
+        driftRate: firstNumber(
+          tapeRow,
+          ["alpha_drift_alarm_rate"],
+          firstNumber(alphaSummaryJson, ["alpha_drift_alarm_rate"])
+        ),
+
+        qualityOk: firstNumber(tapeRow, ["alpha_quality_ok"]),
+        driftOk: firstNumber(tapeRow, ["alpha_drift_ok"]),
+        trialOpen: firstNumber(tapeRow, ["alpha_trial_gate_open"]),
+        fusedOpen: firstNumber(tapeRow, ["alpha_fused_gate_open"]),
+        ready: firstNumber(tapeRow, ["alpha_promotion_ready"]),
+        blocker: firstValue(tapeRow, ["alpha_blocker_text"], "NONE"),
+
+        tier: firstValue(
+          summaryRow,
+          ["alpha_governance_tier"],
+          firstValue(selectedRows[0], ["alpha_governance_tier"], "NA")
+        ),
+
+        driftAlarm: firstNumber(
+          summaryRow,
+          ["alpha_drift_alarm"],
+          firstNumber(alphaSummaryJson, ["alpha_drift_alarm_rate"])
+        ),
+
+        overlayScale: firstNumber(
+          summaryRow,
+          ["alpha_overlay_scale"],
+          firstNumber(alphaSummaryJson, ["latest_alpha_scale_effective", "mean_alpha_scale_effective"])
+        ),
+
+        rankIcRoll: firstNumber(
+          summaryRow,
+          ["rank_ic_roll", "rank_ic"],
+          firstNumber(alphaSummaryJson, ["mean_rank_ic"])
+        ),
+
+        topkRoll: firstNumber(
+          summaryRow,
+          ["topk_rel_ret_net_roll", "topk_rel_ret_net"],
+          firstNumber(alphaSummaryJson, ["mean_topk_rel_ret_net"])
+        ),
+
+        budgetUsed: firstNumber(summaryRow, ["gross_alpha_budget_used"]),
+        eligibleBreadth: firstNumber(summaryRow, ["eligible_breadth"]),
+        hitRate: firstNumber(summaryRow, ["selection_hit_rate"]),
+        date: fmtDate(firstValue(summaryRow, ["Date"], firstValue(tapeRow, ["Date"], alphaSummaryJson?.last_date || "NA"))),
+
         selectedCount: selectedRows.length,
         eligibleNames: eligibleNames.length ? eligibleNames.join(", ") : "NA",
         selectedNames: selectedNames.length ? selectedNames.join(", ") : "NA"
       };
-    }
-
-    function buildFusionMeta(allocRows) {
-      const latestAlloc = latestRowsByDate(allocRows, "Date");
-      const meta = { allocDate: "NA", coreVoo: NaN, coreIef: NaN, alphaGross: NaN, sumWeight: NaN, nRows: 0 };
-      if (!latestAlloc.length) return { meta, latestAlloc: [] };
-      meta.allocDate = fmtDate(latestAlloc[0].Date);
-      meta.nRows = latestAlloc.length;
-      let coreVoo = 0, coreIef = 0, alphaGross = 0, sum = 0;
-      for (const r of latestAlloc) {
-        const w = toNumber(r.weight);
-        if (!Number.isFinite(w)) continue;
-        sum += w;
-        const tk = String(r.Ticker || "");
-        if (tk === "VOO_CORE") coreVoo += w;
-        else if (tk === "IEF_CORE") coreIef += w;
-        else alphaGross += w;
-      }
-      meta.coreVoo = coreVoo; meta.coreIef = coreIef; meta.alphaGross = alphaGross; meta.sumWeight = sum;
-      return { meta, latestAlloc: latestAlloc.sort((a,b) => toNumber(b.weight) - toNumber(a.weight)) };
     }
 
     function buildValidationSnapshot(part2Summary, part3Summary) {
@@ -1197,11 +1321,11 @@
     function populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
       setText("heroVooCall", fmtPrice(forecast?.vooCall));
       setText("heroVooMeta", `Current: ${fmtPrice(forecast?.vooSpot)} | Δ: ${fmtPct(forecast?.vooDelta)}`);
-      setText("heroVooSrc", `Source: ${forecast?.vooSrc || "NA"}`);
+      setText("heroVooSrc", `Source: ${forecast?.vooSrc && forecast.vooSrc !== "NA" ? forecast.vooSrc : "explicit_call"}`);
 
       setText("heroIefCall", fmtPrice(forecast?.iefCall));
       setText("heroIefMeta", `Current: ${fmtPrice(forecast?.iefSpot)} | Δ: ${fmtPct(forecast?.iefDelta)}`);
-      setText("heroIefSrc", `Source: ${forecast?.iefSrc || "NA"}`);
+      setText("heroIefSrc", `Source: ${forecast?.iefSrc && forecast.iefSrc !== "NA" ? forecast.iefSrc : "explicit_call"}`);
 
       setText("heroSystemStatus", system.status);
       setText("heroMaturity", `Maturity: ${system.maturity}`);
@@ -1797,9 +1921,9 @@
         const part7Weights = sortByDateAsc(part7WeightsRaw, "Date");
 
         const system = buildSystemStatus(prodTape, predLog);
-        const forecast = buildForecastSnapshot(predLog, prodTape);
-        const defense = buildDefenseSnapshot(prodTape, govTape);
-        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility);
+        const forecast = buildForecastSnapshot(predLog, prodTape, part3Summary);
+        const defense = buildDefenseSnapshot(prodTape, govTape, part3Summary);
+        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility, alphaSummaryJson);
         const validation = buildValidationSnapshot(part2Summary, part3Summary);
         const regime = buildRegimeSnapshot(part6Meta);
         const portfolio = buildPortfolioSnapshot(part7Current, part7Meta);
@@ -1868,3 +1992,4 @@
   </script>
 </body>
 </html>
+
