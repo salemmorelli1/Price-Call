@@ -1,1 +1,244 @@
-
+{
+  "version": "V1_COLAB_FINAL",
+  "built_at": "2026-04-09T06:53:28.215567+00:00",
+  "project_root": "/content/drive/MyDrive/PriceCallProject",
+  "out_dir": "/content/drive/MyDrive/PriceCallProject/artifacts_part0",
+  "date_range": {
+    "start": "2005-01-01",
+    "end": "2026-04-09"
+  },
+  "horizon": 7,
+  "n_market_tickers": 32,
+  "n_features": 47,
+  "n_macro_series": 0,
+  "fred_enabled": false,
+  "data_quality": {
+    "VOO": {
+      "missing_pre_clean": 0.2941070463146513,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2010-09-09",
+      "years_history": 15.58,
+      "usable_for_model": true
+    },
+    "IEF": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "TLT": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "SHY": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 5,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "GLD": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "UUP": {
+      "missing_pre_clean": 0.1338979996395747,
+      "max_equal_close_run": 4,
+      "first_valid_date": "2007-03-01",
+      "years_history": 19.11,
+      "usable_for_model": true
+    },
+    "JNK": {
+      "missing_pre_clean": 0.16867904126869707,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2007-12-04",
+      "years_history": 18.35,
+      "usable_for_model": true
+    },
+    "HYG": {
+      "missing_pre_clean": 0.13894395386556135,
+      "max_equal_close_run": 4,
+      "first_valid_date": "2007-04-11",
+      "years_history": 19.0,
+      "usable_for_model": true
+    },
+    "LQD": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "RSP": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "QQQ": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "IWM": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "MDY": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLK": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLF": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLI": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLY": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLP": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLV": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLE": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLU": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLB": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "XLC": {
+      "missing_pre_clean": 0.6467832041809335,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2018-06-19",
+      "years_history": 7.81,
+      "usable_for_model": true
+    },
+    "SMH": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "EFA": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "EEM": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "VNQ": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 2,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "DBC": {
+      "missing_pre_clean": 0.0857812218417733,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2006-02-06",
+      "years_history": 20.17,
+      "usable_for_model": true
+    },
+    "^VIX": {
+      "missing_pre_clean": 0.036222742836547125,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "^VIX3M": {
+      "missing_pre_clean": 0.10578482609479185,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2006-07-17",
+      "years_history": 19.73,
+      "usable_for_model": true
+    },
+    "^SKEW": {
+      "missing_pre_clean": 0.04757613984501712,
+      "max_equal_close_run": 5,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    },
+    "^MOVE": {
+      "missing_pre_clean": 0.05262209407100379,
+      "max_equal_close_run": 3,
+      "first_valid_date": "2005-01-03",
+      "years_history": 21.26,
+      "usable_for_model": true
+    }
+  },
+  "features_checksum": "8a146d341ba8f3dc",
+  "close_checksum": "53ef0773be73bee5",
+  "tail_rate": 0.19536831731953683
+}
