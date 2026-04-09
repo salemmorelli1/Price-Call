@@ -335,7 +335,7 @@
     <div class="header">
       <div class="title">
         <h1>Price-Call — Production Dashboard</h1>
-        <p>GitHub-connected monitor for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution.</p>
+        <p>Monitor model for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once the model is consistently precise and accurate, then change 7 day forecast to 1 day weekday forecast. If 1-day model is accurate and precise, create a trading stragey and a bot. Give it $1000 and record its trades. Put a safety stop at 10% loss.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn" class="primary">Refresh</button>
@@ -992,44 +992,110 @@
     }
 
     function buildForecastSnapshot(predLog, prodTape, part3Summary = null) {
-      const row = latestRow(predLog, "decision_date") || latestRow(prodTape, "Date");
-      if (!row) return null;
+      const predRow = latestRow(predLog, "decision_date");
+      const latestProdRow = latestRow(prodTape, "Date");
+      const decisionDate = fmtDate(firstValue(predRow, ["decision_date"], firstValue(latestProdRow, ["Date"], part3Summary?.last_date || "NA")));
 
-      const decisionDate = fmtDate(firstValue(row, ["decision_date", "Date"], part3Summary?.last_date || "NA"));
+      let prodRow = null;
+      if (decisionDate !== "NA") {
+        const sameDateRows = (prodTape || []).filter(r => fmtDate(r.Date) === decisionDate);
+        if (sameDateRows.length) prodRow = sameDateRows[sameDateRows.length - 1];
+      }
+      if (!prodRow) prodRow = latestProdRow;
 
-      const vooSpot = firstNumber(row, [
+      const baseRow = predRow || prodRow;
+      if (!baseRow) return null;
+
+      const vooSpot = firstNumber(predRow, [
         "px_voo_t",
         "voo_spot",
         "px_voo_spot",
         "current_voo",
         "spot_voo"
-      ]);
+      ], firstNumber(prodRow, [
+        "px_voo_t",
+        "voo_spot",
+        "px_voo_spot",
+        "current_voo",
+        "spot_voo"
+      ]));
 
-      const iefSpot = firstNumber(row, [
+      const iefSpot = firstNumber(predRow, [
         "px_ief_t",
         "ief_spot",
         "px_ief_spot",
         "current_ief",
         "spot_ief"
-      ]);
+      ], firstNumber(prodRow, [
+        "px_ief_t",
+        "ief_spot",
+        "px_ief_spot",
+        "current_ief",
+        "spot_ief"
+      ]));
 
-      const vooCall = firstNumber(row, [
+      const vooCall = firstNumber(predRow, [
         "px_voo_call_7d",
         "voo_call_7d",
         "voo_target_price",
         "voo_call",
         "voo_explicit_call",
         "px_voo_explicit_call"
-      ]);
+      ], firstNumber(prodRow, [
+        "px_voo_call_7d",
+        "voo_call_7d",
+        "voo_target_price",
+        "VOO_target_price",
+        "price_call_voo"
+      ]));
 
-      const iefCall = firstNumber(row, [
+      const iefCall = firstNumber(predRow, [
         "px_ief_call_7d",
         "ief_call_7d",
         "ief_target_price",
         "ief_call",
         "ief_explicit_call",
         "px_ief_explicit_call"
-      ]);
+      ], firstNumber(prodRow, [
+        "px_ief_call_7d",
+        "ief_call_7d",
+        "ief_target_price",
+        "IEF_target_price",
+        "price_call_ief"
+      ]));
+
+      const pFinalCal = firstNumber(predRow, [
+        "p_final_cal",
+        "p_final_use",
+        "p_final",
+        "p_final_raw"
+      ], firstNumber(prodRow, [
+        "p_final_cal",
+        "p_final_cal_candidate",
+        "p_final",
+        "p_final_raw",
+        "p0"
+      ]));
+
+      const alphaScale = firstNumber(predRow, [
+        "alpha_scale",
+        "defense_scale_final",
+        "gov_scale"
+      ], firstNumber(prodRow, [
+        "alpha_scale",
+        "defense_scale_final",
+        "gov_scale"
+      ]));
+
+      const governanceTier = firstValue(predRow, [
+        "governance_tier",
+        "GovMode",
+        "publish_mode"
+      ], firstValue(prodRow, [
+        "governance_tier",
+        "GovMode",
+        "publish_mode"
+      ], "NA"));
 
       const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall)
         ? (vooCall / vooSpot) - 1
@@ -1039,20 +1105,25 @@
         ? (iefCall / iefSpot) - 1
         : NaN;
 
-      let vooSrc = firstValue(row, ["voo_call_src", "price_call_source_voo"], null);
-      let iefSrc = firstValue(row, ["ief_call_src", "price_call_source_ief"], null);
+      let vooSrc = firstValue(predRow, ["voo_call_src", "price_call_source_voo"], firstValue(prodRow, ["voo_call_src", "price_call_source_voo"], null));
+      let iefSrc = firstValue(predRow, ["ief_call_src", "price_call_source_ief"], firstValue(prodRow, ["ief_call_src", "price_call_source_ief"], null));
 
       if (isMissing(vooSrc) && Number.isFinite(vooCall)) vooSrc = "explicit_call";
       if (isMissing(iefSrc) && Number.isFinite(iefCall)) iefSrc = "explicit_call";
 
       return {
-        row,
+        row: baseRow,
+        predRow,
+        prodRow,
         decisionDate,
-        targetDate: deriveTargetDate(row),
+        targetDate: deriveTargetDate(predRow || prodRow),
         vooSpot,
         iefSpot,
         vooCall,
         iefCall,
+        pFinalCal,
+        alphaScale,
+        governanceTier: !isMissing(governanceTier) ? String(governanceTier) : "NA",
         vooDelta,
         iefDelta,
         vooSrc: !isMissing(vooSrc) ? String(vooSrc) : "NA",
@@ -1200,6 +1271,7 @@
         selectedNames: selectedNames.length ? selectedNames.join(", ") : "NA"
       };
     }
+
 
     function normalizeGovReasonDisplay(value) {
       if (isMissing(value)) return "NA";
@@ -1518,13 +1590,16 @@
       badges.push(`<div class="status-pill ${latestRealizedFilled ? "good" : "warn"}">${latestRealizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>`);
       badges.push(`<div class="status-pill good">VOO CALL: ${fmtPrice(forecast?.vooCall)}</div>`);
       badges.push(`<div class="status-pill good">IEF CALL: ${fmtPrice(forecast?.iefCall)}</div>`);
+      if (Number.isFinite(toNumber(forecast?.vooSpot))) {
+        badges.push(`<div class="status-pill info">CURRENT VOO: ${fmtPrice(forecast?.vooSpot)}</div>`);
+      }
       setHtml("predSnapBadges", badges.join(""));
       setText("predSnapTarget", forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending");
-      setText("predSnapTier", !isMissing(row?.governance_tier) ? row.governance_tier : "Pending");
-      setText("predSnapPFinal", fmtNum(row?.p_final_cal || row?.p_final_use, 4));
-      setText("predSnapAlphaScale", fmtNum(row?.alpha_scale));
-      setText("predSnapVoo", `${fmtPrice(forecast?.vooSpot)} / ${fmtPrice(forecast?.vooCall)}`);
-      setText("predSnapIef", `${fmtPrice(forecast?.iefSpot)} / ${fmtPrice(forecast?.iefCall)}`);
+      setText("predSnapTier", forecast?.governanceTier && forecast.governanceTier !== "NA" ? forecast.governanceTier : "Pending");
+      setText("predSnapPFinal", fmtValueOrPending(forecast?.pFinalCal, v => fmtNum(v, 4)));
+      setText("predSnapAlphaScale", fmtValueOrPending(forecast?.alphaScale, v => fmtNum(v, 4)));
+      setText("predSnapVoo", `${fmtValueOrPending(forecast?.vooSpot, v => fmtPrice(v))} / ${fmtPrice(forecast?.vooCall)}`);
+      setText("predSnapIef", `${fmtValueOrPending(forecast?.iefSpot, v => fmtPrice(v))} / ${fmtPrice(forecast?.iefCall)}`);
     }
 
     function populateGovernanceSnapshot(defense) {
@@ -2038,5 +2113,7 @@
   </script>
 </body>
 </html>
+
+
 
 
