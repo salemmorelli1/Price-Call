@@ -1,0 +1,13 @@
+{
+  "Date": "2026-04-09 00:00:00",
+  "w_target_voo": 0.600000000407042,
+  "w_target_ief": 0.39999999959295796,
+  "regime_label": "high_vol",
+  "p_tail_base": 0.1709759439789287,
+  "base_rate": 0.1968190854870775,
+  "raw_val_auc": 0.6801136363636364,
+  "optimizer": "black_litterman_cvar",
+  "portfolio_vol_ann": 0.07665004681422692,
+  "view_confidence": 1.0,
+  "edge": 0.025843141508148787
+}
