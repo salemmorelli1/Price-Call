@@ -10,15 +10,10 @@ __pycache__/
 6_2_file_b.py
 
 # Rebuildable heavy artifacts
-# Keep most parquet / duckdb ignored by default
+artifacts_part0/
+artifacts_part1/
 *.parquet
 *.duckdb
-
-# But track Part 0 and Part 1 artifact families
-!artifacts_part0/
-!artifacts_part0/**
-!artifacts_part1/
-!artifacts_part1/**
 
 # Local temp files
 *.tmp
