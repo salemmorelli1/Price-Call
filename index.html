@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VOO vs IEF — Production Dashboard</title>
+  <title>Price-Call — Production Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     :root {
@@ -32,7 +32,6 @@
     }
 
     * { box-sizing: border-box; }
-
     html, body {
       margin: 0;
       padding: 0;
@@ -40,14 +39,10 @@
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
+    a { color: inherit; text-decoration: none; }
 
     .wrap {
-      max-width: 1800px;
+      max-width: 1900px;
       margin: 0 auto;
       padding: 10px 14px 30px;
     }
@@ -62,7 +57,7 @@
 
     .title h1 {
       margin: 0 0 6px 0;
-      font-size: 2.25rem;
+      font-size: 2.2rem;
       line-height: 1.05;
       color: var(--text-strong);
     }
@@ -71,6 +66,8 @@
       margin: 0;
       color: var(--muted);
       font-size: 1rem;
+      line-height: 1.45;
+      max-width: 1000px;
     }
 
     .controls {
@@ -102,27 +99,10 @@
       font-size: 0.95rem;
     }
 
-    .grid {
-      display: grid;
-      gap: 14px;
-    }
-
-    .hero-grid {
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      margin-bottom: 14px;
-    }
-
-    .two-col {
-      grid-template-columns: 1.2fr 0.8fr;
-    }
-
-    .two-col-eq {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .single-col {
-      grid-template-columns: 1fr;
-    }
+    .grid { display: grid; gap: 14px; }
+    .hero-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
+    .two-col { grid-template-columns: 1fr 1fr; }
+    .single-col { grid-template-columns: 1fr; }
 
     .card {
       background: linear-gradient(180deg, var(--panel), var(--panel-2));
@@ -144,12 +124,9 @@
       margin-bottom: 10px;
     }
 
-    .hero-card {
-      min-height: 126px;
-    }
-
+    .hero-card { min-height: 126px; }
     .hero-big {
-      font-size: 2rem;
+      font-size: 1.85rem;
       line-height: 1.05;
       font-weight: 900;
       color: var(--text-strong);
@@ -157,15 +134,10 @@
       word-break: break-word;
     }
 
-    .hero-sub {
+    .hero-sub, .small-note, .summary-brief {
       font-size: 0.95rem;
       color: var(--muted);
-      margin-top: 2px;
-      line-height: 1.35;
-    }
-
-    .hero-sub strong {
-      color: var(--text-strong);
+      line-height: 1.45;
     }
 
     .status-row {
@@ -187,36 +159,10 @@
       white-space: nowrap;
     }
 
-    .status-pill.good {
-      background: var(--good-bg);
-      border-color: rgba(22, 163, 74, 0.35);
-      color: #6ee7b7;
-    }
-
-    .status-pill.warn {
-      background: var(--warn-bg);
-      border-color: rgba(245, 158, 11, 0.35);
-      color: #fcd34d;
-    }
-
-    .status-pill.bad {
-      background: var(--bad-bg);
-      border-color: rgba(220, 38, 38, 0.35);
-      color: #fca5a5;
-    }
-
-    .status-pill.info {
-      background: var(--info-bg);
-      border-color: rgba(6, 182, 212, 0.35);
-      color: #67e8f9;
-    }
-
-    .small-note {
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 0.96rem;
-      line-height: 1.4;
-    }
+    .status-pill.good { background: var(--good-bg); border-color: rgba(22,163,74,0.35); color: #6ee7b7; }
+    .status-pill.warn { background: var(--warn-bg); border-color: rgba(245,158,11,0.35); color: #fcd34d; }
+    .status-pill.bad  { background: var(--bad-bg); border-color: rgba(220,38,38,0.35); color: #fca5a5; }
+    .status-pill.info { background: var(--info-bg); border-color: rgba(6,182,212,0.35); color: #67e8f9; }
 
     .summary-box {
       white-space: pre-wrap;
@@ -228,40 +174,38 @@
       overflow-x: auto;
     }
 
-    .tabs {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin: 14px 0;
+    .summary-details {
+      margin-top: 4px;
+      border-top: 1px solid rgba(36, 50, 74, 0.7);
+      padding-top: 10px;
     }
 
-    .tab-btn {
-      background: var(--panel-3);
-      border: 1px solid var(--border);
+    .summary-details summary {
+      cursor: pointer;
       color: var(--text-strong);
+      font-weight: 800;
+      list-style: none;
+      user-select: none;
     }
 
-    .tab-btn.active {
-      background: var(--accent);
-      border-color: transparent;
+    .summary-details summary::-webkit-details-marker { display: none; }
+    .summary-details summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 8px;
+      color: var(--muted);
+      transition: transform 0.15s ease;
     }
+    .summary-details[open] summary::before { transform: rotate(90deg); }
 
-    .tab-panel {
-      display: none;
-    }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+    .tab-btn { background: var(--panel-3); border: 1px solid var(--border); color: var(--text-strong); }
+    .tab-btn.active { background: var(--accent); border-color: transparent; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
 
-    .tab-panel.active {
-      display: block;
-    }
-
-    .chart {
-      width: 100%;
-      min-height: 440px;
-    }
-
-    .chart.small {
-      min-height: 380px;
-    }
+    .chart { width: 100%; min-height: 420px; }
+    .chart.small { min-height: 340px; }
 
     .snapshot-grid {
       display: grid;
@@ -289,6 +233,32 @@
       word-break: break-word;
     }
 
+    .kv-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 14px;
+      margin-top: 6px;
+    }
+
+    .kv {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(36, 50, 74, 0.7);
+    }
+
+    .kv .k {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .kv .v {
+      font-size: 1rem;
+      color: var(--text-strong);
+      font-weight: 800;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+
     .table-wrap {
       overflow-x: auto;
       border: 1px solid var(--border);
@@ -298,7 +268,7 @@
 
     table {
       width: 100%;
-      min-width: 980px;
+      min-width: 920px;
       border-collapse: collapse;
       background: var(--panel);
     }
@@ -322,69 +292,11 @@
       color: var(--text-strong);
       font-size: 0.92rem;
       white-space: nowrap;
+      vertical-align: top;
     }
 
-    tbody tr:hover {
-      background: rgba(124, 131, 255, 0.05);
-    }
-
-    .muted {
-      color: var(--muted);
-    }
-
-    .error {
-      color: #fca5a5;
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-
-    .spacer {
-      height: 8px;
-    }
-
-    .summary-brief {
-      color: var(--muted);
-      font-size: 0.96rem;
-      line-height: 1.5;
-      margin-bottom: 10px;
-    }
-
-    .summary-details {
-      margin-top: 4px;
-      border-top: 1px solid rgba(36, 50, 74, 0.7);
-      padding-top: 10px;
-    }
-
-    .summary-details summary {
-      cursor: pointer;
-      color: var(--text-strong);
-      font-weight: 800;
-      list-style: none;
-      user-select: none;
-    }
-
-    .summary-details summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .summary-details summary::before {
-      content: "▸";
-      display: inline-block;
-      margin-right: 8px;
-      color: var(--muted);
-      transition: transform 0.15s ease;
-    }
-
-    .summary-details[open] summary::before {
-      transform: rotate(90deg);
-    }
-
-    .summary-details summary span {
-      color: var(--muted);
-      font-weight: 700;
-      margin-left: 6px;
-      font-size: 0.92rem;
-    }
+    tbody tr:hover { background: rgba(124,131,255,0.05); }
+    .error { color: #fca5a5; white-space: pre-wrap; line-height: 1.5; }
 
     .footer-bar {
       display: flex;
@@ -408,40 +320,13 @@
       font-weight: 800;
     }
 
-    @media (max-width: 1600px) {
-      .hero-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 1280px) {
-      .hero-grid,
-      .two-col,
-      .two-col-eq,
-      .snapshot-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-
-    @media (max-width: 900px) {
-      .header {
-        flex-direction: column;
-      }
-
-      .hero-grid,
-      .two-col,
-      .two-col-eq,
-      .snapshot-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .chart {
-        min-height: 380px;
-      }
-
-      .chart.small {
-        min-height: 340px;
-      }
+    @media (max-width: 1680px) { .hero-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @media (max-width: 1180px) { .hero-grid, .two-col, .snapshot-grid, .kv-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 860px) {
+      .header { flex-direction: column; }
+      .hero-grid, .two-col, .snapshot-grid, .kv-grid { grid-template-columns: 1fr; }
+      .chart { min-height: 360px; }
+      .chart.small { min-height: 300px; }
     }
   </style>
 </head>
@@ -449,14 +334,12 @@
   <div class="wrap">
     <div class="header">
       <div class="title">
-        <h1>VOO vs IEF — Production Dashboard</h1>
-        <p>GitHub-connected monitor for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, and realized backfill.</p>
+        <h1>Price-Call — Production Dashboard</h1>
+        <p>Monitoring system for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once consistent, create a trading strategy and create a bot to trade 1000 for 6 months.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn" class="primary">Refresh</button>
-        <a id="repoLink" href="#" target="_blank" rel="noopener">
-          <button type="button">Open Repository</button>
-        </a>
+        <a id="repoLink" href="#" target="_blank" rel="noopener"><button type="button">Open Repository</button></a>
         <div class="stamp" id="lastUpdated">Last updated: —</div>
       </div>
     </div>
@@ -505,23 +388,38 @@
       </div>
 
       <div class="card hero-card">
-        <div class="label">Promotion Gates</div>
-        <div class="hero-big" id="heroRealizedDates">—</div>
-        <div class="hero-sub" id="heroQualityGates">quality_ok=— | drift_ok=—</div>
-        <div class="hero-sub" id="heroTrialFused">trial=— | fused=— | ready=—</div>
+        <div class="label">Validation Contract</div>
+        <div class="hero-big" id="heroValidation">—</div>
+        <div class="hero-sub" id="heroValidationMode">Part 2: — | Part 3: —</div>
+        <div class="hero-sub" id="heroValidationAlpha">Alpha family: —</div>
       </div>
 
       <div class="card hero-card">
-        <div class="label">Alpha Blocker</div>
-        <div class="hero-big" id="heroAlphaBlocker">—</div>
-        <div class="hero-sub">Thresholds: 26 / 52 / 78</div>
+        <div class="label">Regime Engine</div>
+        <div class="hero-big" id="heroRegimeModel">—</div>
+        <div class="hero-sub" id="heroRegimeStates">Regimes: — | Features: —</div>
+        <div class="hero-sub" id="heroRegimeDist">Top state: —</div>
       </div>
 
       <div class="card hero-card">
-        <div class="label">Fusion Allocation Snapshot</div>
-        <div class="hero-big" id="heroAllocSum">—</div>
-        <div class="hero-sub" id="heroAllocCore">VOO core: — | IEF core: —</div>
-        <div class="hero-sub" id="heroAllocAlpha">Alpha gross: —</div>
+        <div class="label">Portfolio Target</div>
+        <div class="hero-big" id="heroTargetVoo">—</div>
+        <div class="hero-sub" id="heroTargetIef">IEF: —</div>
+        <div class="hero-sub" id="heroTargetOpt">Optimizer: —</div>
+      </div>
+
+      <div class="card hero-card">
+        <div class="label">Execution Model</div>
+        <div class="hero-big" id="heroExecCost">—</div>
+        <div class="hero-sub" id="heroExecWindow">Window: —</div>
+        <div class="hero-sub" id="heroExecModel">Model: —</div>
+      </div>
+
+      <div class="card hero-card">
+        <div class="label">Live Attribution</div>
+        <div class="hero-big" id="heroLiveHealth">—</div>
+        <div class="hero-sub" id="heroLiveN">Live realized: —</div>
+        <div class="hero-sub" id="heroLiveAuc">AUC / DM: —</div>
       </div>
 
       <div class="card hero-card">
@@ -542,16 +440,17 @@
       <div class="label">Status / Summary</div>
       <div id="summaryBrief" class="summary-brief">Loading concise summary…</div>
       <details class="summary-details">
-        <summary>Open diagnostic detail <span>expanded for debugging, collapsible for daily use</span></summary>
+        <summary>Open diagnostic detail</summary>
         <pre id="statusSummaryPre" class="summary-box">Waiting to load data…</pre>
       </details>
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="forecastTab" id="tabBtn-forecast">Forecast Centerpiece</button>
-      <button class="tab-btn" data-tab="defenseTab" id="tabBtn-defense">Defense Sleeve</button>
-      <button class="tab-btn" data-tab="fusionTab" id="tabBtn-fusion">Fusion / Alpha</button>
-      <button class="tab-btn" data-tab="dataTab" id="tabBtn-data">Data Preview</button>
+      <button class="tab-btn active" data-tab="forecastTab">Forecast Centerpiece</button>
+      <button class="tab-btn" data-tab="defenseTab">Defense Sleeve</button>
+      <button class="tab-btn" data-tab="fusionTab">Fusion / Alpha</button>
+      <button class="tab-btn" data-tab="opsTab">Model Ops</button>
+      <button class="tab-btn" data-tab="dataTab">Data Preview</button>
     </div>
 
     <div class="tab-panel active" id="forecastTab">
@@ -566,7 +465,7 @@
         </div>
       </div>
 
-      <div class="spacer"></div>
+      <div style="height: 14px;"></div>
 
       <div class="grid two-col">
         <div class="card">
@@ -579,30 +478,12 @@
           <div class="hero-sub">Latest prediction-log row</div>
           <div class="status-row" id="predSnapBadges" style="margin: 14px 0 10px;"></div>
           <div class="snapshot-grid">
-            <div class="snapshot-item">
-              <div class="snapshot-key">Target Date</div>
-              <div class="snapshot-val" id="predSnapTarget">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Governance Tier</div>
-              <div class="snapshot-val" id="predSnapTier">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">p_final_cal</div>
-              <div class="snapshot-val" id="predSnapPFinal">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">alpha_scale</div>
-              <div class="snapshot-val" id="predSnapAlphaScale">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">VOO Spot / Call</div>
-              <div class="snapshot-val" id="predSnapVoo">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">IEF Spot / Call</div>
-              <div class="snapshot-val" id="predSnapIef">—</div>
-            </div>
+            <div class="snapshot-item"><div class="snapshot-key">Target Date</div><div class="snapshot-val" id="predSnapTarget">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Governance Tier</div><div class="snapshot-val" id="predSnapTier">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">p_final_cal</div><div class="snapshot-val" id="predSnapPFinal">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">alpha_scale</div><div class="snapshot-val" id="predSnapAlphaScale">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">VOO Spot / Call</div><div class="snapshot-val" id="predSnapVoo">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">IEF Spot / Call</div><div class="snapshot-val" id="predSnapIef">—</div></div>
           </div>
         </div>
       </div>
@@ -624,46 +505,16 @@
             <div class="status-pill good" id="govBadgeTooGood">TooGood Alarm: —</div>
           </div>
           <div class="snapshot-grid">
-            <div class="snapshot-item">
-              <div class="snapshot-key">Date</div>
-              <div class="snapshot-val" id="govSnapDate">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">alpha_eff_final</div>
-              <div class="snapshot-val" id="govSnapAlphaEff">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">gov_scale</div>
-              <div class="snapshot-val" id="govSnapScale">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">GovHealthScore_live</div>
-              <div class="snapshot-val" id="govSnapHealthLive">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">GovHealthScore_realized</div>
-              <div class="snapshot-val" id="govSnapHealthReal">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Lift_End</div>
-              <div class="snapshot-val" id="govSnapLift">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">dES_P_End</div>
-              <div class="snapshot-val" id="govSnapDes">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">AnnCostDrag_Roll</div>
-              <div class="snapshot-val" id="govSnapCost">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">TurnEff_Roll</div>
-              <div class="snapshot-val" id="govSnapTurnEff">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">GovHealthScore</div>
-              <div class="snapshot-val" id="govSnapHealthAny">—</div>
-            </div>
+            <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val" id="govSnapDate">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">alpha_eff_final</div><div class="snapshot-val" id="govSnapAlphaEff">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">gov_scale</div><div class="snapshot-val" id="govSnapScale">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_live</div><div class="snapshot-val" id="govSnapHealthLive">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_realized</div><div class="snapshot-val" id="govSnapHealthReal">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Lift_End</div><div class="snapshot-val" id="govSnapLift">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">dES_P_End</div><div class="snapshot-val" id="govSnapDes">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">AnnCostDrag_Roll</div><div class="snapshot-val" id="govSnapCost">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">TurnEff_Roll</div><div class="snapshot-val" id="govSnapTurnEff">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore</div><div class="snapshot-val" id="govSnapHealthAny">—</div></div>
           </div>
         </div>
       </div>
@@ -685,43 +536,19 @@
             <div class="status-pill good" id="alphaBadgeOverlay">Overlay Scale: —</div>
           </div>
           <div class="snapshot-grid">
-            <div class="snapshot-item">
-              <div class="snapshot-key">Date</div>
-              <div class="snapshot-val" id="alphaSnapDate">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Rank IC Roll</div>
-              <div class="snapshot-val" id="alphaSnapRankIc">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Mean TopK Net</div>
-              <div class="snapshot-val" id="alphaSnapTopk">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Budget Used</div>
-              <div class="snapshot-val" id="alphaSnapBudget">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Eligible Breadth</div>
-              <div class="snapshot-val" id="alphaSnapEligibleBreadth">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Selection Hit Rate</div>
-              <div class="snapshot-val" id="alphaSnapHitRate">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Eligible Names</div>
-              <div class="snapshot-val" id="alphaSnapEligibleNames">—</div>
-            </div>
-            <div class="snapshot-item">
-              <div class="snapshot-key">Selected Names</div>
-              <div class="snapshot-val" id="alphaSnapSelectedNames">—</div>
-            </div>
+            <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val" id="alphaSnapDate">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Rank IC Roll</div><div class="snapshot-val" id="alphaSnapRankIc">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Mean TopK Net</div><div class="snapshot-val" id="alphaSnapTopk">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Budget Used</div><div class="snapshot-val" id="alphaSnapBudget">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Eligible Breadth</div><div class="snapshot-val" id="alphaSnapEligibleBreadth">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Selection Hit Rate</div><div class="snapshot-val" id="alphaSnapHitRate">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Eligible Names</div><div class="snapshot-val" id="alphaSnapEligibleNames">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Selected Names</div><div class="snapshot-val" id="alphaSnapSelectedNames">—</div></div>
           </div>
         </div>
       </div>
 
-      <div class="spacer"></div>
+      <div style="height: 14px;"></div>
 
       <div class="grid two-col">
         <div class="card">
@@ -734,7 +561,7 @@
         </div>
       </div>
 
-      <div class="spacer"></div>
+      <div style="height: 14px;"></div>
 
       <div class="grid two-col">
         <div class="card">
@@ -746,27 +573,44 @@
           <div id="alphaBreadthChart" class="chart"></div>
         </div>
       </div>
+    </div>
 
-      <div class="spacer"></div>
+    <div class="tab-panel" id="opsTab">
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Part 7 Target Weights</div>
+          <div id="targetWeightsChart" class="chart"></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 6 Regime Distribution</div>
+          <div id="regimeChart" class="chart"></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
 
       <div class="grid two-col">
         <div class="card">
-          <div class="label">Recent Alpha Positions</div>
-          <div class="table-wrap">
-            <table id="alphaPosTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="label">Validation / Contract Snapshot</div>
+          <div class="kv-grid" id="validationGrid"></div>
         </div>
         <div class="card">
-          <div class="label">Recent Alpha Eligibility</div>
-          <div class="table-wrap">
-            <table id="alphaEligTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="label">Live Attribution Snapshot</div>
+          <div class="kv-grid" id="liveGrid"></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Part 8 Execution Analytics</div>
+          <div id="execCostChart" class="chart small"></div>
+          <div class="kv-grid" id="execGrid"></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 7 Current Target Snapshot</div>
+          <div class="kv-grid" id="portfolioGrid"></div>
         </div>
       </div>
     </div>
@@ -775,51 +619,70 @@
       <div class="grid two-col">
         <div class="card">
           <div class="label">Prediction Log</div>
-          <div class="table-wrap">
-            <table id="predTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="table-wrap"><table id="predTable"><thead></thead><tbody></tbody></table></div>
         </div>
         <div class="card">
           <div class="label">Fusion Allocations</div>
-          <div class="table-wrap">
-            <table id="allocTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="table-wrap"><table id="allocTable"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
 
-      <div class="spacer"></div>
+      <div style="height: 14px;"></div>
 
       <div class="grid two-col">
         <div class="card">
           <div class="label">Governance Tape</div>
-          <div class="table-wrap">
-            <table id="govTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="table-wrap"><table id="govTable"><thead></thead><tbody></tbody></table></div>
         </div>
         <div class="card">
           <div class="label">Alpha Summary Tape</div>
-          <div class="table-wrap">
-            <table id="alphaSummaryTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="table-wrap"><table id="alphaSummaryTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Recent Alpha Positions</div>
+          <div class="table-wrap"><table id="alphaPosTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="label">Recent Alpha Eligibility</div>
+          <div class="table-wrap"><table id="alphaEligTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Part 3 Summary</div>
+          <div class="table-wrap"><table id="part3SummaryTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 2 Summary</div>
+          <div class="table-wrap"><table id="part2SummaryTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Part 6 / Part 7 / Part 8</div>
+          <div class="table-wrap"><table id="opsMetaTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 9 Live Attribution Report</div>
+          <div class="table-wrap"><table id="part9Table"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
     </div>
 
     <div class="card" style="margin-top: 14px;">
       <div class="label">Debug / Load Status</div>
-      <div id="debugBox" class="muted">Waiting to load data…</div>
+      <div id="debugBox" class="small-note">Waiting to load data…</div>
     </div>
 
     <div class="card" style="margin-top: 14px; padding-top: 14px; padding-bottom: 14px;">
@@ -844,9 +707,20 @@
         prodTape: "artifacts_part3_v1/v1_final_production_tape.csv",
         govTape: "artifacts_part3_v1/v1_final_production_governance.csv",
         allocTape: "artifacts_part3_v1/v1_fusion_allocations.csv",
-        alphaSummary: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
+        part3Summary: "artifacts_part3_v1/part3_summary.json",
+        part2Summary: "artifacts_part2_g532/predictions/part2_g532_summary.json",
+        part2Diag: "artifacts_part2_g532/predictions/part2_g532_diag.json",
+        alphaSummaryTape: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
+        alphaSummaryJson: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary.json",
         alphaPositions: "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv",
-        alphaEligibility: "artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv"
+        alphaEligibility: "artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv",
+        part6Meta: "artifacts_part6/part6_meta.json",
+        part7Weights: "artifacts_part7/portfolio_weights_tape.csv",
+        part7Current: "artifacts_part7/current_target_weights.json",
+        part7Meta: "artifacts_part7/part7_meta.json",
+        part8Meta: "artifacts_part8/part8_meta.json",
+        part8Orders: "artifacts_part8/example_order_instructions.json",
+        part9Report: "artifacts_part9/live_attribution_report.json"
       }
     };
 
@@ -854,91 +728,63 @@
     const rawBase = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}`;
     document.getElementById("repoLink").href = repoBase;
 
-    function rawUrl(path) {
-      return `${rawBase}/${path}?t=${Date.now()}`;
-    }
-
+    function rawUrl(path) { return `${rawBase}/${path}?t=${Date.now()}`; }
     function isMissing(value) {
       if (value === null || value === undefined) return true;
       const s = String(value).trim();
       return s === "" || s === "—" || s.toUpperCase() === "NA" || s.toUpperCase() === "N/A" || s.toLowerCase() === "nan" || s.toLowerCase() === "null" || s.toLowerCase() === "none";
     }
-
     function toNumber(value) {
       if (isMissing(value)) return NaN;
+      if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
       const cleaned = String(value).replace(/,/g, "").trim();
       const n = Number(cleaned);
       return Number.isFinite(n) ? n : NaN;
     }
-
-    function fmtNum(x, digits = 4) {
-      const n = toNumber(x);
-      return Number.isFinite(n) ? n.toFixed(digits) : "NA";
-    }
-
-    function fmtPct(x, digits = 2) {
-      const n = toNumber(x);
-      return Number.isFinite(n) ? `${(100 * n).toFixed(digits)}%` : "NA";
-    }
-
-    function fmtPrice(x) {
-      const n = toNumber(x);
-      return Number.isFinite(n) ? n.toFixed(2) : "NA";
-    }
-
-    function fmtValueOrPending(value, formatter, pendingText = "Pending") {
-      const out = formatter(value);
-      return out === "NA" ? pendingText : out;
-    }
-
-    function textOrPending(value, pendingText = "Pending") {
-      return isMissing(value) ? pendingText : String(value);
-    }
-
-    function realizedPendingLabel(value, system, fallback = "Pending") {
-      if (!isMissing(value)) return String(value);
-      return system && system.maturity === "PARTIALLY MATURED" ? fallback : "NA";
-    }
-
+    function fmtNum(x, digits = 4) { const n = toNumber(x); return Number.isFinite(n) ? n.toFixed(digits) : "NA"; }
+    function fmtPct(x, digits = 2) { const n = toNumber(x); return Number.isFinite(n) ? `${(100 * n).toFixed(digits)}%` : "NA"; }
+    function fmtPrice(x) { const n = toNumber(x); return Number.isFinite(n) ? n.toFixed(2) : "NA"; }
     function fmtDate(value) {
       if (isMissing(value)) return "NA";
       if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim();
       const d = new Date(value);
       return Number.isNaN(d.getTime()) ? "NA" : d.toISOString().slice(0, 10);
     }
-
     function parseDateOnly(value) {
       if (isMissing(value)) return null;
       const d = new Date(value);
       if (Number.isNaN(d.getTime())) return null;
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
-
     function addCalendarDays(dateObj, days) {
       if (!dateObj || !Number.isFinite(days)) return null;
       const d = new Date(dateObj.getTime());
       d.setUTCDate(d.getUTCDate() + Math.round(days));
       return d;
     }
-
+    function textOrPending(value, pending = "Pending") { return isMissing(value) ? pending : String(value); }
+    function fmtValueOrPending(value, formatter, pendingText = "Pending") {
+      const out = formatter(value);
+      return out === "NA" ? pendingText : out;
+    }
     function rowHasRealized(row) {
       if (!row) return false;
       return Number.isFinite(toNumber(row.px_voo_realized)) && Number.isFinite(toNumber(row.px_ief_realized));
     }
-
     function deriveTargetDate(row) {
       if (!row) return "NA";
       if (!isMissing(row.target_date)) return fmtDate(row.target_date);
-
       const decision = parseDateOnly(row.decision_date || row.Date);
       if (!decision) return "NA";
-
       const hRaw = toNumber(row.h_reb);
       const h = Number.isFinite(hRaw) && hRaw > 0 ? Math.round(hRaw) : 7;
       const target = addCalendarDays(decision, h);
       return target ? fmtDate(target) : "NA";
     }
-
+    function normalizedPublishMode(v) {
+      const s = isMissing(v) ? "UNKNOWN" : String(v).trim().toUpperCase();
+      return ["NORMAL","DEFENSE_ONLY","FAIL_CLOSED_NEUTRAL"].includes(s) ? s : s;
+    }
     function csvToObjects(text) {
       const rows = text.trim().split(/\r?\n/);
       if (!rows.length) return [];
@@ -950,23 +796,15 @@
         return obj;
       });
     }
-
     function splitCsvRow(row) {
       const out = [];
-      let cur = "";
-      let q = false;
+      let cur = "", q = false;
       for (let i = 0; i < row.length; i++) {
         const ch = row[i];
         if (ch === '"') {
-          if (q && row[i + 1] === '"') {
-            cur += '"';
-            i++;
-          } else {
-            q = !q;
-          }
+          if (q && row[i + 1] === '"') { cur += '"'; i++; } else { q = !q; }
         } else if (ch === "," && !q) {
-          out.push(cur);
-          cur = "";
+          out.push(cur); cur = "";
         } else {
           cur += ch;
         }
@@ -974,85 +812,60 @@
       out.push(cur);
       return out;
     }
-
     async function fetchCsv(path) {
       const res = await fetch(rawUrl(path));
       if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
       return csvToObjects(await res.text());
     }
-
-    function sortByDateAsc(rows, col) {
-      return [...rows].sort((a, b) => {
-        const da = new Date(a[col]);
-        const db = new Date(b[col]);
-        return da - db;
-      });
+    async function fetchJson(path, optional = false) {
+      const res = await fetch(rawUrl(path));
+      if (!res.ok) {
+        if (optional) return null;
+        throw new Error(`${path} failed: ${res.status}`);
+      }
+      return await res.json();
     }
-
+    async function fetchCsvOptional(path) {
+      try { return await fetchCsv(path); } catch (e) { return []; }
+    }
+    function sortByDateAsc(rows, col) {
+      return [...rows].sort((a,b) => new Date(a[col]) - new Date(b[col]));
+    }
     function latestRow(rows, dateCol) {
       if (!rows || !rows.length) return null;
       const sorted = sortByDateAsc(rows.filter(r => !isMissing(r[dateCol])), dateCol);
       return sorted.length ? sorted[sorted.length - 1] : null;
     }
-
     function latestRowsByDate(rows, dateCol) {
       const last = latestRow(rows, dateCol);
       if (!last) return [];
       const lastDate = fmtDate(last[dateCol]);
       return rows.filter(r => fmtDate(r[dateCol]) === lastDate);
     }
-
-    function headRows(rows, n = 20) {
-      return (rows || []).slice(0, n);
-    }
-
-    function normalizeGovReasonDisplay(v) {
-      if (isMissing(v)) return "NA";
-      const parts = String(v).split("|").map(x => x.trim()).filter(Boolean);
-      if (!parts.length) return "NA";
-      return parts.map(p => p.toUpperCase() === "STALE" ? "GOV_STALE_MODE" : p).join("|");
-    }
-
+    function headRows(rows, n = 20) { return (rows || []).slice(0, n); }
     function realizedRowCount(predLog) {
-      return predLog.filter(r =>
-        Number.isFinite(toNumber(r.px_voo_realized)) &&
-        Number.isFinite(toNumber(r.px_ief_realized))
-      ).length;
+      return predLog.filter(r => Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))).length;
     }
-
     function smartDateRange(dateStrings, padDays = 3) {
       if (!dateStrings || !dateStrings.length) return null;
       const parsed = dateStrings.map(parseDateOnly).filter(Boolean);
       if (!parsed.length) return null;
       if (parsed.length === 1) {
         const d = parsed[0];
-        const x0 = new Date(d.getTime());
-        const x1 = new Date(d.getTime());
-        x0.setUTCDate(x0.getUTCDate() - padDays);
-        x1.setUTCDate(x1.getUTCDate() + padDays);
+        const x0 = new Date(d.getTime()); x0.setUTCDate(x0.getUTCDate() - padDays);
+        const x1 = new Date(d.getTime()); x1.setUTCDate(x1.getUTCDate() + padDays);
         return [x0.toISOString(), x1.toISOString()];
       }
       return null;
     }
-
     function plotBaseLayout(title, xTitle, yTitle, extra = {}) {
       return {
-        title: {
-          text: title,
-          font: { color: "#ffffff", size: 18 }
-        },
+        title: { text: title, font: { color: "#ffffff", size: 18 } },
         paper_bgcolor: "rgba(0,0,0,0)",
         plot_bgcolor: "#061226",
         font: { color: "#f8fafc", size: 14 },
-        margin: { l: 78, r: 72, t: 56, b: 110 },
-        legend: {
-          orientation: "h",
-          yanchor: "top",
-          y: -0.20,
-          xanchor: "left",
-          x: 0,
-          font: { size: 12, color: "#f8fafc" }
-        },
+        margin: { l: 78, r: 72, t: 56, b: 100 },
+        legend: { orientation: "h", yanchor: "top", y: -0.18, xanchor: "left", x: 0, font: { size: 12, color: "#f8fafc" } },
         xaxis: {
           title: { text: xTitle, standoff: 26, font: { size: 16, color: "#ffffff" } },
           tickfont: { size: 12, color: "#e2e8f0" },
@@ -1071,26 +884,59 @@
         ...extra
       };
     }
-
-    function plotConfig() {
-      return {
-        responsive: true,
-        displayModeBar: false
-      };
-    }
-
+    function plotConfig() { return { responsive: true, displayModeBar: false }; }
     function renderEmptyChart(id, title, message) {
       Plotly.newPlot(id, [], plotBaseLayout(title, "", "", {
-        annotations: [{
-          text: message,
-          xref: "paper",
-          yref: "paper",
-          x: 0.5,
-          y: 0.5,
-          showarrow: false,
-          font: { color: "#cbd5e1", size: 18 }
-        }]
+        annotations: [{ text: message, xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { color: "#cbd5e1", size: 18 } }]
       }), plotConfig());
+    }
+    function formatCell(col, val) {
+      if (isMissing(val)) return "—";
+      const lower = String(col).toLowerCase();
+      const n = toNumber(val);
+      if (lower.includes("date") || lower.endsWith("_at") || lower === "generated_at" || lower === "built_at") return fmtDate(val);
+      if (Number.isFinite(n)) {
+        if (lower.includes("cost") && lower.includes("bps")) return fmtNum(n, 2);
+        if (lower.includes("rate") || lower.includes("pct")) return fmtPct(n);
+        if (lower.includes("price") || lower.includes("px_") || lower.includes("call")) return fmtPrice(n);
+        return fmtNum(n);
+      }
+      return String(val);
+    }
+    function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
+    function setHtml(id, value) { const el = document.getElementById(id); if (el) el.innerHTML = value; }
+    function renderTable(tableId, rows, cols) {
+      const table = document.getElementById(tableId);
+      const thead = table.querySelector("thead");
+      const tbody = table.querySelector("tbody");
+      thead.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+      tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join("")}</tr>`).join("");
+    }
+    function flattenJson(obj, prefix = "", out = []) {
+      if (obj === null || obj === undefined) return out;
+      if (Array.isArray(obj)) {
+        if (!obj.length) out.push({ key: prefix || "value", value: "[]" });
+        obj.forEach((v, i) => flattenJson(v, prefix ? `${prefix}[${i}]` : `[${i}]`, out));
+        return out;
+      }
+      if (typeof obj === "object") {
+        const keys = Object.keys(obj);
+        if (!keys.length && prefix) out.push({ key: prefix, value: "{}" });
+        keys.forEach(k => flattenJson(obj[k], prefix ? `${prefix}.${k}` : k, out));
+        return out;
+      }
+      out.push({ key: prefix || "value", value: obj });
+      return out;
+    }
+    function renderJsonTable(tableId, obj, limit = 40) {
+      const rows = flattenJson(obj).slice(0, limit).map(r => ({ key: r.key, value: r.value }));
+      renderTable(tableId, rows, ["key", "value"]);
+    }
+    function makeKvRow(k, v) {
+      return `<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+    }
+    function renderKvGrid(id, pairs) {
+      setHtml(id, pairs.map(([k,v]) => makeKvRow(k, v)).join(""));
     }
 
     function aggregateFusionAllocations(allocRows) {
@@ -1098,17 +944,7 @@
       for (const r of allocRows) {
         const dt = fmtDate(r.Date);
         if (dt === "NA") continue;
-        if (!map.has(dt)) {
-          map.set(dt, {
-            Date: dt,
-            core_voo: 0,
-            core_ief: 0,
-            alpha_gross: 0,
-            total: 0,
-            alpha_state_display: !isMissing(r.alpha_state_display) ? r.alpha_state_display : "NA",
-            fusion_live: toNumber(r.fusion_live)
-          });
-        }
+        if (!map.has(dt)) map.set(dt, { Date: dt, core_voo: 0, core_ief: 0, alpha_gross: 0, total: 0, alpha_state_display: "NA", fusion_live: NaN });
         const rec = map.get(dt);
         const w = toNumber(r.weight);
         if (!Number.isFinite(w)) continue;
@@ -1120,42 +956,7 @@
         if (!isMissing(r.alpha_state_display)) rec.alpha_state_display = r.alpha_state_display;
         if (Number.isFinite(toNumber(r.fusion_live))) rec.fusion_live = toNumber(r.fusion_live);
       }
-      return [...map.values()].sort((a, b) => new Date(a.Date) - new Date(b.Date));
-    }
-
-    function renderTable(tableId, rows, cols) {
-      const table = document.getElementById(tableId);
-      const thead = table.querySelector("thead");
-      const tbody = table.querySelector("tbody");
-      thead.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
-      tbody.innerHTML = rows.map(r => `
-        <tr>
-          ${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join("")}
-        </tr>
-      `).join("");
-    }
-
-    function formatCell(col, val) {
-      if (isMissing(val)) return "—";
-      const lower = String(col).toLowerCase();
-      if (lower.includes("date")) return fmtDate(val);
-      const n = toNumber(val);
-      if (Number.isFinite(n)) {
-        if (lower.includes("ape") || lower.includes("rate")) return lower.includes("rate") ? fmtPct(n) : fmtPct(n);
-        if (lower.includes("call") || lower.includes("price") || lower.includes("px_")) return fmtPrice(n);
-        return fmtNum(n);
-      }
-      return String(val);
-    }
-
-    function setText(id, value) {
-      const el = document.getElementById(id);
-      if (el) el.textContent = value;
-    }
-
-    function setHtml(id, value) {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = value;
+      return [...map.values()].sort((a,b) => new Date(a.Date) - new Date(b.Date));
     }
 
     function buildSystemStatus(prodTape, predLog) {
@@ -1165,28 +966,17 @@
       const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       let ageDays = NaN;
       if (lastDate) ageDays = Math.round((todayUtc - lastDate) / 86400000);
-
       let status = "STALE";
       if (Number.isFinite(ageDays) && ageDays <= 1) status = "LIVE";
       else if (Number.isFinite(ageDays) && ageDays <= CFG.maxDelayDays) status = "DELAYED";
-
       const realizedRows = realizedRowCount(predLog);
       const maturity = realizedRows < 10 ? "PARTIALLY MATURED" : "MATURED";
-
-      return {
-        status,
-        maturity,
-        lastDate: latestTape ? fmtDate(latestTape.Date) : "NA",
-        todayUtc: todayUtc.toISOString().slice(0, 10),
-        ageDays: Number.isFinite(ageDays) ? ageDays : "NA",
-        realizedRows
-      };
+      return { status, maturity, lastDate: latestTape ? fmtDate(latestTape.Date) : "NA", todayUtc: todayUtc.toISOString().slice(0,10), ageDays: Number.isFinite(ageDays) ? ageDays : "NA", realizedRows };
     }
 
     function buildForecastSnapshot(predLog, prodTape) {
       const row = latestRow(predLog, "decision_date") || latestRow(prodTape, "Date");
       if (!row) return null;
-
       const decisionDate = !isMissing(row.decision_date) ? fmtDate(row.decision_date) : fmtDate(row.Date);
       const vooSpot = Number.isFinite(toNumber(row.px_voo_t)) ? toNumber(row.px_voo_t) : NaN;
       const iefSpot = Number.isFinite(toNumber(row.px_ief_t)) ? toNumber(row.px_ief_t) : NaN;
@@ -1194,20 +984,7 @@
       const iefCall = Number.isFinite(toNumber(row.px_ief_call_7d)) ? toNumber(row.px_ief_call_7d) : Number.isFinite(toNumber(row.ief_call_7d)) ? toNumber(row.ief_call_7d) : NaN;
       const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
       const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
-
-      return {
-        row,
-        decisionDate,
-        targetDate: deriveTargetDate(row),
-        vooSpot,
-        iefSpot,
-        vooCall,
-        iefCall,
-        vooDelta,
-        iefDelta,
-        vooSrc: !isMissing(row.voo_call_src) ? row.voo_call_src : "NA",
-        iefSrc: !isMissing(row.ief_call_src) ? row.ief_call_src : "NA"
-      };
+      return { row, decisionDate, targetDate: deriveTargetDate(row), vooSpot, iefSpot, vooCall, iefCall, vooDelta, iefDelta, vooSrc: !isMissing(row.voo_call_src) ? row.voo_call_src : "NA", iefSrc: !isMissing(row.ief_call_src) ? row.ief_call_src : "NA" };
     }
 
     function buildDefenseSnapshot(prodTape, govTape) {
@@ -1215,15 +992,13 @@
       const govRow = latestRow(govTape, "Date");
       const row = govRow || tapeRow;
       if (!row) return null;
-
       const alphaEffFinal = Number.isFinite(toNumber(govRow?.alpha_eff_final)) ? toNumber(govRow.alpha_eff_final) :
                             Number.isFinite(toNumber(tapeRow?.alpha_eff_final)) ? toNumber(tapeRow.alpha_eff_final) :
                             Number.isFinite(toNumber(tapeRow?.alpha_eff_final_live)) ? toNumber(tapeRow.alpha_eff_final_live) : NaN;
-
       return {
         date: row ? fmtDate(row.Date) : "NA",
         GovMode: !isMissing(govRow?.GovMode) ? govRow.GovMode : "NA",
-        GovReason: normalizeGovReasonDisplay(govRow?.GovReason),
+        GovReason: !isMissing(govRow?.GovReason) ? String(govRow.GovReason) : "NA",
         wExec: Number.isFinite(toNumber(tapeRow?.w_exec)) ? toNumber(tapeRow.w_exec) : NaN,
         scale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
                Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) :
@@ -1231,8 +1006,7 @@
         alphaEffFinal,
         healthLive: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
         healthReal: toNumber(govRow?.GovHealthScore_realized),
-        healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) :
-                   Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
+        healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
         liftEnd: toNumber(govRow?.Lift_End),
         desEnd: toNumber(govRow?.dES_P_End),
         costRoll: Number.isFinite(toNumber(govRow?.AnnCostDrag_Roll)) ? toNumber(govRow.AnnCostDrag_Roll) : toNumber(govRow?.ann_cost_drag_roll),
@@ -1244,22 +1018,16 @@
       };
     }
 
-    function buildAlphaSnapshot(prodTape, alphaSummary, alphaPositions, alphaEligibility) {
+    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility) {
       const tapeRow = latestRow(prodTape, "Date");
-      const summaryRow = latestRow(alphaSummary, "Date");
+      const summaryRow = latestRow(alphaSummaryTape, "Date");
       const posLive = latestRowsByDate(alphaPositions, "Date");
       const eligLive = latestRowsByDate(alphaEligibility, "asof_date");
-
       const selectedRows = posLive.filter(r => toNumber(r.selected) === 1);
       const selectedNames = selectedRows.map(r => String(r.Ticker || "")).filter(Boolean);
-      const eligibleNames = eligLive
-        .filter(r => toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1)
-        .map(r => String(r.Ticker || ""))
-        .filter(Boolean);
-
+      const eligibleNames = eligLive.filter(r => toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1).map(r => String(r.Ticker || "")).filter(Boolean);
       return {
-        alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display :
-                    !isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE",
+        alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : (!isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE"),
         alphaLive: toNumber(tapeRow?.alpha_live),
         fusionLive: toNumber(tapeRow?.fusion_live),
         budgetMult: toNumber(tapeRow?.budget_mult),
@@ -1293,10 +1061,8 @@
       const latestAlloc = latestRowsByDate(allocRows, "Date");
       const meta = { allocDate: "NA", coreVoo: NaN, coreIef: NaN, alphaGross: NaN, sumWeight: NaN, nRows: 0 };
       if (!latestAlloc.length) return { meta, latestAlloc: [] };
-
       meta.allocDate = fmtDate(latestAlloc[0].Date);
       meta.nRows = latestAlloc.length;
-
       let coreVoo = 0, coreIef = 0, alphaGross = 0, sum = 0;
       for (const r of latestAlloc) {
         const w = toNumber(r.weight);
@@ -1307,25 +1073,117 @@
         else if (tk === "IEF_CORE") coreIef += w;
         else alphaGross += w;
       }
-      meta.coreVoo = coreVoo;
-      meta.coreIef = coreIef;
-      meta.alphaGross = alphaGross;
-      meta.sumWeight = sum;
-
-      return { meta, latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight)) };
+      meta.coreVoo = coreVoo; meta.coreIef = coreIef; meta.alphaGross = alphaGross; meta.sumWeight = sum;
+      return { meta, latestAlloc: latestAlloc.sort((a,b) => toNumber(b.weight) - toNumber(a.weight)) };
     }
 
-    function populateSummaryBrief(system, forecast, defense, alpha, fusion) {
+    function buildValidationSnapshot(part2Summary, part3Summary) {
+      return {
+        p2Mode: normalizedPublishMode(part2Summary?.publish_mode),
+        p2FinalPass: part2Summary?.final_pass,
+        p3Mode: normalizedPublishMode(part3Summary?.publish_mode),
+        p3FinalPass: part3Summary?.final_pass,
+        alphaFamily: part3Summary?.alpha_family || "NA",
+        alphaContract: part3Summary?.alpha_contract || "NA",
+        preferredAlphaFamily: part3Summary?.preferred_alpha_family || "NA",
+        strictDriveOnly: part3Summary?.strict_drive_only,
+        latestAlphaState: part3Summary?.latest_alpha_state_display || part3Summary?.latest_alpha_state || "NA",
+        predictionLogPath: part3Summary?.prediction_log_path || "NA",
+        sourceHealth: [
+          part3Summary?.defense_source,
+          part3Summary?.alpha_positions_source,
+          part3Summary?.alpha_summary_source,
+          part3Summary?.alpha_eligibility_source,
+          part3Summary?.alpha_summary_json_source
+        ].filter(v => !isMissing(v)).length
+      };
+    }
+
+    function buildRegimeSnapshot(part6Meta) {
+      const dist = part6Meta?.regime_distribution || {};
+      let topState = "NA", topPct = NaN;
+      for (const [k, v] of Object.entries(dist)) {
+        const n = toNumber(v);
+        if (Number.isFinite(n) && (!Number.isFinite(topPct) || n > topPct)) { topState = k; topPct = n; }
+      }
+      return {
+        modelType: part6Meta?.model_type || "NA",
+        nRegimes: part6Meta?.n_regimes,
+        featureCount: Array.isArray(part6Meta?.feature_cols) ? part6Meta.feature_cols.length : NaN,
+        topState,
+        topPct,
+        distribution: dist
+      };
+    }
+
+    function buildPortfolioSnapshot(part7Current, part7Meta) {
+      return {
+        date: fmtDate(part7Current?.Date),
+        wTargetVoo: toNumber(part7Current?.w_target_voo),
+        wTargetIef: toNumber(part7Current?.w_target_ief),
+        regimeLabel: part7Current?.regime_label || "NA",
+        pTailBase: toNumber(part7Current?.p_tail_base),
+        baseRate: toNumber(part7Current?.base_rate),
+        rawValAuc: toNumber(part7Current?.raw_val_auc),
+        portfolioVolAnn: toNumber(part7Current?.portfolio_vol_ann),
+        viewConfidence: toNumber(part7Current?.view_confidence),
+        edge: toNumber(part7Current?.edge),
+        optimizer: part7Current?.optimizer || part7Meta?.optimizer || "NA"
+      };
+    }
+
+    function buildExecutionSnapshot(part8Meta, part8Orders) {
+      return {
+        model: part8Meta?.model || "NA",
+        optimalWindow: part8Meta?.optimal_window || "NA",
+        cost1M: toNumber(part8Meta?.example_cost_1M_portfolio_voo),
+        cost10M: toNumber(part8Meta?.example_cost_10M_portfolio_voo),
+        note: part8Meta?.note_on_current_model || "NA",
+        assetsModeled: Array.isArray(part8Meta?.assets_modeled) ? part8Meta.assets_modeled.join(", ") : "NA",
+        totalEstimatedCostDollars: toNumber(part8Orders?.total_estimated_cost_dollars),
+        totalEstimatedCostBps: toNumber(part8Orders?.total_estimated_cost_bps),
+        executeWindow: part8Orders?.execute_window || part8Meta?.optimal_window || "NA"
+      };
+    }
+
+    function buildLiveSnapshot(part9Report) {
+      const cs = part9Report?.classification_stats_backtest || {};
+      const dm = part9Report?.diebold_mariano_vs_naive || {};
+      const cal = part9Report?.calibration_backtest || {};
+      const attr = part9Report?.factor_attribution || {};
+      return {
+        healthStatus: part9Report?.health_status || part9Report?.status || "NA",
+        healthReasons: Array.isArray(part9Report?.health_reasons) ? part9Report.health_reasons.join(" | ") : (part9Report?.message || "NA"),
+        nLiveRealized: toNumber(part9Report?.n_live_realized),
+        totalPredictions: toNumber(part9Report?.total_predictions),
+        vooMaeLive: toNumber(part9Report?.voo_mae_live),
+        vooRmseLive: toNumber(part9Report?.voo_rmse_live),
+        vooHitRate: toNumber(part9Report?.voo_hit_rate),
+        auc: toNumber(cs.auc),
+        aucT: toNumber(cs.t_stat_auc),
+        accuracy: toNumber(cs.accuracy),
+        accuracyT: toNumber(cs.t_stat_accuracy),
+        brierSkill: toNumber(cs.brier_skill_score),
+        dmStat: toNumber(dm.dm_stat),
+        dmP: toNumber(dm.p_value),
+        mseReductionPct: toNumber(dm.mse_reduction_pct) / 100,
+        ece: toNumber(cal.ece),
+        brier: toNumber(cal.brier),
+        alpha: toNumber(attr.alpha),
+        beta: toNumber(attr.beta)
+      };
+    }
+
+    function populateSummaryBrief(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
       const notes = [];
       notes.push(`System ${system.status.toLowerCase()} and ${system.maturity.toLowerCase()}.`);
       notes.push(`Latest decision ${forecast?.decisionDate || "NA"}${forecast?.targetDate && forecast.targetDate !== "NA" ? ` targets ${forecast.targetDate}.` : "."}`);
       notes.push(`Defense is ${String(defense?.GovMode || "NA").toLowerCase()}; alpha state is ${String(alpha?.alphaState || "NA").toLowerCase()}.`);
-      if (system.realizedRows < 2) {
-        notes.push("Rolling error and distribution charts will fill in as more realized rows mature.");
-      }
-      if (Number.isFinite(toNumber(fusion?.meta?.sumWeight))) {
-        notes.push(`Latest fusion weights sum to ${fmtNum(fusion.meta.sumWeight)}.`);
-      }
+      notes.push(`Validation shows Part 2=${validation.p2Mode} and Part 3=${validation.p3Mode}.`);
+      if (!isMissing(regime.modelType)) notes.push(`Regime engine is ${String(regime.modelType).toUpperCase()} with ${Number.isFinite(toNumber(regime.nRegimes)) ? Math.round(toNumber(regime.nRegimes)) : "NA"} states.`);
+      if (Number.isFinite(portfolio.wTargetVoo)) notes.push(`Latest Part 7 target is VOO ${fmtPct(portfolio.wTargetVoo)} / IEF ${fmtPct(portfolio.wTargetIef)}.`);
+      if (!isMissing(live.healthStatus)) notes.push(`Part 9 health is ${String(live.healthStatus).toLowerCase()}.`);
+      if (system.realizedRows < 2) notes.push("Rolling forecast-error panels will fill in as more realized rows mature.");
       setText("summaryBrief", notes.join(" "));
     }
 
@@ -1333,10 +1191,10 @@
       setText("footerSource", `Source: GitHub ${CFG.branch}`);
       setText("footerDecision", `Decision: ${forecast?.decisionDate || "NA"}`);
       setText("footerTarget", `Target: ${forecast?.targetDate || "Pending"}`);
-      setText("footerLoaded", `Rows loaded: pred ${counts.predictionRows} | tape ${counts.productionRows} | gov ${counts.governanceRows}`);
+      setText("footerLoaded", `Rows loaded: pred ${counts.predictionRows} | tape ${counts.productionRows} | gov ${counts.governanceRows} | p7 ${counts.part7Rows}`);
     }
 
-    function populateHeroCards(system, forecast, defense, alpha, fusion) {
+    function populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
       setText("heroVooCall", fmtPrice(forecast?.vooCall));
       setText("heroVooMeta", `Current: ${fmtPrice(forecast?.vooSpot)} | Δ: ${fmtPct(forecast?.vooDelta)}`);
       setText("heroVooSrc", `Source: ${forecast?.vooSrc || "NA"}`);
@@ -1361,66 +1219,49 @@
       setText("heroAlphaLive", `Alpha live: ${toNumber(alpha.alphaLive) === 1 ? "YES" : "NO"} | Fusion live: ${toNumber(alpha.fusionLive) === 1 ? "YES" : "NO"}`);
       setText("heroBudgetMult", `Budget mult: ${fmtNum(alpha.budgetMult, 2)}`);
 
-      setText("heroRealizedDates", Number.isFinite(toNumber(alpha.realizedDates)) ? String(Math.round(toNumber(alpha.realizedDates))) : "Pending");
-      setText("heroQualityGates", `quality_ok=${Number.isFinite(toNumber(alpha.qualityOk)) ? Math.round(toNumber(alpha.qualityOk)) : "NA"} | drift_ok=${Number.isFinite(toNumber(alpha.driftOk)) ? Math.round(toNumber(alpha.driftOk)) : "NA"}`);
-      setText("heroTrialFused", `trial=${Number.isFinite(toNumber(alpha.trialOpen)) ? Math.round(toNumber(alpha.trialOpen)) : "NA"} | fused=${Number.isFinite(toNumber(alpha.fusedOpen)) ? Math.round(toNumber(alpha.fusedOpen)) : "NA"} | ready=${Number.isFinite(toNumber(alpha.ready)) ? Math.round(toNumber(alpha.ready)) : "NA"}`);
+      const p2Pass = toNumber(validation.p2FinalPass) === 1 || validation.p2FinalPass === true ? "PASS" : "FAIL";
+      const p3Pass = toNumber(validation.p3FinalPass) === 1 || validation.p3FinalPass === true ? "PASS" : "FAIL";
+      setText("heroValidation", `${p2Pass} / ${p3Pass}`);
+      setText("heroValidationMode", `Part 2: ${validation.p2Mode} | Part 3: ${validation.p3Mode}`);
+      setText("heroValidationAlpha", `Alpha family: ${validation.alphaFamily}`);
 
-      setText("heroAlphaBlocker", alpha.blocker || "NONE");
+      setText("heroRegimeModel", String(regime.modelType || "NA").toUpperCase());
+      setText("heroRegimeStates", `Regimes: ${Number.isFinite(toNumber(regime.nRegimes)) ? Math.round(toNumber(regime.nRegimes)) : "NA"} | Features: ${Number.isFinite(toNumber(regime.featureCount)) ? Math.round(toNumber(regime.featureCount)) : "NA"}`);
+      setText("heroRegimeDist", `Top state: ${regime.topState}${Number.isFinite(toNumber(regime.topPct)) ? ` (${fmtPct(regime.topPct)})` : ""}`);
 
-      setText("heroAllocSum", fmtNum(fusion.meta.sumWeight));
-      setText("heroAllocCore", `VOO core: ${fmtNum(fusion.meta.coreVoo)} | IEF core: ${fmtNum(fusion.meta.coreIef)}`);
-      setText("heroAllocAlpha", `Alpha gross: ${fmtNum(fusion.meta.alphaGross)}`);
+      setText("heroTargetVoo", fmtPct(portfolio.wTargetVoo));
+      setText("heroTargetIef", `IEF: ${fmtPct(portfolio.wTargetIef)}`);
+      setText("heroTargetOpt", `Optimizer: ${portfolio.optimizer || "NA"}`);
+
+      setText("heroExecCost", `${fmtNum(execution.cost1M, 2)} bp`);
+      setText("heroExecWindow", `Window: ${execution.optimalWindow || "NA"}`);
+      setText("heroExecModel", `Model: ${execution.model || "NA"}`);
+
+      setText("heroLiveHealth", live.healthStatus || "NA");
+      setText("heroLiveN", `Live realized: ${Number.isFinite(toNumber(live.nLiveRealized)) ? Math.round(toNumber(live.nLiveRealized)) : "NA"} / ${Number.isFinite(toNumber(live.totalPredictions)) ? Math.round(toNumber(live.totalPredictions)) : "NA"}`);
+      setText("heroLiveAuc", `AUC / DM: ${fmtNum(live.auc, 3)} / ${fmtNum(live.dmStat, 3)}`);
 
       setText("heroRankIc", fmtNum(alpha.rankIcRoll));
       setText("heroTopkNet", `TopK net: ${fmtNum(alpha.topkRoll, 6)} | IR: ${fmtValueOrPending(alpha.irTopk, v => fmtNum(v, 3))}`);
       setText("heroDriftRate", `Drift rate: ${fmtValueOrPending(alpha.driftRate, v => fmtPct(v))}`);
     }
 
-    function buildStatusPills(system, forecast, defense, alpha) {
+    function buildStatusPills(system, forecast, defense, alpha, validation, live) {
       const latestRealizedFilled = rowHasRealized(forecast?.row);
       const pills = [];
-      pills.push({
-        text: system.status === "LIVE" ? "🟢 SYSTEM LIVE" : system.status === "DELAYED" ? "🔵 SYSTEM DELAYED" : "🔴 SYSTEM STALE",
-        cls: system.status === "LIVE" ? "good" : system.status === "DELAYED" ? "info" : "bad"
-      });
-      pills.push({
-        text: system.maturity,
-        cls: system.maturity === "MATURED" ? "good" : "warn"
-      });
-      pills.push({
-        text: `α ${alpha.alphaState || "UNAVAILABLE"}`,
-        cls: (alpha.alphaState || "").includes("LIVE") ? "info" : "warn"
-      });
-      pills.push({
-        text: toNumber(alpha.fusionLive) === 1 ? "Fusion LIVE" : "Fusion OFF",
-        cls: toNumber(alpha.fusionLive) === 1 ? "info" : "warn"
-      });
-      pills.push({
-        text: `Governance: ${defense.GovMode || "NA"}`,
-        cls: String(defense.GovMode || "").toUpperCase() === "NORMAL" ? "good" : "warn"
-      });
-      pills.push({
-        text: `P_FINAL: ${fmtNum(forecast?.row?.p_final_cal || forecast?.row?.p_final_use, 4)}`,
-        cls: "good"
-      });
-      pills.push({
-        text: `Alpha Scale: ${fmtNum(forecast?.row?.alpha_scale, 2)}`,
-        cls: "good"
-      });
-      pills.push({
-        text: forecast?.targetDate && forecast.targetDate !== "NA" ? `Target Date: ${forecast.targetDate}` : "Target Date Pending",
-        cls: forecast?.targetDate && forecast.targetDate !== "NA" ? "good" : "warn"
-      });
-      pills.push({
-        text: latestRealizedFilled ? "Realized Filled" : "Awaiting Realized",
-        cls: latestRealizedFilled ? "good" : "warn"
-      });
-
+      pills.push({ text: system.status === "LIVE" ? "🟢 SYSTEM LIVE" : system.status === "DELAYED" ? "🔵 SYSTEM DELAYED" : "🔴 SYSTEM STALE", cls: system.status === "LIVE" ? "good" : system.status === "DELAYED" ? "info" : "bad" });
+      pills.push({ text: system.maturity, cls: system.maturity === "MATURED" ? "good" : "warn" });
+      pills.push({ text: `α ${alpha.alphaState || "UNAVAILABLE"}`, cls: (alpha.alphaState || "").includes("LIVE") ? "info" : "warn" });
+      pills.push({ text: `Part2 ${validation.p2Mode}`, cls: validation.p2Mode === "NORMAL" ? "good" : "warn" });
+      pills.push({ text: `Part3 ${validation.p3Mode}`, cls: validation.p3Mode === "NORMAL" ? "good" : "warn" });
+      pills.push({ text: `Health ${live.healthStatus || "NA"}`, cls: String(live.healthStatus || "").toUpperCase() === "ACTIVE" ? "good" : String(live.healthStatus || "").toUpperCase() === "IMMATURE" ? "info" : "warn" });
+      pills.push({ text: forecast?.targetDate && forecast.targetDate !== "NA" ? `Target ${forecast.targetDate}` : "Target Pending", cls: forecast?.targetDate && forecast.targetDate !== "NA" ? "good" : "warn" });
+      pills.push({ text: latestRealizedFilled ? "Realized Filled" : "Awaiting Realized", cls: latestRealizedFilled ? "good" : "warn" });
       setHtml("statusRow", pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join(""));
-      setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | target=${forecast?.targetDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)}`);
+      setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | target=${forecast?.targetDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)} | Part9=${live.healthStatus || "NA"}`);
     }
 
-    function buildSummaryText(system, forecast, defense, alpha, fusion, counts) {
+    function buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary) {
       const lines = [];
       lines.push(`Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`);
       lines.push("");
@@ -1438,54 +1279,69 @@
       lines.push(`- px_ief_t=${fmtPrice(forecast?.iefSpot)}`);
       lines.push(`- px_ief_call_7d=${fmtPrice(forecast?.iefCall)}`);
       lines.push("");
-      lines.push("DEFENSE GOVERNANCE SNAPSHOT:");
-      lines.push(`- GovMode=${defense?.GovMode || "NA"}`);
-      lines.push(`- GovReason_display=${defense?.GovReason || "NA"}`);
-      lines.push(`- w_exec=${fmtNum(defense?.wExec)}`);
-      lines.push(`- defense_scale_final=${fmtNum(defense?.scale)}`);
+      lines.push("VALIDATION / CONTRACT:");
+      lines.push(`- part2_publish_mode=${validation.p2Mode}`);
+      lines.push(`- part2_final_pass=${validation.p2FinalPass}`);
+      lines.push(`- part3_publish_mode=${validation.p3Mode}`);
+      lines.push(`- part3_final_pass=${validation.p3FinalPass}`);
+      lines.push(`- alpha_family=${validation.alphaFamily}`);
+      lines.push(`- alpha_contract=${validation.alphaContract}`);
+      lines.push(`- preferred_alpha_family=${validation.preferredAlphaFamily}`);
+      lines.push(`- strict_drive_only=${validation.strictDriveOnly}`);
+      lines.push(`- latest_alpha_state=${validation.latestAlphaState}`);
       lines.push("");
-      lines.push("PART 3 V1 ALPHA / FUSION SNAPSHOT:");
-      lines.push(`- alpha_state=${alpha.alphaState || "NA"}`);
-      lines.push(`- alpha_live=${Number.isFinite(toNumber(alpha.alphaLive)) ? Math.round(toNumber(alpha.alphaLive)) : "NA"}`);
-      lines.push(`- fusion_live=${Number.isFinite(toNumber(alpha.fusionLive)) ? Math.round(toNumber(alpha.fusionLive)) : "NA"}`);
-      lines.push(`- budget_mult=${fmtNum(alpha.budgetMult, 2)}`);
-      lines.push(`- realized_dates=${Number.isFinite(toNumber(alpha.realizedDates)) ? Math.round(toNumber(alpha.realizedDates)) : "NA"}`);
-      lines.push(`- mean_rank_ic=${fmtNum(alpha.rankIcRoll)}`);
-      lines.push(`- mean_topk_rel_ret_net=${fmtNum(alpha.topkRoll, 6)}`);
-      lines.push(`- ir_topk_rel_ret_net=${fmtNum(alpha.irTopk, 3)}`);
-      lines.push(`- alpha_drift_alarm_rate=${fmtPct(alpha.driftRate)}`);
-      lines.push(`- alpha_quality_ok=${Number.isFinite(toNumber(alpha.qualityOk)) ? Math.round(toNumber(alpha.qualityOk)) : "NA"}`);
-      lines.push(`- alpha_drift_ok=${Number.isFinite(toNumber(alpha.driftOk)) ? Math.round(toNumber(alpha.driftOk)) : "NA"}`);
-      lines.push(`- alpha_trial_gate_open=${Number.isFinite(toNumber(alpha.trialOpen)) ? Math.round(toNumber(alpha.trialOpen)) : "NA"}`);
-      lines.push(`- alpha_fused_gate_open=${Number.isFinite(toNumber(alpha.fusedOpen)) ? Math.round(toNumber(alpha.fusedOpen)) : "NA"}`);
-      lines.push(`- alpha_promotion_ready=${Number.isFinite(toNumber(alpha.ready)) ? Math.round(toNumber(alpha.ready)) : "NA"}`);
-      lines.push(`- alpha_blocker_text=${alpha.blocker || "NA"}`);
+      lines.push("REGIME / PORTFOLIO / EXECUTION:");
+      lines.push(`- regime_model=${regime.modelType}`);
+      lines.push(`- n_regimes=${regime.nRegimes}`);
+      lines.push(`- top_regime=${regime.topState}`);
+      lines.push(`- w_target_voo=${fmtNum(portfolio.wTargetVoo)}`);
+      lines.push(`- w_target_ief=${fmtNum(portfolio.wTargetIef)}`);
+      lines.push(`- optimizer=${portfolio.optimizer}`);
+      lines.push(`- execution_model=${execution.model}`);
+      lines.push(`- optimal_window=${execution.optimalWindow}`);
+      lines.push(`- example_cost_1m_voo_bps=${fmtNum(execution.cost1M, 2)}`);
+      lines.push(`- example_cost_10m_voo_bps=${fmtNum(execution.cost10M, 2)}`);
       lines.push("");
-      lines.push("LATEST FUSION ALLOCATION META:");
-      lines.push(`- alloc_date=${fusion.meta.allocDate}`);
-      lines.push(`- n_rows=${fusion.meta.nRows}`);
-      lines.push(`- sum_weight=${fmtNum(fusion.meta.sumWeight)}`);
-      lines.push(`- core_voo=${fmtNum(fusion.meta.coreVoo)}`);
-      lines.push(`- core_ief=${fmtNum(fusion.meta.coreIef)}`);
-      lines.push(`- alpha_gross=${fmtNum(fusion.meta.alphaGross)}`);
+      lines.push("LIVE ATTRIBUTION:");
+      lines.push(`- health_status=${live.healthStatus}`);
+      lines.push(`- health_reasons=${live.healthReasons}`);
+      lines.push(`- n_live_realized=${Number.isFinite(toNumber(live.nLiveRealized)) ? Math.round(toNumber(live.nLiveRealized)) : "NA"}`);
+      lines.push(`- auc=${fmtNum(live.auc, 4)}`);
+      lines.push(`- accuracy=${fmtPct(live.accuracy)}`);
+      lines.push(`- dm_stat=${fmtNum(live.dmStat, 3)}`);
+      lines.push(`- dm_p=${fmtNum(live.dmP, 4)}`);
+      lines.push(`- ece=${fmtNum(live.ece, 4)}`);
+      lines.push(`- brier=${fmtNum(live.brier, 4)}`);
       lines.push("");
-      lines.push("LIVE ALPHA SET:");
-      lines.push(`- eligible_names=${alpha.eligibleNames || "NA"}`);
-      lines.push(`- selected_names=${alpha.selectedNames || "NA"}`);
+      lines.push("PART 2 SUMMARY:");
+      if (part2Summary) {
+        lines.push(`- model_feature_count=${part2Summary.model_feature_count}`);
+        lines.push(`- drift_alarm_rate=${part2Summary.drift_alarm_rate}`);
+        lines.push(`- active_ret_net_ir=${part2Summary.active_ret_net_ir}`);
+        lines.push(`- strategy_ret_net_ir=${part2Summary.strategy_ret_net_ir}`);
+      }
+      lines.push("");
+      lines.push("PART 2 DIAGNOSTICS:");
+      if (part2Diag?.distribution_validation) {
+        lines.push(`- raw_coverage_mean=${fmtNum(part2Diag.distribution_validation.raw_coverage_mean)}`);
+        lines.push(`- conf_coverage_mean=${fmtNum(part2Diag.distribution_validation.conf_coverage_mean)}`);
+        lines.push(`- median_rmse_mean=${fmtNum(part2Diag.distribution_validation.median_rmse_mean)}`);
+      }
+      lines.push("");
+      lines.push("PART 3 SUMMARY:");
+      if (part3Summary) {
+        lines.push(`- fusion_live_rate=${fmtPct(part3Summary.fusion_live_rate)}`);
+        lines.push(`- defense_ir_net=${fmtNum(part3Summary.defense_ir_net, 3)}`);
+        lines.push(`- fused_ir_net=${fmtNum(part3Summary.fused_ir_net, 3)}`);
+      }
       lines.push("");
       lines.push("ROW COUNTS:");
-      lines.push(`- prediction_rows=${counts.predictionRows}`);
-      lines.push(`- production_tape_rows=${counts.productionRows}`);
-      lines.push(`- governance_rows=${counts.governanceRows}`);
-      lines.push(`- allocation_rows=${counts.allocationRows}`);
-      lines.push(`- alpha_summary_rows=${counts.alphaSummaryRows}`);
-      lines.push(`- alpha_position_rows=${counts.alphaPositionRows}`);
-      lines.push(`- alpha_eligibility_rows=${counts.alphaEligibilityRows}`);
+      Object.entries(counts).forEach(([k,v]) => lines.push(`- ${k}=${v}`));
       return lines.join("\n");
     }
 
-    function populatePredictionSnapshotCard(forecast, latestPredRow, system) {
-      const row = latestPredRow || forecast?.row || null;
+    function populatePredictionSnapshotCard(forecast) {
+      const row = forecast?.row || null;
       const latestRealizedFilled = rowHasRealized(row);
       setText("predSnapDate", forecast?.decisionDate || "NA");
       const badges = [];
@@ -1501,25 +1357,25 @@
       setText("predSnapIef", `${fmtPrice(forecast?.iefSpot)} / ${fmtPrice(forecast?.iefCall)}`);
     }
 
-    function populateGovernanceSnapshot(defense, system) {
+    function populateGovernanceSnapshot(defense) {
       setText("govSnapMode", defense?.GovMode || "NA");
       setText("govSnapReason", `Reason: ${defense?.GovReason || "NA"}`);
       setText("govBadgeMode", `GovMode: ${defense?.GovMode || "NA"}`);
       setText("govBadgeZero", `ZeRO Active: ${Number.isFinite(toNumber(defense?.zeroActive)) ? Math.round(toNumber(defense.zeroActive)) : 0}`);
       setText("govBadgeTooGood", `TooGood Alarm: ${Number.isFinite(toNumber(defense?.tooGood)) ? Math.round(toNumber(defense.tooGood)) : 0}`);
       setText("govSnapDate", defense?.date || "NA");
-      setText("govSnapAlphaEff", realizedPendingLabel(fmtNum(defense?.alphaEffFinal), system));
+      setText("govSnapAlphaEff", fmtNum(defense?.alphaEffFinal));
       setText("govSnapScale", fmtNum(defense?.govScale));
       setText("govSnapHealthLive", fmtNum(defense?.healthLive));
-      setText("govSnapHealthReal", realizedPendingLabel(fmtNum(defense?.healthReal), system));
-      setText("govSnapLift", realizedPendingLabel(fmtNum(defense?.liftEnd), system));
-      setText("govSnapDes", realizedPendingLabel(fmtNum(defense?.desEnd), system));
-      setText("govSnapCost", realizedPendingLabel(fmtNum(defense?.costRoll, 6), system));
-      setText("govSnapTurnEff", realizedPendingLabel(fmtNum(defense?.turnEff, 6), system));
+      setText("govSnapHealthReal", fmtNum(defense?.healthReal));
+      setText("govSnapLift", fmtNum(defense?.liftEnd));
+      setText("govSnapDes", fmtNum(defense?.desEnd));
+      setText("govSnapCost", fmtNum(defense?.costRoll, 6));
+      setText("govSnapTurnEff", fmtNum(defense?.turnEff, 6));
       setText("govSnapHealthAny", fmtNum(defense?.healthAny));
     }
 
-    function populateAlphaSnapshot(alpha, system) {
+    function populateAlphaSnapshot(alpha) {
       setText("alphaSnapTier", alpha.tier || "NA");
       setText("alphaBadgeDrift", `Drift Alarm: ${Number.isFinite(toNumber(alpha.driftAlarm)) ? Math.round(toNumber(alpha.driftAlarm)) : 0}`);
       setText("alphaBadgeSelected", `Selected: ${alpha.selectedCount}`);
@@ -1529,126 +1385,110 @@
       setText("alphaSnapTopk", fmtValueOrPending(alpha.topkRoll, v => fmtNum(v, 6)));
       setText("alphaSnapBudget", fmtValueOrPending(alpha.budgetUsed, v => fmtNum(v)));
       setText("alphaSnapEligibleBreadth", Number.isFinite(toNumber(alpha.eligibleBreadth)) ? String(Math.round(toNumber(alpha.eligibleBreadth))) : "Pending");
-      setText("alphaSnapHitRate", fmtValueOrPending(alpha.hitRate, v => fmtPct(v), system && system.maturity === "PARTIALLY MATURED" ? "Pending" : "NA"));
+      setText("alphaSnapHitRate", fmtValueOrPending(alpha.hitRate, v => fmtPct(v)));
       setText("alphaSnapEligibleNames", alpha.eligibleNames || "Pending");
       setText("alphaSnapSelectedNames", alpha.selectedNames || "Pending");
     }
 
+    function populateOpsGrids(validation, live, execution, portfolio) {
+      renderKvGrid("validationGrid", [
+        ["Part 2 publish_mode", validation.p2Mode || "NA"],
+        ["Part 2 final_pass", String(validation.p2FinalPass)],
+        ["Part 3 publish_mode", validation.p3Mode || "NA"],
+        ["Part 3 final_pass", String(validation.p3FinalPass)],
+        ["Alpha family", validation.alphaFamily || "NA"],
+        ["Alpha contract", validation.alphaContract || "NA"],
+        ["Preferred alpha family", validation.preferredAlphaFamily || "NA"],
+        ["strict_drive_only", String(validation.strictDriveOnly)],
+        ["Latest alpha state", validation.latestAlphaState || "NA"],
+        ["Prediction log path", validation.predictionLogPath || "NA"],
+      ]);
+
+      renderKvGrid("liveGrid", [
+        ["Health status", live.healthStatus || "NA"],
+        ["Health reasons", live.healthReasons || "NA"],
+        ["Live realized rows", Number.isFinite(toNumber(live.nLiveRealized)) ? String(Math.round(toNumber(live.nLiveRealized))) : "NA"],
+        ["VOO MAE live", fmtNum(live.vooMaeLive, 4)],
+        ["VOO RMSE live", fmtNum(live.vooRmseLive, 4)],
+        ["VOO hit rate", fmtPct(live.vooHitRate)],
+        ["AUC / t", `${fmtNum(live.auc, 3)} / ${fmtNum(live.aucT, 2)}`],
+        ["Accuracy / t", `${fmtPct(live.accuracy)} / ${fmtNum(live.accuracyT, 2)}`],
+        ["DM stat / p", `${fmtNum(live.dmStat, 3)} / ${fmtNum(live.dmP, 4)}`],
+        ["ECE / Brier", `${fmtNum(live.ece, 4)} / ${fmtNum(live.brier, 4)}`]
+      ]);
+
+      renderKvGrid("execGrid", [
+        ["Execution model", execution.model || "NA"],
+        ["Optimal window", execution.optimalWindow || "NA"],
+        ["Assets modeled", execution.assetsModeled || "NA"],
+        ["Example cost $1M VOO", `${fmtNum(execution.cost1M, 2)} bp`],
+        ["Example cost $10M VOO", `${fmtNum(execution.cost10M, 2)} bp`],
+        ["Order est. total $", fmtNum(execution.totalEstimatedCostDollars, 2)],
+        ["Order est. total bps", fmtNum(execution.totalEstimatedCostBps, 2)],
+        ["Order execute window", execution.executeWindow || "NA"],
+        ["Execution note", execution.note || "NA"],
+      ]);
+
+      renderKvGrid("portfolioGrid", [
+        ["Date", portfolio.date || "NA"],
+        ["Target VOO", fmtPct(portfolio.wTargetVoo)],
+        ["Target IEF", fmtPct(portfolio.wTargetIef)],
+        ["Regime label", portfolio.regimeLabel || "NA"],
+        ["p_tail_base", fmtNum(portfolio.pTailBase, 4)],
+        ["base_rate", fmtNum(portfolio.baseRate, 4)],
+        ["raw_val_auc", fmtNum(portfolio.rawValAuc, 4)],
+        ["portfolio_vol_ann", fmtPct(portfolio.portfolioVolAnn)],
+        ["view_confidence", fmtNum(portfolio.viewConfidence, 3)],
+        ["edge", fmtNum(portfolio.edge, 4)],
+        ["optimizer", portfolio.optimizer || "NA"]
+      ]);
+    }
+
     function renderPredictionChart(predLog) {
       const rows = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date)), "decision_date");
-      if (!rows.length) {
-        renderEmptyChart("predChart", "Prediction Log: Calls vs Realized", "No prediction-log rows found.");
-        return;
-      }
-
+      if (!rows.length) return renderEmptyChart("predChart", "Prediction Log: Calls vs Realized", "No prediction-log rows found.");
       const x = rows.map(r => fmtDate(r.decision_date));
       const traces = [];
       const makeTrace = (col, name, color) => {
         const y = rows.map(r => toNumber(r[col]));
-        const finiteCount = y.filter(v => Number.isFinite(v)).length;
-        if (!finiteCount) return;
-        traces.push({
-          x,
-          y,
-          type: "scatter",
-          mode: rows.length === 1 ? "markers+text" : "lines+markers",
-          name,
-          marker: { size: rows.length === 1 ? 8 : 6, color },
-          line: { width: 2, color },
-          text: rows.length === 1 ? [name] : undefined,
-          textposition: rows.length === 1 ? "top center" : undefined
-        });
+        if (!y.some(v => Number.isFinite(v))) return;
+        traces.push({ x, y, type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name, marker: { size: rows.length === 1 ? 8 : 6, color }, line: { width: 2, color }, text: rows.length === 1 ? [name] : undefined, textposition: rows.length === 1 ? "top center" : undefined });
       };
-
       makeTrace("px_voo_call_7d", "VOO call", "#38bdf8");
       makeTrace("px_ief_call_7d", "IEF call", "#fb923c");
       makeTrace("px_voo_realized", "VOO realized", "#22c55e");
       makeTrace("px_ief_realized", "IEF realized", "#ef4444");
-
       const layout = plotBaseLayout("Prediction Log: Calls vs Realized", "Decision Date", "Price");
-      const range = smartDateRange(x, 4);
-      if (range) layout.xaxis.range = range;
-
+      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
       Plotly.newPlot("predChart", traces, layout, plotConfig());
     }
 
     function renderErrorPanel(predLog) {
-      const realized = sortByDateAsc(
-        predLog.filter(r =>
-          !isMissing(r.decision_date) &&
-          Number.isFinite(toNumber(r.px_voo_realized)) &&
-          Number.isFinite(toNumber(r.px_ief_realized))
-        ),
-        "decision_date"
-      );
-
-      if (!realized.length) {
-        renderEmptyChart("errorChart", "7D Forecast Error Panel", "No matured 7-day forecasts yet.");
-        return;
-      }
-
+      const realized = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date) && Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))), "decision_date");
+      if (!realized.length) return renderEmptyChart("errorChart", "7D Forecast Error Panel", "No matured 7-day forecasts yet.");
       const calc = realized.map(r => {
         const vooErr = toNumber(r.px_voo_realized) - toNumber(r.px_voo_call_7d);
         const iefErr = toNumber(r.px_ief_realized) - toNumber(r.px_ief_call_7d);
-        const vooAbs = Math.abs(vooErr);
-        const iefAbs = Math.abs(iefErr);
+        const vooAbs = Math.abs(vooErr), iefAbs = Math.abs(iefErr);
         const vooApe = Number.isFinite(toNumber(r.px_voo_realized)) && toNumber(r.px_voo_realized) !== 0 ? vooAbs / Math.abs(toNumber(r.px_voo_realized)) : NaN;
         const iefApe = Number.isFinite(toNumber(r.px_ief_realized)) && toNumber(r.px_ief_realized) !== 0 ? iefAbs / Math.abs(toNumber(r.px_ief_realized)) : NaN;
-        return {
-          ...r,
-          voo_err: vooErr,
-          ief_err: iefErr,
-          voo_abs_err: vooAbs,
-          ief_abs_err: iefAbs,
-          voo_ape: vooApe,
-          ief_ape: iefApe
-        };
+        return { ...r, voo_err: vooErr, ief_err: iefErr, voo_abs_err: vooAbs, ief_abs_err: iefAbs, voo_ape: vooApe, ief_ape: iefApe };
       });
-
       if (calc.length === 1) {
         const r = calc[0];
-        const x = ["VOO MAE", "IEF MAE", "VOO MAPE%", "IEF MAPE%", "VOO Bias", "IEF Bias"];
-        const y = [r.voo_abs_err, r.ief_abs_err, 100 * r.voo_ape, 100 * r.ief_ape, r.voo_err, r.ief_err];
-        const colors = ["#38bdf8", "#fb923c", "#22c55e", "#ef4444", "#a855f7", "#f472b6"];
-        Plotly.newPlot("errorChart", [{
-          x,
-          y,
-          type: "bar",
-          marker: { color: colors },
-          text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
-          textposition: "outside",
-          cliponaxis: false
-        }], plotBaseLayout("7D Forecast Error Panel", "Metric", "Value", {
-          margin: { l: 78, r: 72, t: 56, b: 95 },
-          xaxis: {
-            title: { text: "Metric", standoff: 20, font: { size: 16, color: "#ffffff" } },
-            tickfont: { size: 12, color: "#e2e8f0" },
-            gridcolor: "rgba(148,163,184,0.10)",
-            automargin: true
-          }
-        }), plotConfig());
-        return;
+        const x = ["VOO MAE","IEF MAE","VOO MAPE%","IEF MAPE%","VOO Bias","IEF Bias"];
+        const y = [r.voo_abs_err, r.ief_abs_err, 100*r.voo_ape, 100*r.ief_ape, r.voo_err, r.ief_err];
+        return Plotly.newPlot("errorChart", [{ x, y, type: "bar", marker: { color: ["#38bdf8","#fb923c","#22c55e","#ef4444","#a855f7","#f472b6"] }, text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"), textposition: "outside", cliponaxis: false }], plotBaseLayout("7D Forecast Error Panel", "Metric", "Value"), plotConfig());
       }
-
       const rollN = 10;
       const series = [];
       for (let i = 0; i < calc.length; i++) {
         const start = Math.max(0, i - rollN + 1);
         const win = calc.slice(start, i + 1);
-        const mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-        series.push({
-          decision_date: fmtDate(calc[i].decision_date),
-          voo_mae_roll: mean(win.map(r => r.voo_abs_err)),
-          ief_mae_roll: mean(win.map(r => r.ief_abs_err)),
-          voo_mape_roll: 100 * mean(win.map(r => r.voo_ape)),
-          ief_mape_roll: 100 * mean(win.map(r => r.ief_ape)),
-          voo_bias_roll: mean(win.map(r => r.voo_err)),
-          ief_bias_roll: mean(win.map(r => r.ief_err))
-        });
+        const mean = arr => arr.reduce((a,b) => a+b,0) / arr.length;
+        series.push({ decision_date: fmtDate(calc[i].decision_date), voo_mae_roll: mean(win.map(r => r.voo_abs_err)), ief_mae_roll: mean(win.map(r => r.ief_abs_err)), voo_mape_roll: 100 * mean(win.map(r => r.voo_ape)), ief_mape_roll: 100 * mean(win.map(r => r.ief_ape)), voo_bias_roll: mean(win.map(r => r.voo_err)), ief_bias_roll: mean(win.map(r => r.ief_err)) });
       }
-
       const x = series.map(r => r.decision_date);
-      const layout = plotBaseLayout("7D Forecast Error Panel (rolling window = 10 decisions)", "Decision Date", "Metric value");
       Plotly.newPlot("errorChart", [
         { x, y: series.map(r => r.voo_mae_roll), type: "scatter", mode: "lines", name: "VOO MAE (roll)", line: { color: "#38bdf8", width: 2 } },
         { x, y: series.map(r => r.ief_mae_roll), type: "scatter", mode: "lines", name: "IEF MAE (roll)", line: { color: "#fb923c", width: 2 } },
@@ -1656,123 +1496,49 @@
         { x, y: series.map(r => r.ief_mape_roll), type: "scatter", mode: "lines", name: "IEF MAPE% (roll)", line: { color: "#ef4444", width: 2 } },
         { x, y: series.map(r => r.voo_bias_roll), type: "scatter", mode: "lines", name: "VOO Bias (roll)", line: { color: "#a855f7", width: 2 } },
         { x, y: series.map(r => r.ief_bias_roll), type: "scatter", mode: "lines", name: "IEF Bias (roll)", line: { color: "#f472b6", width: 2 } }
-      ], layout, plotConfig());
+      ], plotBaseLayout("7D Forecast Error Panel (rolling window = 10 decisions)", "Decision Date", "Metric value"), plotConfig());
     }
 
     function renderErrorDistribution(predLog) {
-      const realized = sortByDateAsc(
-        predLog.filter(r =>
-          !isMissing(r.decision_date) &&
-          Number.isFinite(toNumber(r.px_voo_realized)) &&
-          Number.isFinite(toNumber(r.px_ief_realized))
-        ),
-        "decision_date"
-      );
-
-      if (!realized.length) {
-        renderEmptyChart("distChart", "Forecast Error Distribution", "No matured 7-day forecasts yet.");
-        return;
-      }
-
+      const realized = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date) && Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))), "decision_date");
+      if (!realized.length) return renderEmptyChart("distChart", "Forecast Error Distribution", "No matured 7-day forecasts yet.");
       const vooErr = realized.map(r => toNumber(r.px_voo_realized) - toNumber(r.px_voo_call_7d));
       const iefErr = realized.map(r => toNumber(r.px_ief_realized) - toNumber(r.px_ief_call_7d));
-
       if (realized.length === 1) {
-        const y = [vooErr[0], iefErr[0]];
-        Plotly.newPlot("distChart", [{
-          x: ["VOO error", "IEF error"],
-          y,
-          type: "bar",
-          marker: { color: ["#38bdf8", "#fb923c"] },
-          text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
-          textposition: "outside",
-          cliponaxis: false
-        }], plotBaseLayout("Forecast Error Distribution", "Series", "Realized - Call", {
-          margin: { l: 78, r: 72, t: 56, b: 95 },
-          xaxis: {
-            title: { text: "Series", standoff: 20, font: { size: 16, color: "#ffffff" } },
-            tickfont: { size: 12, color: "#e2e8f0" },
-            gridcolor: "rgba(148,163,184,0.10)",
-            automargin: true
-          }
-        }), plotConfig());
-        return;
+        return Plotly.newPlot("distChart", [{ x: ["VOO error","IEF error"], y: [vooErr[0], iefErr[0]], type: "bar", marker: { color: ["#38bdf8","#fb923c"] }, text: [vooErr[0],iefErr[0]].map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"), textposition: "outside" }], plotBaseLayout("Forecast Error Distribution", "Series", "Realized - Call"), plotConfig());
       }
-
       Plotly.newPlot("distChart", [
-        {
-          x: vooErr,
-          type: "histogram",
-          name: "VOO error",
-          opacity: 0.65,
-          marker: { color: "#38bdf8" }
-        },
-        {
-          x: iefErr,
-          type: "histogram",
-          name: "IEF error",
-          opacity: 0.65,
-          marker: { color: "#fb923c" }
-        }
-      ], plotBaseLayout("Forecast Error Distribution", "Realized - Call", "Count", {
-        barmode: "overlay"
-      }), plotConfig());
+        { x: vooErr, type: "histogram", name: "VOO error", opacity: 0.65, marker: { color: "#38bdf8" } },
+        { x: iefErr, type: "histogram", name: "IEF error", opacity: 0.65, marker: { color: "#fb923c" } }
+      ], plotBaseLayout("Forecast Error Distribution", "Realized - Call", "Count", { barmode: "overlay" }), plotConfig());
     }
 
     function mergeDefenseFlags(prodTape, govTape) {
       const govMap = new Map();
       for (const r of govTape) {
-        const dt = fmtDate(r.Date);
-        if (dt === "NA") continue;
-        govMap.set(dt, {
-          drift: !isMissing(r.GovReason) ? String(r.GovReason).toUpperCase() !== "OK" : (Number.isFinite(toNumber(r.gov_scale)) ? toNumber(r.gov_scale) < 1 : false),
-          zero: toNumber(r.ZeRO_Active_End) === 1,
-          tg: toNumber(r.TooGood_Alarm_End) === 1
-        });
+        const dt = fmtDate(r.Date); if (dt === "NA") continue;
+        govMap.set(dt, { drift: !isMissing(r.GovReason) ? String(r.GovReason).toUpperCase() !== "OK" : (Number.isFinite(toNumber(r.gov_scale)) ? toNumber(r.gov_scale) < 1 : false), zero: toNumber(r.ZeRO_Active_End) === 1, tg: toNumber(r.TooGood_Alarm_End) === 1 });
       }
-
-      return prodTape.map(r => {
-        const dt = fmtDate(r.Date);
-        const flags = govMap.get(dt) || { drift: false, zero: false, tg: false };
-        return { ...r, _drift_flag: flags.drift, _zero_flag: flags.zero, _tg_flag: flags.tg };
-      });
+      return prodTape.map(r => { const dt = fmtDate(r.Date); const flags = govMap.get(dt) || { drift: false, zero: false, tg: false }; return { ...r, _drift_flag: flags.drift, _zero_flag: flags.zero, _tg_flag: flags.tg }; });
     }
 
     function addRegimeShapes(layout, rows) {
-      const toSegments = (flagKey) => {
+      const toSegments = flagKey => {
         const segs = [];
         let start = null;
-        for (let i = 0; i < rows.length; i++) {
+        for (let i=0;i<rows.length;i++) {
           const flag = !!rows[i][flagKey];
           const dt = fmtDate(rows[i].Date);
           if (flag && start === null) start = dt;
-          if ((!flag || i === rows.length - 1) && start !== null) {
-            const end = flag && i === rows.length - 1 ? dt : fmtDate(rows[Math.max(0, i - 1)].Date);
-            segs.push([start, end]);
-            start = null;
+          if ((!flag || i === rows.length-1) && start !== null) {
+            const end = flag && i === rows.length-1 ? dt : fmtDate(rows[Math.max(0,i-1)].Date);
+            segs.push([start,end]); start = null;
           }
         }
         return segs;
       };
-
       const shapes = [];
-      const addColor = (segments, color) => {
-        for (const [x0, x1] of segments) {
-          shapes.push({
-            type: "rect",
-            xref: "x",
-            yref: "paper",
-            x0,
-            x1,
-            y0: 0,
-            y1: 1,
-            fillcolor: color,
-            line: { width: 0 },
-            layer: "below"
-          });
-        }
-      };
-
+      const addColor = (segments, color) => segments.forEach(([x0,x1]) => shapes.push({ type: "rect", xref: "x", yref: "paper", x0, x1, y0:0, y1:1, fillcolor: color, line: { width: 0 }, layer: "below" }));
       addColor(toSegments("_drift_flag"), "rgba(245,158,11,0.12)");
       addColor(toSegments("_zero_flag"), "rgba(168,85,247,0.08)");
       addColor(toSegments("_tg_flag"), "rgba(239,68,68,0.08)");
@@ -1781,162 +1547,61 @@
 
     function renderDefenseSignalChart(prodTape, govTape) {
       const rows = sortByDateAsc(mergeDefenseFlags(prodTape, govTape), "Date");
-      if (!rows.length) {
-        renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "No Part 3 tape loaded.");
-        return;
-      }
-
-      const pCol = ["p_final_use", "p_final_cal", "p_final", "p_final_raw"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
-      const p0Col = ["p0_eff", "p0"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
-
-      if (!pCol) {
-        renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "Tape missing probability columns.");
-        return;
-      }
-
+      if (!rows.length) return renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "No Part 3 tape loaded.");
+      const pCol = ["p_final_use","p_final_cal","p_final","p_final_raw"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
+      const p0Col = ["p0_eff","p0"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
+      if (!pCol) return renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "Tape missing probability columns.");
       const x = rows.map(r => fmtDate(r.Date));
-      const traces = [{
-        x,
-        y: rows.map(r => toNumber(r[pCol])),
-        type: "scatter",
-        mode: rows.length === 1 ? "markers+text" : "lines",
-        name: pCol,
-        line: { color: "#38bdf8", width: 2 },
-        marker: { color: "#38bdf8", size: 7 },
-        text: rows.length === 1 ? [pCol] : undefined,
-        textposition: rows.length === 1 ? "top center" : undefined
-      }];
-
-      if (p0Col) {
-        traces.push({
-          x,
-          y: rows.map(r => toNumber(r[p0Col])),
-          type: "scatter",
-          mode: rows.length === 1 ? "markers+text" : "lines",
-          name: p0Col,
-          line: { color: "#f59e0b", width: 2, dash: "dot" },
-          marker: { color: "#f59e0b", size: 6 },
-          text: rows.length === 1 ? [p0Col] : undefined,
-          textposition: rows.length === 1 ? "bottom center" : undefined
-        });
-      }
-
+      const traces = [{ x, y: rows.map(r => toNumber(r[pCol])), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: pCol, line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 }, text: rows.length === 1 ? [pCol] : undefined, textposition: rows.length === 1 ? "top center" : undefined }];
+      if (p0Col) traces.push({ x, y: rows.map(r => toNumber(r[p0Col])), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: p0Col, line: { color: "#f59e0b", width: 2, dash: "dot" }, marker: { color: "#f59e0b", size: 6 }, text: rows.length === 1 ? [p0Col] : undefined, textposition: rows.length === 1 ? "bottom center" : undefined });
       const layout = plotBaseLayout("Defense Signal Probability vs Anchor", "Date", "Probability");
       addRegimeShapes(layout, rows);
-      const range = smartDateRange(x, 4);
-      if (range) layout.xaxis.range = range;
+      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
       Plotly.newPlot("defSignalChart", traces, layout, plotConfig());
     }
 
     function renderAlphaStateTimeline(prodTape) {
       const rows = sortByDateAsc(prodTape.filter(r => !isMissing(r.Date)), "Date");
-      if (!rows.length) {
-        renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "No Part 3 tape loaded.");
-        return;
-      }
-
+      if (!rows.length) return renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "No Part 3 tape loaded.");
       const x = rows.map(r => fmtDate(r.Date));
       const traces = [];
       const maybePush = (col, name, yaxis, color) => {
-        if (rows.some(r => Number.isFinite(toNumber(r[col])))) {
-          traces.push({
-            x,
-            y: rows.map(r => toNumber(r[col])),
-            type: "scatter",
-            mode: "lines",
-            name,
-            yaxis,
-            line: { width: 2, color }
-          });
-        }
+        if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis, line: { width: 2, color } });
       };
-
       maybePush("mean_rank_ic", "mean_rank_ic", "y", "#38bdf8");
       maybePush("mean_topk_rel_ret_net", "mean_topk_rel_ret_net", "y", "#fb923c");
       maybePush("ir_topk_rel_ret_net", "ir_topk_rel_ret_net", "y", "#22c55e");
       maybePush("budget_mult", "budget_mult", "y", "#ef4444");
       maybePush("realized_dates", "realized_dates", "y2", "#a855f7");
-
-      if (!traces.length) {
-        renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "Expected alpha-state columns were not found in Part 3 tape.");
-        return;
-      }
-
-      const rowsWithFlags = rows.map(r => ({
-        ...r,
-        _drift_flag: false,
-        _zero_flag: false,
-        _tg_flag: false,
-        _candidate: String(r.alpha_state_display || "").toUpperCase() === "CANDIDATE",
-        _fusion: toNumber(r.fusion_live) === 1
-      }));
-
-      const layout = plotBaseLayout("Alpha / Fusion State Timeline", "Date", "Signal quality / returns", {
-        yaxis2: {
-          title: { text: "Budget / realized dates", standoff: 14, font: { size: 16, color: "#ffffff" } },
-          overlaying: "y",
-          side: "right",
-          showgrid: false,
-          tickfont: { size: 12, color: "#e2e8f0" }
-        }
-      });
-
+      if (!traces.length) return renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "Expected alpha-state columns were not found in Part 3 tape.");
+      const rowsWithFlags = rows.map(r => ({ ...r, _candidate: String(r.alpha_state_display || "").toUpperCase() === "CANDIDATE", _fusion: toNumber(r.fusion_live) === 1 }));
+      const layout = plotBaseLayout("Alpha / Fusion State Timeline", "Date", "Signal quality / returns", { yaxis2: { title: { text: "Budget / realized dates", standoff: 14, font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } });
       const shapes = [];
       const addSegments = (flagKey, color) => {
         let start = null;
-        for (let i = 0; i < rowsWithFlags.length; i++) {
-          const flag = !!rowsWithFlags[i][flagKey];
-          const dt = fmtDate(rowsWithFlags[i].Date);
+        for (let i=0;i<rowsWithFlags.length;i++) {
+          const flag = !!rowsWithFlags[i][flagKey], dt = fmtDate(rowsWithFlags[i].Date);
           if (flag && start === null) start = dt;
-          if ((!flag || i === rowsWithFlags.length - 1) && start !== null) {
-            const end = flag && i === rowsWithFlags.length - 1 ? dt : fmtDate(rowsWithFlags[Math.max(0, i - 1)].Date);
-            shapes.push({
-              type: "rect",
-              xref: "x",
-              yref: "paper",
-              x0: start,
-              x1: end,
-              y0: 0,
-              y1: 1,
-              fillcolor: color,
-              line: { width: 0 },
-              layer: "below"
-            });
+          if ((!flag || i === rowsWithFlags.length-1) && start !== null) {
+            const end = flag && i === rowsWithFlags.length-1 ? dt : fmtDate(rowsWithFlags[Math.max(0,i-1)].Date);
+            shapes.push({ type: "rect", xref: "x", yref: "paper", x0: start, x1: end, y0:0, y1:1, fillcolor: color, line: { width: 0 }, layer: "below" });
             start = null;
           }
         }
       };
-
       addSegments("_candidate", "rgba(37,99,235,0.10)");
       addSegments("_fusion", "rgba(6,182,212,0.10)");
       layout.shapes = shapes;
-
       Plotly.newPlot("alphaStateChart", traces, layout, plotConfig());
     }
 
     function renderFusionFundingPath(prodTape, allocRows) {
       const tapeRows = sortByDateAsc(prodTape.filter(r => !isMissing(r.Date)), "Date");
-      let traces = [];
-      let x = [];
-
-      const hasTapeCols = ["w_defense_voo", "w_core_voo", "w_core_ief", "alpha_gross_weight"].some(
-        c => tapeRows.some(r => Number.isFinite(toNumber(r[c])))
-      );
-
+      let traces = [], x = [];
+      const hasTapeCols = ["w_defense_voo", "w_core_voo", "w_core_ief", "alpha_gross_weight"].some(c => tapeRows.some(r => Number.isFinite(toNumber(r[c]))));
       if (hasTapeCols) {
         x = tapeRows.map(r => fmtDate(r.Date));
-        const add = (col, name, color) => {
-          if (tapeRows.some(r => Number.isFinite(toNumber(r[col])))) {
-            traces.push({
-              x,
-              y: tapeRows.map(r => toNumber(r[col])),
-              type: "scatter",
-              mode: "lines",
-              name,
-              line: { width: 2, color }
-            });
-          }
-        };
+        const add = (col, name, color) => { if (tapeRows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: tapeRows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, line: { width: 2, color } }); };
         add("w_defense_voo", "w_defense_voo", "#38bdf8");
         add("w_core_voo", "w_core_voo", "#fb923c");
         add("w_core_ief", "w_core_ief", "#22c55e");
@@ -1952,177 +1617,108 @@
           ];
         }
       }
-
-      if (!traces.length) {
-        renderEmptyChart("fusionPathChart", "Fusion Funding Path", "Expected fusion allocation path columns were not found.");
-        return;
-      }
-
-      const layout = plotBaseLayout("Fusion Funding Path", "Date", "Weight");
-      Plotly.newPlot("fusionPathChart", traces, layout, plotConfig());
+      if (!traces.length) return renderEmptyChart("fusionPathChart", "Fusion Funding Path", "Expected fusion allocation path columns were not found.");
+      Plotly.newPlot("fusionPathChart", traces, plotBaseLayout("Fusion Funding Path", "Date", "Weight"), plotConfig());
     }
 
     function renderLatestFusionAllocations(allocRows) {
       const { meta, latestAlloc } = buildFusionMeta(allocRows);
-      if (!latestAlloc.length) {
-        renderEmptyChart("fusionAllocChart", "Latest Fusion Allocations", "No fusion allocation rows loaded.");
-        return;
-      }
-
+      if (!latestAlloc.length) return renderEmptyChart("fusionAllocChart", "Latest Fusion Allocations", "No fusion allocation rows loaded.");
       const stateDisplay = !isMissing(latestAlloc[0].alpha_state_display) ? latestAlloc[0].alpha_state_display : "NA";
       const fusionLive = Number.isFinite(toNumber(latestAlloc[0].fusion_live)) ? Math.round(toNumber(latestAlloc[0].fusion_live)) : "NA";
-
-      Plotly.newPlot("fusionAllocChart", [{
-        x: latestAlloc.map(r => String(r.Ticker || "")),
-        y: latestAlloc.map(r => toNumber(r.weight)),
-        type: "bar",
-        marker: { color: "#38bdf8" },
-        text: latestAlloc.map(r => fmtNum(r.weight)),
-        textposition: "outside",
-        cliponaxis: false
-      }], plotBaseLayout(
-        `Latest Fusion Allocations | date=${meta.allocDate} | state=${stateDisplay} | fusion_live=${fusionLive}`,
-        "Ticker",
-        "Weight",
-        { margin: { l: 78, r: 72, t: 72, b: 95 } }
-      ), plotConfig());
+      Plotly.newPlot("fusionAllocChart", [{ x: latestAlloc.map(r => String(r.Ticker || "")), y: latestAlloc.map(r => toNumber(r.weight)), type: "bar", marker: { color: "#38bdf8" }, text: latestAlloc.map(r => fmtNum(r.weight)), textposition: "outside", cliponaxis: false }], plotBaseLayout(`Latest Fusion Allocations | date=${meta.allocDate} | state=${stateDisplay} | fusion_live=${fusionLive}`, "Ticker", "Weight", { margin: { l: 78, r: 72, t: 72, b: 95 } }), plotConfig());
     }
 
-    function renderAlphaSleeveSummary(alphaSummary) {
-      const rows = sortByDateAsc(alphaSummary.filter(r => !isMissing(r.Date)), "Date");
-      if (!rows.length) {
-        renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "No alpha summary tape loaded.");
-        return;
-      }
-
+    function renderAlphaSleeveSummary(alphaSummaryTape) {
+      const rows = sortByDateAsc(alphaSummaryTape.filter(r => !isMissing(r.Date)), "Date");
+      if (!rows.length) return renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "No alpha summary tape loaded.");
       const x = rows.map(r => fmtDate(r.Date));
       const traces = [];
-      const addLeft = (col, name, color) => {
-        if (rows.some(r => Number.isFinite(toNumber(r[col])))) {
-          traces.push({
-            x,
-            y: rows.map(r => toNumber(r[col])),
-            type: "scatter",
-            mode: "lines",
-            name,
-            yaxis: "y",
-            line: { width: 2, color }
-          });
-        }
-      };
-      const addRight = (col, name, color) => {
-        if (rows.some(r => Number.isFinite(toNumber(r[col])))) {
-          traces.push({
-            x,
-            y: rows.map(r => toNumber(r[col])),
-            type: "scatter",
-            mode: "lines",
-            name,
-            yaxis: "y2",
-            line: { width: 2, color }
-          });
-        }
-      };
-
+      const addLeft = (col, name, color) => { if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis: "y", line: { width: 2, color } }); };
+      const addRight = (col, name, color) => { if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis: "y2", line: { width: 2, color } }); };
       addLeft("topk_rel_ret_net_roll", "topk_rel_ret_net_roll", "#38bdf8");
       addLeft("rank_ic_roll", "rank_ic_roll", "#fb923c");
       addLeft("alpha_overlay_scale", "alpha_overlay_scale", "#22c55e");
       addRight("breadth_selected", "breadth_selected", "#ef4444");
       addRight("eligible_breadth", "eligible_breadth", "#a855f7");
-
-      if (!traces.length) {
-        renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "Expected alpha summary columns were not found.");
-        return;
-      }
-
-      Plotly.newPlot("alphaSummaryChart", traces, plotBaseLayout("Alpha Sleeve Summary", "Date", "Return / IC / Scale", {
-        yaxis2: {
-          title: { text: "Breadth", standoff: 14, font: { size: 16, color: "#ffffff" } },
-          overlaying: "y",
-          side: "right",
-          showgrid: false,
-          tickfont: { size: 12, color: "#e2e8f0" }
-        }
-      }), plotConfig());
+      if (!traces.length) return renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "Expected alpha summary columns were not found.");
+      Plotly.newPlot("alphaSummaryChart", traces, plotBaseLayout("Alpha Sleeve Summary", "Date", "Return / IC / Scale", { yaxis2: { title: { text: "Breadth", standoff: 14, font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } }), plotConfig());
     }
 
     function renderAlphaEligibilityBreadth(alphaEligibility) {
       const groups = new Map();
       for (const r of alphaEligibility) {
-        const dt = fmtDate(r.asof_date);
-        if (dt === "NA") continue;
+        const dt = fmtDate(r.asof_date); if (dt === "NA") continue;
         if (!groups.has(dt)) groups.set(dt, 0);
-        if (toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1) {
-          groups.set(dt, groups.get(dt) + 1);
-        }
+        if (toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1) groups.set(dt, groups.get(dt) + 1);
       }
-      const rows = [...groups.entries()].map(([Date, count]) => ({ Date, count })).sort((a, b) => new Date(a.Date) - new Date(b.Date));
-
-      if (!rows.length) {
-        renderEmptyChart("alphaBreadthChart", "Alpha Eligibility Breadth", "No alpha eligibility history loaded.");
-        return;
-      }
-
-      Plotly.newPlot("alphaBreadthChart", [{
-        x: rows.map(r => r.Date),
-        y: rows.map(r => r.count),
-        type: "scatter",
-        mode: rows.length === 1 ? "markers+text" : "lines+markers",
-        name: "eligible count",
-        line: { width: 2, color: "#38bdf8" },
-        marker: { size: 6, color: "#38bdf8" },
-        text: rows.length === 1 ? rows.map(r => String(r.count)) : undefined,
-        textposition: rows.length === 1 ? "top center" : undefined
-      }], plotBaseLayout("Alpha Eligibility Breadth", "As-of Date", "Eligible Count"), plotConfig());
+      const rows = [...groups.entries()].map(([Date, count]) => ({ Date, count })).sort((a,b) => new Date(a.Date) - new Date(b.Date));
+      if (!rows.length) return renderEmptyChart("alphaBreadthChart", "Alpha Eligibility Breadth", "No alpha eligibility history loaded.");
+      Plotly.newPlot("alphaBreadthChart", [{ x: rows.map(r => r.Date), y: rows.map(r => r.count), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "eligible count", line: { width: 2, color: "#38bdf8" }, marker: { size: 6, color: "#38bdf8" }, text: rows.length === 1 ? rows.map(r => String(r.count)) : undefined, textposition: rows.length === 1 ? "top center" : undefined }], plotBaseLayout("Alpha Eligibility Breadth", "As-of Date", "Eligible Count"), plotConfig());
     }
 
-    function populateDataTables(predLog, allocRows, govTape, alphaSummary, alphaPositions, alphaEligibility) {
-      const predDisplayRows = headRows(
-        sortByDateAsc(predLog, "decision_date").slice().reverse().map(r => ({
-          ...r,
-          target_date: deriveTargetDate(r)
-        })),
-        20
-      );
+    function renderTargetWeightsChart(part7Weights) {
+      const rows = sortByDateAsc(part7Weights.filter(r => !isMissing(r.Date)), "Date");
+      if (!rows.length) return renderEmptyChart("targetWeightsChart", "Part 7 Target Weights", "No Part 7 weights tape found.");
+      const x = rows.map(r => fmtDate(r.Date));
+      Plotly.newPlot("targetWeightsChart", [
+        { x, y: rows.map(r => toNumber(r.w_target_voo)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: "w_target_voo", line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 }, text: rows.length === 1 ? ["VOO"] : undefined, textposition: rows.length === 1 ? "top center" : undefined },
+        { x, y: rows.map(r => toNumber(r.w_target_ief)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: "w_target_ief", line: { color: "#22c55e", width: 2 }, marker: { color: "#22c55e", size: 7 }, text: rows.length === 1 ? ["IEF"] : undefined, textposition: rows.length === 1 ? "bottom center" : undefined },
+        { x, y: rows.map(r => toNumber(r.edge)), type: "scatter", mode: "lines", name: "edge", yaxis: "y2", line: { color: "#fb923c", width: 2, dash: "dot" } }
+      ], plotBaseLayout("Part 7 Target Weights", "Date", "Weight", {
+        yaxis2: { title: { text: "Edge", font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } }
+      }), plotConfig());
+    }
 
-      renderTable("predTable",
-        predDisplayRows,
-        ["decision_date", "target_date", "p_final_cal", "p0", "alpha_scale", "governance_tier", "px_voo_t", "px_voo_call_7d", "px_voo_realized", "voo_abs_err", "voo_ape", "px_ief_t", "px_ief_call_7d", "px_ief_realized", "ief_abs_err", "ief_ape"]
-      );
+    function renderRegimeChart(part6Meta) {
+      const dist = part6Meta?.regime_distribution || {};
+      const keys = Object.keys(dist);
+      if (!keys.length) return renderEmptyChart("regimeChart", "Part 6 Regime Distribution", "No Part 6 metadata found.");
+      Plotly.newPlot("regimeChart", [{
+        x: keys,
+        y: keys.map(k => toNumber(dist[k]) * 100),
+        type: "bar",
+        marker: { color: "#7c83ff" },
+        text: keys.map(k => fmtPct(dist[k])),
+        textposition: "outside",
+        cliponaxis: false
+      }], plotBaseLayout("Part 6 Regime Distribution", "Regime", "Share of History (%)"), plotConfig());
+    }
 
-      renderTable("allocTable",
-        headRows(sortByDateAsc(allocRows, "Date").slice().reverse(), 20),
-        ["Date", "Ticker", "weight", "bucket", "alpha_state_display", "fusion_live"]
-      );
+    function renderExecCostChart(execution) {
+      if (!Number.isFinite(toNumber(execution.cost1M)) && !Number.isFinite(toNumber(execution.cost10M))) {
+        return renderEmptyChart("execCostChart", "Part 8 Execution Analytics", "No Part 8 metadata found.");
+      }
+      Plotly.newPlot("execCostChart", [{
+        x: ["$1M VOO example", "$10M VOO example"],
+        y: [toNumber(execution.cost1M), toNumber(execution.cost10M)],
+        type: "bar",
+        marker: { color: ["#38bdf8", "#ef4444"] },
+        text: [fmtNum(execution.cost1M, 2), fmtNum(execution.cost10M, 2)].map(v => `${v} bp`),
+        textposition: "outside",
+        cliponaxis: false
+      }], plotBaseLayout("Part 8 Execution Analytics", "Portfolio Scale", "Estimated Cost (bps)"), plotConfig());
+    }
 
-      renderTable("govTable",
-        headRows(sortByDateAsc(govTape, "Date").slice().reverse(), 20),
-        ["Date", "GovMode", "GovReason", "gov_scale", "alpha_eff_final", "GovHealthScore_live", "GovHealthScore_realized", "Lift_End", "dES_P_End", "AnnCostDrag_Roll", "TurnEff_Roll", "ZeRO_Active_End", "TooGood_Alarm_End"]
-      );
-
-      renderTable("alphaSummaryTable",
-        headRows(sortByDateAsc(alphaSummary, "Date").slice().reverse(), 20),
-        ["Date", "rank_ic", "rank_ic_roll", "topk_rel_ret_net", "topk_rel_ret_net_roll", "selection_hit_rate", "breadth_selected", "eligible_breadth", "gross_alpha_budget_used", "alpha_drift_alarm", "alpha_overlay_scale", "alpha_governance_tier"]
-      );
-
-      renderTable("alphaPosTable",
-        headRows(latestRowsByDate(alphaPositions, "Date"), 20),
-        ["Date", "Ticker", "selected", "weight", "alpha_score", "score_mu", "score_prob", "p_alpha_final", "mu_alpha_hat_final", "eligible_name", "alpha_governance_tier"]
-      );
-
+    function populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMeta, part9Report) {
+      const predDisplayRows = headRows(sortByDateAsc(predLog, "decision_date").slice().reverse().map(r => ({ ...r, target_date: deriveTargetDate(r) })), 20);
+      renderTable("predTable", predDisplayRows, ["decision_date","target_date","p_final_cal","p0","alpha_scale","governance_tier","px_voo_t","px_voo_call_7d","px_voo_realized","voo_err","px_ief_t","px_ief_call_7d","px_ief_realized","ief_err","hit_direction"]);
+      renderTable("allocTable", headRows(sortByDateAsc(allocRows, "Date").slice().reverse(), 20), ["Date","Ticker","weight","bucket","alpha_state_display","fusion_live"]);
+      renderTable("govTable", headRows(sortByDateAsc(govTape, "Date").slice().reverse(), 20), ["Date","publish_mode","final_pass","quality_ok","drift_ok","trial_gate_open","fused_gate_open","promotion_ready","alpha_state_display","alpha_live","drift_rate","budget_mult","alpha_blockers"]);
+      renderTable("alphaSummaryTable", headRows(sortByDateAsc(alphaSummaryTape, "Date").slice().reverse(), 20), ["Date","rank_ic","rank_ic_roll","topk_rel_ret_net","topk_rel_ret_net_roll","selection_hit_rate","breadth_selected","eligible_breadth","gross_alpha_budget_used","alpha_drift_alarm","alpha_overlay_scale","alpha_governance_tier"]);
+      renderTable("alphaPosTable", headRows(latestRowsByDate(alphaPositions, "Date"), 20), ["Date","Ticker","selected","weight","alpha_score","score_mu","score_prob","p_alpha_final","mu_alpha_hat_final","eligible_name","alpha_governance_tier"]);
       const latestElig = latestRowsByDate(alphaEligibility, "asof_date").map(r => {
-        const eligible = toNumber(r.eligible);
-        const inSet = toNumber(r.in_elig_set);
+        const eligible = toNumber(r.eligible), inSet = toNumber(r.in_elig_set);
         let mode = "not_in_live_set";
         if (eligible === 1 && inSet === 1) mode = "strictly_eligible";
         else if (eligible === 0 && inSet === 1) mode = "fallback_in_elig_set";
         return { ...r, eligibility_mode: !isMissing(r.eligibility_mode) ? r.eligibility_mode : mode };
       });
-
-      renderTable("alphaEligTable",
-        headRows(latestElig, 20),
-        ["asof_date", "Ticker", "eligible", "in_elig_set", "n_obs", "hit_rate", "mean_alpha_target", "mean_score", "eligibility_mode"]
-      );
+      renderTable("alphaEligTable", headRows(latestElig, 20), ["asof_date","Ticker","eligible","in_elig_set","n_obs","hit_rate","mean_alpha_target","mean_score","eligibility_mode"]);
+      renderJsonTable("part3SummaryTable", part3Summary || {});
+      renderJsonTable("part2SummaryTable", part2Summary || {});
+      renderJsonTable("opsMetaTable", opsMeta || {});
+      renderJsonTable("part9Table", part9Report || {});
     }
 
     function setupTabs() {
@@ -2141,17 +1737,7 @@
     }
 
     function resizeAllPlots() {
-      [
-        "predChart",
-        "errorChart",
-        "distChart",
-        "defSignalChart",
-        "alphaStateChart",
-        "fusionPathChart",
-        "fusionAllocChart",
-        "alphaSummaryChart",
-        "alphaBreadthChart"
-      ].forEach(id => {
+      ["predChart","errorChart","distChart","defSignalChart","alphaStateChart","fusionPathChart","fusionAllocChart","alphaSummaryChart","alphaBreadthChart","targetWeightsChart","regimeChart","execCostChart"].forEach(id => {
         const el = document.getElementById(id);
         if (el && el.data) Plotly.Plots.resize(el);
       });
@@ -2159,58 +1745,87 @@
 
     async function loadAll() {
       const debug = document.getElementById("debugBox");
-      debug.textContent = "Loading GitHub CSVs...";
-
+      debug.textContent = "Loading GitHub artifacts...";
       try {
         const [
           predLogRaw,
           prodTapeRaw,
           govTapeRaw,
           allocRaw,
-          alphaSummaryRaw,
+          alphaSummaryTapeRaw,
           alphaPositionsRaw,
-          alphaEligibilityRaw
+          alphaEligibilityRaw,
+          part3Summary,
+          part2Summary,
+          part2Diag,
+          alphaSummaryJson,
+          part6Meta,
+          part7WeightsRaw,
+          part7Current,
+          part7Meta,
+          part8Meta,
+          part8Orders,
+          part9Report
         ] = await Promise.all([
           fetchCsv(CFG.files.predLog),
           fetchCsv(CFG.files.prodTape),
           fetchCsv(CFG.files.govTape),
           fetchCsv(CFG.files.allocTape),
-          fetchCsv(CFG.files.alphaSummary),
+          fetchCsv(CFG.files.alphaSummaryTape),
           fetchCsv(CFG.files.alphaPositions),
-          fetchCsv(CFG.files.alphaEligibility)
+          fetchCsv(CFG.files.alphaEligibility),
+          fetchJson(CFG.files.part3Summary, true),
+          fetchJson(CFG.files.part2Summary, true),
+          fetchJson(CFG.files.part2Diag, true),
+          fetchJson(CFG.files.alphaSummaryJson, true),
+          fetchJson(CFG.files.part6Meta, true),
+          fetchCsvOptional(CFG.files.part7Weights),
+          fetchJson(CFG.files.part7Current, true),
+          fetchJson(CFG.files.part7Meta, true),
+          fetchJson(CFG.files.part8Meta, true),
+          fetchJson(CFG.files.part8Orders, true),
+          fetchJson(CFG.files.part9Report, true)
         ]);
 
         const predLog = sortByDateAsc(predLogRaw, "decision_date");
         const prodTape = sortByDateAsc(prodTapeRaw, "Date");
         const govTape = sortByDateAsc(govTapeRaw, "Date");
         const allocRows = sortByDateAsc(allocRaw, "Date");
-        const alphaSummary = sortByDateAsc(alphaSummaryRaw, "Date");
+        const alphaSummaryTape = sortByDateAsc(alphaSummaryTapeRaw, "Date");
         const alphaPositions = sortByDateAsc(alphaPositionsRaw, "Date");
         const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, "asof_date");
+        const part7Weights = sortByDateAsc(part7WeightsRaw, "Date");
 
         const system = buildSystemStatus(prodTape, predLog);
         const forecast = buildForecastSnapshot(predLog, prodTape);
         const defense = buildDefenseSnapshot(prodTape, govTape);
-        const alpha = buildAlphaSnapshot(prodTape, alphaSummary, alphaPositions, alphaEligibility);
+        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility);
+        const validation = buildValidationSnapshot(part2Summary, part3Summary);
+        const regime = buildRegimeSnapshot(part6Meta);
+        const portfolio = buildPortfolioSnapshot(part7Current, part7Meta);
+        const execution = buildExecutionSnapshot(part8Meta, part8Orders);
+        const live = buildLiveSnapshot(part9Report);
         const fusion = buildFusionMeta(allocRows);
 
-        populateHeroCards(system, forecast, defense, alpha, fusion);
-        buildStatusPills(system, forecast, defense, alpha);
-        populateSummaryBrief(system, forecast, defense, alpha, fusion);
-        populatePredictionSnapshotCard(forecast, latestRow(predLog, "decision_date"), system);
-        populateGovernanceSnapshot(defense, system);
-        populateAlphaSnapshot(alpha, system);
+        populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live);
+        buildStatusPills(system, forecast, defense, alpha, validation, live);
+        populateSummaryBrief(system, forecast, defense, alpha, validation, regime, portfolio, execution, live);
+        populatePredictionSnapshotCard(forecast);
+        populateGovernanceSnapshot(defense);
+        populateAlphaSnapshot(alpha);
+        populateOpsGrids(validation, live, execution, portfolio);
 
         const counts = {
           predictionRows: predLog.length,
           productionRows: prodTape.length,
           governanceRows: govTape.length,
           allocationRows: allocRows.length,
-          alphaSummaryRows: alphaSummary.length,
+          alphaSummaryRows: alphaSummaryTape.length,
           alphaPositionRows: alphaPositions.length,
-          alphaEligibilityRows: alphaEligibility.length
+          alphaEligibilityRows: alphaEligibility.length,
+          part7Rows: part7Weights.length
         };
-        setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, fusion, counts));
+        setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary));
         populateFooter(counts, forecast);
 
         renderPredictionChart(predLog);
@@ -2220,14 +1835,24 @@
         renderAlphaStateTimeline(prodTape);
         renderFusionFundingPath(prodTape, allocRows);
         renderLatestFusionAllocations(allocRows);
-        renderAlphaSleeveSummary(alphaSummary);
+        renderAlphaSleeveSummary(alphaSummaryTape);
         renderAlphaEligibilityBreadth(alphaEligibility);
+        renderTargetWeightsChart(part7Weights);
+        renderRegimeChart(part6Meta);
+        renderExecCostChart(execution);
 
-        populateDataTables(predLog, allocRows, govTape, alphaSummary, alphaPositions, alphaEligibility);
+        const opsMetaCombined = {
+          part6_meta: part6Meta || {},
+          part7_meta: part7Meta || {},
+          part7_current_target: part7Current || {},
+          part8_meta: part8Meta || {},
+          part8_orders: part8Orders || {},
+          alpha_summary_json: alphaSummaryJson || {}
+        };
+        populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMetaCombined, part9Report);
 
         document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
-        debug.textContent =
-          `Loaded ${predLog.length} prediction rows, ${prodTape.length} production tape rows, ${govTape.length} governance rows, ${allocRows.length} allocation rows, ${alphaSummary.length} alpha summary rows, ${alphaPositions.length} alpha position rows, and ${alphaEligibility.length} alpha eligibility rows from ${repoBase}.`;
+        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}.`;
 
         setTimeout(resizeAllPlots, 100);
       } catch (err) {
@@ -2238,7 +1863,6 @@
 
     document.getElementById("refreshBtn").addEventListener("click", loadAll);
     window.addEventListener("resize", resizeAllPlots);
-
     setupTabs();
     loadAll();
   </script>
