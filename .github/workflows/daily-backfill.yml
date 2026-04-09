@@ -45,16 +45,22 @@ jobs:
 
       - name: Commit updated prediction log
         run: |
+          if [ ! -f artifacts_part3/prediction_log.csv ]; then
+            echo "prediction_log.csv does not exist. Nothing to commit."
+            exit 0
+          fi
+      
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+      
           git add artifacts_part3/prediction_log.csv
-
+      
           if git diff --cached --quiet; then
             echo "No backfill changes to commit."
             exit 0
           fi
-
+      
           git commit -m "Backfill realized prediction log"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
+          
