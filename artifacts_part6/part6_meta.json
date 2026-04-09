@@ -1,7 +1,7 @@
 {
   "version": "V1",
-  "built_at": "2026-04-09T07:04:44.259118+00:00",
-  "model_type": "gmm",
+  "built_at": "2026-04-09T11:07:41.290272+00:00",
+  "model_type": "hmm",
   "n_regimes": 3,
   "feature_cols": [
     "vix_z21",
@@ -10,20 +10,38 @@
     "hy_ig_z21",
     "spread_vol10",
     "duration_spread_z21",
-    "breadth_rsp_voo_z21"
+    "breadth_rsp_voo_z21",
+    "yield_curve_2s10s",
+    "hy_spread_fred"
   ],
   "regime_map": {
-    "0": "risk_on",
+    "2": "risk_on",
     "1": "high_vol",
-    "2": "crisis"
+    "0": "crisis"
   },
-  "transition_matrix": null,
+  "transition_matrix": [
+    [
+      3.1363499952896032e-06,
+      0.9999968623697267,
+      1.2802779249388821e-09
+    ],
+    [
+      0.9721819966668587,
+      2.3493019308234844e-05,
+      0.027794510313833117
+    ],
+    [
+      7.707690591753281e-05,
+      0.022688981577022024,
+      0.9772339415170604
+    ]
+  ],
   "regime_distribution": {
-    "risk_on": 0.4953271028037383,
-    "high_vol": 0.4326119035907526,
-    "crisis": 0.06689621249385146,
+    "risk_on": 0.3718642400393507,
+    "high_vol": 0.31554353172651256,
+    "crisis": 0.3074274471224791,
     "unknown": 0.005164781111657649
   },
   "fomc_dates_included": 53,
-  "source_part0_dir": "/content/drive/MyDrive/PriceCallProject/artifacts_part0"
+  "source_part0_dir": "/home/runner/work/Price-Call/Price-Call/artifacts_part0"
 }

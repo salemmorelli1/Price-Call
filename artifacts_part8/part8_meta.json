@@ -1,6 +1,6 @@
 {
   "version": "V1",
-  "built_at": "2026-04-09T07:05:06.605867+00:00",
+  "built_at": "2026-04-09T11:07:48.186262+00:00",
   "assets_modeled": [
     "VOO",
     "IEF",
@@ -10,8 +10,8 @@
   "model": "almgren_chriss_sqrt_impact",
   "impact_formula": "I = k \u00d7 \u03c3 \u00d7 \u221a(Q / ADV)",
   "optimal_window": "10:00\u201314:30",
-  "example_cost_1M_portfolio_voo": 0.4349125975119952,
-  "example_cost_10M_portfolio_voo": 0.7266310931874704,
-  "post_trade_log": "/content/drive/MyDrive/PriceCallProject/artifacts_part8/post_trade_log.csv",
+  "example_cost_1M_portfolio_voo": 0.44930342926310773,
+  "example_cost_10M_portfolio_voo": 0.7721388989452554,
+  "post_trade_log": "/home/runner/work/Price-Call/Price-Call/artifacts_part8/post_trade_log.csv",
   "note_on_current_model": "Current 5bps flat assumption overstates costs by ~3\u00d7 at retail scale. Your strategy IR is likely ~4-5 bps/year higher than Part 2 reports."
 }
