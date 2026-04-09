@@ -183,42 +183,45 @@ def estimate_expected_returns(
 
     Formula:
     mu_BL = [(τΣ)^-1 + P'Ω^-1P]^-1 × [(τΣ)^-1 × Π + P'Ω^-1 × q]
-
-    where:
-      Π = equilibrium expected returns (CAPM prior)
-      P = view matrix (which assets the view applies to)
-      q = view returns (what the model predicts)
-      Ω = view uncertainty
     """
     n = len(asset_names)
+
+    cov = np.asarray(cov, dtype=float)
+    market_weights = np.asarray(market_weights, dtype=float).reshape(-1)
+    market_weights = market_weights / market_weights.sum()
+
     # CAPM equilibrium returns
     pi = risk_aversion * cov @ market_weights.reshape(-1, 1)  # (n, 1)
 
     voo_idx = asset_names.index("VOO") if "VOO" in asset_names else 0
     ief_idx = asset_names.index("IEF") if "IEF" in asset_names else 1
 
-    # View: VOO - IEF excess return over H-day horizon
     if "voo_excess_view" in model_view and np.isfinite(model_view["voo_excess_view"]):
-        # Single view on VOO-IEF spread
-        P = np.zeros((1, n))
+        # Single spread view: VOO - IEF
+        P = np.zeros((1, n), dtype=float)
         P[0, voo_idx] = 1.0
         P[0, ief_idx] = -1.0
-        q = np.array([[float(model_view["voo_excess_view"])]])
-        # Uncertainty in view: proportional to confidence
-        view_confidence = float(model_view.get("view_confidence", 0.5))
-        omega = np.diag([float(P @ (tau * cov) @ P.T) * (1.0 / max(view_confidence, 0.10))])
 
-        # Black-Litterman formula
+        q = np.array([[float(model_view["voo_excess_view"])]], dtype=float)
+
+        view_confidence = float(model_view.get("view_confidence", 0.5))
+        conf_floor = max(view_confidence, 0.10)
+
+        # This is a 1x1 matrix under the single-view setup.
+        quad = np.asarray(P @ (tau * cov) @ P.T, dtype=float).reshape(1, 1)
+        omega_scalar = float(quad.item()) * (1.0 / conf_floor)
+        omega_scalar = max(omega_scalar, 1e-8)
+        omega = np.array([[omega_scalar]], dtype=float)
+
         inv_tauS = np.linalg.inv(tau * cov)
         inv_omega = np.linalg.inv(omega)
+
         mu_bl = np.linalg.inv(inv_tauS + P.T @ inv_omega @ P) @ (
             inv_tauS @ pi + P.T @ inv_omega @ q
         )
         return mu_bl.flatten()
 
-    # Fallback: CAPM prior only
     return pi.flatten()
-
 
 # ============================================================
 # Optimization
