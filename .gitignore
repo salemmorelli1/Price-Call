@@ -1,50 +1,20 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
-
-# Environment / secrets
-.env
-.env.*
-*.pem
-*.key
-
-# Jupyter / notebooks
+*.pyc
 .ipynb_checkpoints/
-
-# Tooling caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.cache/
-
-# OS / editor files
 .DS_Store
-Thumbs.db
-.vscode/
-.idea/
 
-# Build / packaging
-build/
-dist/
-*.egg-info/
+# Do not track notebook-export helper files
+6_price_call.py
+6_1_file_a.py
+6_2_file_b.py
 
-# Project-generated artifacts
+# Rebuildable heavy artifacts
+artifacts_part0/
 artifacts_part1/
-artifacts_part2*/
-artifacts_part2a_alpha/
-artifacts_part3/
-artifacts_part3_v1/
-artifacts_part4/
-logs/
+*.parquet
+*.duckdb
 
-# Temporary outputs
-*.log
+# Local temp files
 *.tmp
-*.bak
+*.log
