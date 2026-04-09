@@ -69,9 +69,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
+          git add -f \
             artifacts_part0 \
-            artifacts_part1 \
+            artifacts_part1
+
+          git add \
             artifacts_part2_g532/predictions \
             artifacts_part2a_alpha/predictions \
             artifacts_part3 \
@@ -87,6 +89,6 @@ jobs:
           fi
 
           git commit -m "Update weekly production artifacts"
-
           git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
+  
