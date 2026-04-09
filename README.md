@@ -5,101 +5,58 @@ A production-style Python pipeline for **7-trading-day VOO vs IEF forecasting**.
 The system combines:
 - relative / tail-risk classification,
 - 7-day price-call generation,
-- governance and execution controls,
+- governance and defense controls,
 - alpha / fusion allocation support,
-- delayed realized-performance backfill.
+- realized-performance backfill,
+- downstream validation, regime, portfolio, execution, and attribution layers.
 
 The repository is organized so the prediction cycle can run from **GitHub Actions** or from a local shell.
 
 ## Repository files
 
-### Core pipeline
+### Core production pipeline
+- `part0_data_infrastructure.py` — downloads and prepares market and macro data, then writes Part 0 artifacts.
 - `part1_builder.py` — builds the causal feature, label, and snapshot artifacts.
-- `part2_predictor.py` — fits the predictive layer and writes the canonical prediction tape.
+- `part2_predictor.py` — fits the predictive layer and writes the canonical Part 2 prediction tape.
 - `part2a21_alpha.py` — builds alpha / fusion support artifacts used downstream.
-- `part3_governance.py` — applies governance and execution logic to the prediction tape.
-- `part3_v1_fusion.py` — applies the fusion / allocation layer for final production outputs.
+- `part3_governance.py` — applies governance, defense, and fusion logic to produce final production outputs.
+- `part4_gui.py` — Gradio-based dashboard for local or notebook-side monitoring.
+- `part5_validator.py` — validates file integrity, family selection, and production contract assumptions.
+- `part6_regime_engine.py` — builds regime features and regime-state outputs.
+- `part7_portfolio_construction.py` — portfolio construction and risk-budgeting layer.
+- `part8_execution_model.py` — execution and transaction-cost modeling layer.
+- `part9_live_attribution.py` — live attribution and statistical monitoring layer.
 
 ### Operational runners
-- `run_tuesday_prediction.py` — orchestrates the Tuesday production prediction run.
+- `run_tuesday_prediction.py` — orchestrates the canonical production run.
 - `backfill_realized.py` — fills in matured realized prices and error metrics after the 7-day horizon has elapsed.
 
 ### Repo support files
-- `index.html` — GitHub Pages dashboard for monitoring forecasts, governance, fusion allocations, and realized backfill.
 - `requirements.txt` — Python dependency list for local runs and GitHub Actions.
-- `.gitignore` — recommended ignore rules for Python, caches, environments, and generated artifacts.
-- `.github/workflows/` — GitHub Actions workflows for Tuesday prediction, daily backfill, and Pages deployment.
+- `.gitignore` — ignore rules for caches, environments, notebook exports, and rebuildable artifacts.
+- `.github/workflows/` — GitHub Actions workflows for Tuesday production runs and daily realized backfill.
 
 ## What the pipeline does
 
 At a high level, the system:
 
-1. builds causal features and revealed labels,
-2. generates a decision-time probability forecast,
-3. builds alpha / fusion support artifacts,
-4. applies governance and fusion logic,
-5. writes final production artifacts,
-6. later backfills realized outcomes for audit and monitoring.
+1. builds market and macro infrastructure artifacts,
+2. builds causal features and revealed labels,
+3. generates a decision-time probability forecast and 7-day price calls,
+4. builds alpha / fusion support artifacts,
+5. applies governance and defense logic,
+6. validates the production stack,
+7. runs regime, portfolio, execution, and attribution layers,
+8. later backfills realized outcomes for audit and monitoring.
 
 The project is designed around a **7-trading-day horizon** for the VOO-versus-IEF decision problem.
 
-## Current canonical artifact flow
+## Canonical production execution order
 
-Typical artifact families produced by the pipeline include:
+The current validated production order is:
 
-- `artifacts_part1/`
-- `artifacts_part2_v77/`
-- `artifacts_part2a_alpha/`
-- `artifacts_part3/`
-- `artifacts_part3_v1/`
-
-The current production Part 3 outputs are:
-
-- `artifacts_part3/prediction_log.csv`
-- `artifacts_part3_v1/v1_final_production_tape.csv`
-- `artifacts_part3_v1/v1_final_production_governance.csv`
-- `artifacts_part3_v1/v1_fusion_allocations.csv`
-
-These are the files the current runner and dashboard are expected to use.
-
-## Python version
-
-Use **Python 3.12** for GitHub Actions and local reproducibility.
-
-## Installation
-
-Create and activate a virtual environment, then install dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-## Manual runs
-
-### Run the production prediction pipeline
-```bash
-python run_tuesday_prediction.py --force
-```
-
-Use `--force` for manual testing outside the normal Tuesday decision window.
-
-### Backfill matured realized results
-```bash
-python backfill_realized.py
-```
-
+```text
+Part 0 -> Part 1 -> Part 2 -> Part 2A -> Part 3 -> Part 5 -> Part 6 -> Part 7 -> Part 8 -> Part 9
 This updates the prediction log once enough market history exists to evaluate a prior 7-day call.
 
 ## GitHub repository contents
