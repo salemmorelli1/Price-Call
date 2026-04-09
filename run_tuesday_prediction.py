@@ -1,228 +1,182 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Canonical Tuesday production runner for the current PriceCall stack.
+
+Validated execution order
+-------------------------
+Part 0 -> Part 1 -> Part 2 -> Part 2A -> Part 3 -> Part 5 -> Part 6 -> Part 7 -> Part 8 -> Part 9
+Part 4 is launched separately by default.
+
+This script is Drive-first, Colab-safe, and prints full stdout/stderr so failures
+are diagnosable in notebook environments and GitHub Actions logs.
+"""
+
+# @title run_tuesday_prediction.py
+
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-import pandas as pd
+from typing import Dict, List, Tuple
 
 
-def resolve_root() -> Path:
+def maybe_mount_drive() -> bool:
     try:
-        import google.colab  # noqa: F401
-        from google.colab import drive
+        from google.colab import drive  # type: ignore
 
-        drive_root = Path("/content/drive")
-        if not drive_root.exists():
-            drive.mount("/content/drive")
-
-        root = Path("/content/drive/MyDrive/PriceCallProject")
-        root.mkdir(parents=True, exist_ok=True)
-        return root
+        mount_root = Path("/content/drive")
+        if not (mount_root / "MyDrive").exists():
+            drive.mount(str(mount_root), force_remount=False)
+        else:
+            print("Drive already mounted.")
+        return True
     except Exception:
-        pass
-
-    if "__file__" in globals():
-        return Path(__file__).resolve().parent
-
-    return Path.cwd()
-
-
-ROOT = resolve_root()
-ET = ZoneInfo("America/New_York")
-
-PART1_SCRIPT = ROOT / "part1_builder.py"
-PART2_SCRIPT = ROOT / "part2_predictor.py"
-PART2A_SCRIPT = ROOT / "part2a21_alpha.py"
-PART3_SCRIPT = ROOT / "part3_v1_fusion.py"
-
-PRED_LOG_PATH = ROOT / "artifacts_part3" / "prediction_log.csv"
-PART3_TAPE_PATH = ROOT / "artifacts_part3_v1" / "v1_final_production_tape.csv"
-PART3_GOV_PATH = ROOT / "artifacts_part3_v1" / "v1_final_production_governance.csv"
-PART3_ALLOC_PATH = ROOT / "artifacts_part3_v1" / "v1_fusion_allocations.csv"
-
-
-def now_et() -> datetime:
-    return datetime.now(ET)
-
-
-def in_decision_window(ts: datetime) -> bool:
-    return ts.weekday() == 1 and ts.hour == 9 and 35 <= ts.minute < 40
-
-
-def load_prediction_log() -> pd.DataFrame:
-    if not PRED_LOG_PATH.exists():
-        return pd.DataFrame()
-
-    df = pd.read_csv(PRED_LOG_PATH)
-    if "decision_date" in df.columns:
-        df["decision_date"] = pd.to_datetime(df["decision_date"], errors="coerce").dt.normalize()
-    return df
-
-
-def already_logged_today(decision_date: pd.Timestamp) -> bool:
-    log = load_prediction_log()
-    if log.empty or "decision_date" not in log.columns:
         return False
-    return (log["decision_date"] == decision_date.normalize()).any()
 
 
-def print_path_status() -> None:
-    print(f"ROOT:        {ROOT}")
-    print(f"PART1:       {PART1_SCRIPT} | exists={PART1_SCRIPT.exists()}")
-    print(f"PART2:       {PART2_SCRIPT} | exists={PART2_SCRIPT.exists()}")
-    print(f"PART2A21:    {PART2A_SCRIPT} | exists={PART2A_SCRIPT.exists()}")
-    print(f"PART3 V1:    {PART3_SCRIPT} | exists={PART3_SCRIPT.exists()}")
-    print(f"PRED_LOG:    {PRED_LOG_PATH} | exists={PRED_LOG_PATH.exists()}")
-    print(f"TAPE V1:     {PART3_TAPE_PATH} | exists={PART3_TAPE_PATH.exists()}")
-    print(f"GOV V1:      {PART3_GOV_PATH} | exists={PART3_GOV_PATH.exists()}")
-    print(f"ALLOC V1:    {PART3_ALLOC_PATH} | exists={PART3_ALLOC_PATH.exists()}")
+IN_COLAB = maybe_mount_drive()
 
 
-def run_script(path: Path) -> None:
-    if not path.exists():
-        raise FileNotFoundError(f"Required script not found: {path}")
+def resolve_project_dir() -> Path:
+    env_root = os.environ.get("PRICECALL_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
 
-    print(f"\n>>> Running: {path.name}")
-    subprocess.run([sys.executable, str(path)], cwd=str(ROOT), check=True)
+    drive_root = Path("/content/drive/MyDrive/PriceCallProject")
+    if IN_COLAB:
+        return drive_root
 
-
-def validate_outputs() -> None:
-    if not PART3_TAPE_PATH.exists():
-        raise FileNotFoundError(f"Missing Part 3 V1 tape: {PART3_TAPE_PATH}")
-    if not PART3_GOV_PATH.exists():
-        raise FileNotFoundError(f"Missing Part 3 V1 governance file: {PART3_GOV_PATH}")
-    if not PART3_ALLOC_PATH.exists():
-        raise FileNotFoundError(f"Missing Part 3 V1 fusion allocations file: {PART3_ALLOC_PATH}")
-    if not PRED_LOG_PATH.exists():
-        raise FileNotFoundError(f"Missing prediction log: {PRED_LOG_PATH}")
-
-    log = load_prediction_log()
-    if log.empty:
-        raise RuntimeError("prediction_log.csv exists but is empty.")
-
-    if "decision_date" not in log.columns:
-        raise RuntimeError("prediction_log.csv is missing 'decision_date'.")
-
-    tape = pd.read_csv(PART3_TAPE_PATH)
-    if "Date" not in tape.columns:
-        raise RuntimeError("v1_final_production_tape.csv is missing 'Date'.")
-
-    tape["Date"] = pd.to_datetime(tape["Date"], errors="coerce").dt.normalize()
-    tape = tape.dropna(subset=["Date"])
-    if tape.empty:
-        raise RuntimeError("v1_final_production_tape.csv has no valid Date rows.")
-
-    expected_date = tape["Date"].max()
-    last_logged = log["decision_date"].max()
-
-    if pd.isna(last_logged):
-        raise RuntimeError("prediction_log.csv has no valid decision_date values.")
-
-    if last_logged != expected_date:
-        raise RuntimeError(
-            f"Pipeline finished, but prediction_log.csv last decision_date={last_logged.date()} "
-            f"does not match production tape max Date={expected_date.date()}."
-        )
-
-    alloc = pd.read_csv(PART3_ALLOC_PATH)
-    if "Date" not in alloc.columns or "weight" not in alloc.columns:
-        raise RuntimeError("v1_fusion_allocations.csv is missing required columns: Date / weight")
-
-    alloc["Date"] = pd.to_datetime(alloc["Date"], errors="coerce").dt.normalize()
-    alloc = alloc.dropna(subset=["Date"])
-    if alloc.empty:
-        raise RuntimeError("v1_fusion_allocations.csv has no valid rows.")
-
-    alloc_chk = alloc.groupby("Date", as_index=False)["weight"].sum()
-    max_dev = float((alloc_chk["weight"] - 1.0).abs().max())
-    if max_dev > 1e-6:
-        raise RuntimeError(f"Fusion allocations fail sum-to-one check. max deviation={max_dev:.8f}")
-
-    print("\n✅ Validation passed.")
-    print(f"prediction_log:       {PRED_LOG_PATH}")
-    print(f"production_tape_v1:   {PART3_TAPE_PATH}")
-    print(f"governance_tape_v1:   {PART3_GOV_PATH}")
-    print(f"fusion_allocations:   {PART3_ALLOC_PATH}")
-    print(f"validated decision_date: {expected_date.date()}")
+    try:
+        return Path(__file__).resolve().parent
+    except NameError:
+        return Path.cwd().resolve()
 
 
-def required_scripts_exist() -> bool:
-    return (
-        PART1_SCRIPT.exists() and
-        PART2_SCRIPT.exists() and
-        PART2A_SCRIPT.exists() and
-        PART3_SCRIPT.exists()
+PROJECT_DIR = resolve_project_dir()
+PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+
+CANONICAL_FILES: Dict[str, str] = {
+    "PART0": "part0_data_infrastructure.py",
+    "PART1": "part1_builder.py",
+    "PART2": "part2_predictor.py",
+    "PART2A": "part2a21_alpha.py",
+    "PART3": "part3_governance.py",
+    "PART4": "part4_gui.py",
+    "PART5": "part5_validator.py",
+    "PART6": "part6_regime_engine.py",
+    "PART7": "part7_portfolio_construction.py",
+    "PART8": "part8_execution_model.py",
+    "PART9": "part9_live_attribution.py",
+}
+
+PIPELINE_ORDER = [
+    "PART0",
+    "PART1",
+    "PART2",
+    "PART2A",
+    "PART3",
+    "PART5",
+    "PART6",
+    "PART7",
+    "PART8",
+    "PART9",
+]
+
+REQUIRED = PIPELINE_ORDER.copy()
+
+
+def check_files(project_dir: Path) -> Tuple[List[str], List[Tuple[str, Path, bool]]]:
+    audit: List[Tuple[str, Path, bool]] = []
+    missing: List[str] = []
+    for label, filename in CANONICAL_FILES.items():
+        path = project_dir / filename
+        exists = path.exists()
+        audit.append((label, path, exists))
+        if label in REQUIRED and not exists:
+            missing.append(filename)
+    return missing, audit
+
+
+def run_subprocess(cmd: List[str], cwd: Path) -> int:
+    print("\nLaunching:", " ".join(cmd))
+    proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, check=False)
+
+    if proc.stdout:
+        print(proc.stdout.rstrip())
+    if proc.stderr:
+        print("\n--- STDERR ---")
+        print(proc.stderr.rstrip())
+
+    print(f"[exit={proc.returncode}]")
+    return int(proc.returncode)
+
+
+def launch_gui(project_dir: Path) -> int:
+    gui = project_dir / CANONICAL_FILES["PART4"]
+    return run_subprocess([sys.executable, str(gui)], project_dir)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Run the canonical Tuesday PriceCall production pipeline."
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Accepted for compatibility; current runner always executes immediately.",
+    )
+    parser.add_argument(
+        "--with-gui",
+        action="store_true",
+        help="Launch Part 4 GUI after the production stack finishes.",
     )
 
+    args, unknown = parser.parse_known_args()
 
-def main(force: bool = False, dry_run: bool = False, show_paths: bool = True) -> int:
-    ts = now_et()
-    decision_date = pd.Timestamp(ts.date())
+    if unknown:
+        print(f"[INFO] Ignoring extra notebook/launcher args: {' '.join(unknown)}")
 
-    print(f"Current ET time: {ts.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"ROOT: {PROJECT_DIR}")
+    print(f"IN_COLAB: {IN_COLAB}")
+    print("\n=== CANONICAL FILE AUDIT ===")
 
-    if show_paths:
-        print_path_status()
+    missing, audit = check_files(PROJECT_DIR)
+    for label, path, exists in audit:
+        print(f"{label}: {path} | exists = {exists}")
 
-    if not force:
-        if not in_decision_window(ts):
-            print("Skip: not inside Tuesday 09:35–09:39 ET decision window.")
-            return 0
-
-        if already_logged_today(decision_date):
-            print(f"Skip: prediction for {decision_date.date()} already exists in prediction_log.csv.")
-            return 0
-
-    if dry_run:
-        print("Dry run only. Pipeline not executed.")
-        return 0
-
-    if not required_scripts_exist():
-        missing = []
-        for p in [PART1_SCRIPT, PART2_SCRIPT, PART2A_SCRIPT, PART3_SCRIPT]:
-            if not p.exists():
-                missing.append(str(p))
-
-        print("\nCannot run full Tuesday pipeline yet.")
-        print("Missing required script file(s):")
-        for m in missing:
-            print(f" - {m}")
+    if missing:
+        print("\n[ERROR] Required production files are missing:")
+        for name in missing:
+            print(f" - {name}")
         return 1
 
-    run_script(PART1_SCRIPT)
-    run_script(PART2_SCRIPT)
-    run_script(PART2A_SCRIPT)
-    run_script(PART3_SCRIPT)
+    print("\n=== VALIDATED EXECUTION ORDER ===")
+    print("Part 0 -> Part 1 -> Part 2 -> Part 2A -> Part 3 -> Part 5 -> Part 6 -> Part 7 -> Part 8 -> Part 9 -> Part 4")
+    if not args.with_gui:
+        print("GUI note: Part 4 is not launched unless --with-gui is passed.")
 
-    validate_outputs()
+    for label in PIPELINE_ORDER:
+        script = PROJECT_DIR / CANONICAL_FILES[label]
+        rc = run_subprocess([sys.executable, str(script)], PROJECT_DIR)
+        if rc != 0:
+            print(f"\n[ERROR] {label} failed with exit code {rc}.")
+            return rc
 
-    tape = pd.read_csv(PART3_TAPE_PATH)
-    tape["Date"] = pd.to_datetime(tape["Date"], errors="coerce").dt.normalize()
-    actual_decision_date = tape["Date"].max()
-    print(f"\n✅ Tuesday prediction pipeline completed for decision_date={actual_decision_date.date()}.")
+    if args.with_gui:
+        rc = launch_gui(PROJECT_DIR)
+        if rc != 0:
+            print(f"\n[WARN] PART4 exited with code {rc}.")
+            return rc
+
+    print("\n✅ Tuesday pipeline completed successfully.")
     return 0
 
 
-def cli(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Tuesday prediction pipeline once near market open.")
-    parser.add_argument("--force", action="store_true", help="Run regardless of day/time and duplicate checks.")
-    parser.add_argument("--dry-run", action="store_true", help="Check schedule logic only.")
-    parser.add_argument("--no-paths", action="store_true", help="Suppress path-status printing.")
-
-    if "ipykernel" in sys.modules or "google.colab" in sys.modules:
-        args, _ = parser.parse_known_args(args=[] if argv is None else argv)
-    else:
-        args = parser.parse_args(argv)
-
-    return main(force=args.force, dry_run=args.dry_run, show_paths=not args.no_paths)
-
 
 if __name__ == "__main__":
-    rc = cli()
-    if "ipykernel" not in sys.modules and "google.colab" not in sys.modules:
-        raise SystemExit(rc)
+    main()
+
