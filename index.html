@@ -1201,6 +1201,52 @@
       };
     }
 
+    function normalizeGovReasonDisplay(value) {
+      if (isMissing(value)) return "NA";
+      const s = String(value).trim();
+      if (!s) return "NA";
+      if (s.toUpperCase() === "OK") return "OK";
+      return s.replace(/_/g, " ");
+    }
+
+    function buildFusionMeta(allocRows) {
+      const latestAlloc = latestRowsByDate(allocRows, "Date");
+      const meta = {
+        allocDate: "NA",
+        coreVoo: NaN,
+        coreIef: NaN,
+        alphaGross: NaN,
+        sumWeight: NaN,
+        nRows: 0
+      };
+
+      if (!latestAlloc.length) return { meta, latestAlloc: [] };
+
+      meta.allocDate = fmtDate(latestAlloc[0].Date);
+      meta.nRows = latestAlloc.length;
+
+      let coreVoo = 0, coreIef = 0, alphaGross = 0, sum = 0;
+      for (const r of latestAlloc) {
+        const w = toNumber(r.weight);
+        if (!Number.isFinite(w)) continue;
+        sum += w;
+        const tk = String(r.Ticker || "");
+        if (tk === "VOO_CORE") coreVoo += w;
+        else if (tk === "IEF_CORE") coreIef += w;
+        else alphaGross += w;
+      }
+
+      meta.coreVoo = coreVoo;
+      meta.coreIef = coreIef;
+      meta.alphaGross = alphaGross;
+      meta.sumWeight = sum;
+
+      return {
+        meta,
+        latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight))
+      };
+    }
+
     function buildValidationSnapshot(part2Summary, part3Summary) {
       return {
         p2Mode: normalizedPublishMode(part2Summary?.publish_mode),
@@ -1992,4 +2038,5 @@
   </script>
 </body>
 </html>
+
 
