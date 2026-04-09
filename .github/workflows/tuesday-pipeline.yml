@@ -3,13 +3,14 @@ name: Tuesday Production Run
 on:
   workflow_dispatch:
   schedule:
-    # 09:35 America/New_York during DST
     - cron: "35 13 * * 2"
-    # 09:35 America/New_York during Standard Time
     - cron: "35 14 * * 2"
 
 permissions:
   contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: tuesday-production-run
@@ -18,11 +19,11 @@ concurrency:
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -63,16 +64,19 @@ jobs:
           python run_tuesday_prediction.py --force
 
       - name: Commit updated production artifacts
-        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
+        if: success() && (github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
+            artifacts_part0 \
+            artifacts_part1 \
             artifacts_part2_g532/predictions \
             artifacts_part2a_alpha/predictions \
             artifacts_part3 \
             artifacts_part3_v1 \
+            artifacts_part6 \
             artifacts_part7 \
             artifacts_part8 \
             artifacts_part9
@@ -83,5 +87,6 @@ jobs:
           fi
 
           git commit -m "Update weekly production artifacts"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push
+
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
