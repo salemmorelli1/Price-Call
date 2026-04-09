@@ -1,8 +1,5 @@
 name: Daily Backfill Realized
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  
 on:
   workflow_dispatch:
   schedule:
@@ -18,11 +15,11 @@ concurrency:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -37,42 +34,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Prepare artifact folders
-        run: |
-          mkdir -p artifacts_part3
-          mkdir -p artifacts_part3_v1
-
       - name: Run realized backfill
+        env:
+          PRICECALL_ROOT: ${{ github.workspace }}
         run: |
           python backfill_realized.py
 
-      - name: Show updated files
-        if: always()
-        run: |
-          echo "=== artifacts_part3 ==="
-          find artifacts_part3 -maxdepth 2 -type f | sort || true
-          echo "=== artifacts_part3_v1 ==="
-          find artifacts_part3_v1 -maxdepth 2 -type f | sort || true
-
-      - name: Upload workflow artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: daily-backfill-artifacts
-          path: |
-            artifacts_part3/**
-            artifacts_part3_v1/**
-          if-no-files-found: warn
-
-      - name: Commit updated tracked files if changed
+      - name: Commit updated prediction log
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+
+          git add artifacts_part3/prediction_log.csv
+
           if git diff --cached --quiet; then
-            echo "No tracked file changes to commit."
-          else
-            git commit -m "Update realized backfill"
-            git push
+            echo "No backfill changes to commit."
+            exit 0
           fi
 
+          git commit -m "Backfill realized prediction log"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push
