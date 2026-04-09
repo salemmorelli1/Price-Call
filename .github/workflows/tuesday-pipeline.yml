@@ -1,36 +1,28 @@
-name: Tuesday Prediction Pipeline
+name: Tuesday Production Run
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  
 on:
   workflow_dispatch:
-    inputs:
-      force_run:
-        description: "Run even if the script would normally skip"
-        required: false
-        default: false
-        type: boolean
   schedule:
-    # Tuesday 14:39 UTC.
-    # GitHub Actions cron is UTC only, so this does not auto-adjust for DST.
-    - cron: "39 14 * * 2"
+    # 09:35 America/New_York during DST
+    - cron: "35 13 * * 2"
+    # 09:35 America/New_York during Standard Time
+    - cron: "35 14 * * 2"
 
 permissions:
   contents: write
 
 concurrency:
-  group: tuesday-prediction
+  group: tuesday-production-run
   cancel-in-progress: false
 
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -45,54 +37,51 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Prepare artifact folders
+      - name: Gate scheduled run to 09:35 America/New_York
+        id: gate
+        if: github.event_name == 'schedule'
         run: |
-          mkdir -p artifacts_part1
-          mkdir -p artifacts_part2a_alpha
-          mkdir -p artifacts_part3
-          mkdir -p artifacts_part3_v1
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
 
-      - name: Run Tuesday prediction pipeline
+          now = datetime.now(ZoneInfo("America/New_York"))
+          ok = (now.weekday() == 1 and now.hour == 9 and now.minute == 35)
+          print(f"America/New_York now: {now.isoformat()} | run_ok={ok}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"run_ok={'true' if ok else 'false'}\n")
+          PY
+
+      - name: Run pipeline
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
+        env:
+          PRICECALL_ROOT: ${{ github.workspace }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
-          if [ "${{ github.event.inputs.force_run || 'false' }}" = "true" ]; then
-            python run_tuesday_prediction.py --force
-          else
-            python run_tuesday_prediction.py
-          fi
+          python run_tuesday_prediction.py --force
 
-      - name: Show generated files
-        if: always()
-        run: |
-          echo "=== artifacts_part1 ==="
-          find artifacts_part1 -maxdepth 2 -type f | sort || true
-          echo "=== artifacts_part2a_alpha ==="
-          find artifacts_part2a_alpha -maxdepth 2 -type f | sort || true
-          echo "=== artifacts_part3 ==="
-          find artifacts_part3 -maxdepth 2 -type f | sort || true
-          echo "=== artifacts_part3_v1 ==="
-          find artifacts_part3_v1 -maxdepth 2 -type f | sort || true
-
-      - name: Upload workflow artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: tuesday-pipeline-artifacts
-          path: |
-            artifacts_part1/**
-            artifacts_part2a_alpha/**
-            artifacts_part3/**
-            artifacts_part3_v1/**
-          if-no-files-found: warn
-
-      - name: Commit updated tracked files if changed
+      - name: Commit updated production artifacts
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+
+          git add \
+            artifacts_part2_g532/predictions \
+            artifacts_part2a_alpha/predictions \
+            artifacts_part3 \
+            artifacts_part3_v1 \
+            artifacts_part7 \
+            artifacts_part8 \
+            artifacts_part9
+
           if git diff --cached --quiet; then
-            echo "No tracked file changes to commit."
-          else
-            git commit -m "Update Tuesday prediction artifacts"
-            git push
+            echo "No changes to commit."
+            exit 0
           fi
 
+          git commit -m "Update weekly production artifacts"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push
