@@ -1,13 +1,13 @@
 {
-  "Date": "2026-04-09 00:00:00",
-  "w_target_voo": 0.5250000000737777,
-  "w_target_ief": 0.47499999992622227,
+  "Date": "2026-04-10 00:00:00",
+  "w_target_voo": 0.5250000000716638,
+  "w_target_ief": 0.4749999999283362,
   "regime_label": "dislocated",
-  "p_tail_base": 0.1505779991564675,
-  "base_rate": 0.1968190854870775,
+  "p_tail_base": 0.1619998427113628,
+  "base_rate": 0.1967701863354037,
   "raw_val_auc": 0.6801136363636364,
   "optimizer": "black_litterman_cvar",
-  "portfolio_vol_ann": 0.07234632224086673,
+  "portfolio_vol_ann": 0.07233659357406126,
   "view_confidence": 1.0,
-  "edge": 0.04624108633061
+  "edge": 0.034770343624040884
 }
