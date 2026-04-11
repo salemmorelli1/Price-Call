@@ -1,10 +1,10 @@
 {
-  "decision_date": "2026-04-10",
-  "generated_at": "2026-04-10T22:35:24.966502+00:00",
+  "decision_date": "2026-04-11",
+  "generated_at": "2026-04-11T22:53:07.555674+00:00",
   "portfolio_dollars": 500000,
   "vix_level": 16.5,
   "stress_label": "NORMAL",
-  "total_estimated_cost_dollars": 5.11,
+  "total_estimated_cost_dollars": 5.12,
   "total_estimated_cost_bps": 0.102,
   "instructions": [
     {
@@ -18,17 +18,17 @@
       "pre_trade_cost": {
         "ticker": "VOO",
         "trade_dollars": -39999.99999999998,
-        "pct_adv": 5.320893412079141e-06,
+        "pct_adv": 5.3445075045934266e-06,
         "direction": "sell",
         "spread_bps": 0.3,
-        "impact_bps": 0.09836627699207703,
+        "impact_bps": 0.09862749669786605,
         "commission_bps": 0.0,
         "sec_fee_bps": 0.278,
-        "total_bps": 0.6763662769920771,
-        "total_dollars": 2.7054651079683065,
+        "total_bps": 0.676627496697866,
+        "total_dollars": 2.706509986791463,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
-        "timing_risk_bps": 3.0847758425273875,
+        "timing_risk_bps": 3.086127191775323,
         "optimal_window": "10:00\u201314:30",
         "stressed_market": false
       },
@@ -55,17 +55,17 @@
       "pre_trade_cost": {
         "ticker": "IEF",
         "trade_dollars": 39999.99999999998,
-        "pct_adv": 3.0155238341287104e-05,
+        "pct_adv": 3.094741208915095e-05,
         "direction": "buy",
         "spread_bps": 0.5,
-        "impact_bps": 0.10090704209453856,
+        "impact_bps": 0.10270256092671697,
         "commission_bps": 0.0,
         "sec_fee_bps": 0.0,
-        "total_bps": 0.6009070420945386,
-        "total_dollars": 2.403628168378153,
+        "total_bps": 0.6027025609267169,
+        "total_dollars": 2.4108102437068664,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
-        "timing_risk_bps": 1.0338684446619015,
+        "timing_risk_bps": 1.0387099482754905,
         "optimal_window": "10:00\u201314:30",
         "stressed_market": false
       },
@@ -83,5 +83,5 @@
     }
   ],
   "n_trades": 2,
-  "execute_window": "10:00\u201314:30 on 2026-04-10"
+  "execute_window": "10:00\u201314:30 on 2026-04-11"
 }
