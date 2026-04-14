@@ -335,7 +335,7 @@
     <div class="header">
       <div class="title">
         <h1>Price-Call — Production Dashboard</h1>
-        <p>Monitor model for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once the model is consistently precise and accurate, then change 7 day forecast to 1 day weekday forecast. If 1-day model is accurate and precise, create a trading stragey and a bot. Give it $1000 and record its trades. Put a safety stop at 10% loss.</p>
+        <p>GitHub-connected monitor for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn" class="primary">Refresh</button>
@@ -450,6 +450,7 @@
       <button class="tab-btn" data-tab="defenseTab">Defense Sleeve</button>
       <button class="tab-btn" data-tab="fusionTab">Fusion / Alpha</button>
       <button class="tab-btn" data-tab="opsTab">Model Ops</button>
+      <button class="tab-btn" data-tab="botTab">Bot Progress</button>
       <button class="tab-btn" data-tab="dataTab">Data Preview</button>
     </div>
 
@@ -615,6 +616,60 @@
       </div>
     </div>
 
+    <div class="tab-panel" id="botTab">
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Bot NAV / Paper Equity</div>
+          <div id="botNavChart" class="chart"></div>
+        </div>
+        <div class="card">
+          <div class="label">Bot Target Weight / Signal Edge</div>
+          <div id="botSignalChart" class="chart"></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Current Bot Snapshot</div>
+          <div class="hero-big" id="botSnapMode">—</div>
+          <div class="hero-sub" id="botSnapAsOf">As of: —</div>
+          <div class="status-row" id="botSnapBadges" style="margin: 14px 0 12px;"></div>
+          <div class="snapshot-grid">
+            <div class="snapshot-item"><div class="snapshot-key">Live Gate Progress</div><div class="snapshot-val" id="botSnapProgress">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">NAV</div><div class="snapshot-val" id="botSnapNav">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Total Return</div><div class="snapshot-val" id="botSnapReturn">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Drawdown</div><div class="snapshot-val" id="botSnapDrawdown">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Cash</div><div class="snapshot-val" id="botSnapCash">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Shares (VOO / IEF)</div><div class="snapshot-val" id="botSnapShares">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Trade Count</div><div class="snapshot-val" id="botSnapTrades">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Stop Floor</div><div class="snapshot-val" id="botSnapStop">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Latest Action Reason</div><div class="snapshot-val" id="botSnapReason">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">Accuracy Gate Reason</div><div class="snapshot-val" id="botSnapGate">—</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Bot Audit Trail</div>
+          <div class="kv-grid" id="botGrid"></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Recent Signal Log</div>
+          <div class="table-wrap"><table id="botSignalTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="label">Recent Trade Log</div>
+          <div class="table-wrap"><table id="botTradeTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
     <div class="tab-panel" id="dataTab">
       <div class="grid two-col">
         <div class="card">
@@ -720,7 +775,11 @@
         part7Meta: "artifacts_part7/part7_meta.json",
         part8Meta: "artifacts_part8/part8_meta.json",
         part8Orders: "artifacts_part8/example_order_instructions.json",
-        part9Report: "artifacts_part9/live_attribution_report.json"
+        part9Report: "artifacts_part9/live_attribution_report.json",
+        part10State: "artifacts_part10_bot/portfolio_state.json",
+        part10Report: "artifacts_part10_bot/performance_report.json",
+        part10SignalLog: "artifacts_part10_bot/signal_log.csv",
+        part10TradeLog: "artifacts_part10_bot/trade_log.csv"
       }
     };
 
@@ -827,23 +886,6 @@
     }
     async function fetchCsvOptional(path) {
       try { return await fetchCsv(path); } catch (e) { return []; }
-    }
-    function firstValue(row, candidates, fallback = null) {
-      if (!row) return fallback;
-      for (const key of candidates) {
-        if (!isMissing(row?.[key])) return row[key];
-      }
-      return fallback;
-    }
-    function firstNumber(row, candidates, fallback = NaN) {
-      const v = firstValue(row, candidates, null);
-      const n = toNumber(v);
-      return Number.isFinite(n) ? n : fallback;
-    }
-    function boolText01(v, yes = "YES", no = "NO") {
-      const n = toNumber(v);
-      if (!Number.isFinite(n)) return "NO";
-      return n === 1 ? yes : no;
     }
     function sortByDateAsc(rows, col) {
       return [...rows].sort((a,b) => new Date(a[col]) - new Date(b[col]));
@@ -991,312 +1033,95 @@
       return { status, maturity, lastDate: latestTape ? fmtDate(latestTape.Date) : "NA", todayUtc: todayUtc.toISOString().slice(0,10), ageDays: Number.isFinite(ageDays) ? ageDays : "NA", realizedRows };
     }
 
-    function buildForecastSnapshot(predLog, prodTape, part3Summary = null) {
-      const predRow = latestRow(predLog, "decision_date");
-      const latestProdRow = latestRow(prodTape, "Date");
-      const decisionDate = fmtDate(firstValue(predRow, ["decision_date"], firstValue(latestProdRow, ["Date"], part3Summary?.last_date || "NA")));
-
-      let prodRow = null;
-      if (decisionDate !== "NA") {
-        const sameDateRows = (prodTape || []).filter(r => fmtDate(r.Date) === decisionDate);
-        if (sameDateRows.length) prodRow = sameDateRows[sameDateRows.length - 1];
-      }
-      if (!prodRow) prodRow = latestProdRow;
-
-      const baseRow = predRow || prodRow;
-      if (!baseRow) return null;
-
-      const vooSpot = firstNumber(predRow, [
-        "px_voo_t",
-        "voo_spot",
-        "px_voo_spot",
-        "current_voo",
-        "spot_voo"
-      ], firstNumber(prodRow, [
-        "px_voo_t",
-        "voo_spot",
-        "px_voo_spot",
-        "current_voo",
-        "spot_voo"
-      ]));
-
-      const iefSpot = firstNumber(predRow, [
-        "px_ief_t",
-        "ief_spot",
-        "px_ief_spot",
-        "current_ief",
-        "spot_ief"
-      ], firstNumber(prodRow, [
-        "px_ief_t",
-        "ief_spot",
-        "px_ief_spot",
-        "current_ief",
-        "spot_ief"
-      ]));
-
-      const vooCall = firstNumber(predRow, [
-        "px_voo_call_7d",
-        "voo_call_7d",
-        "voo_target_price",
-        "voo_call",
-        "voo_explicit_call",
-        "px_voo_explicit_call"
-      ], firstNumber(prodRow, [
-        "px_voo_call_7d",
-        "voo_call_7d",
-        "voo_target_price",
-        "VOO_target_price",
-        "price_call_voo"
-      ]));
-
-      const iefCall = firstNumber(predRow, [
-        "px_ief_call_7d",
-        "ief_call_7d",
-        "ief_target_price",
-        "ief_call",
-        "ief_explicit_call",
-        "px_ief_explicit_call"
-      ], firstNumber(prodRow, [
-        "px_ief_call_7d",
-        "ief_call_7d",
-        "ief_target_price",
-        "IEF_target_price",
-        "price_call_ief"
-      ]));
-
-      const pFinalCal = firstNumber(predRow, [
-        "p_final_cal",
-        "p_final_use",
-        "p_final",
-        "p_final_raw"
-      ], firstNumber(prodRow, [
-        "p_final_cal",
-        "p_final_cal_candidate",
-        "p_final",
-        "p_final_raw",
-        "p0"
-      ]));
-
-      const alphaScale = firstNumber(predRow, [
-        "alpha_scale",
-        "defense_scale_final",
-        "gov_scale"
-      ], firstNumber(prodRow, [
-        "alpha_scale",
-        "defense_scale_final",
-        "gov_scale"
-      ]));
-
-      const governanceTier = firstValue(predRow, [
-        "governance_tier",
-        "GovMode",
-        "publish_mode"
-      ], firstValue(prodRow, [
-        "governance_tier",
-        "GovMode",
-        "publish_mode"
-      ], "NA"));
-
-      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall)
-        ? (vooCall / vooSpot) - 1
-        : NaN;
-
-      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall)
-        ? (iefCall / iefSpot) - 1
-        : NaN;
-
-      let vooSrc = firstValue(predRow, ["voo_call_src", "price_call_source_voo"], firstValue(prodRow, ["voo_call_src", "price_call_source_voo"], null));
-      let iefSrc = firstValue(predRow, ["ief_call_src", "price_call_source_ief"], firstValue(prodRow, ["ief_call_src", "price_call_source_ief"], null));
-
-      if (isMissing(vooSrc) && Number.isFinite(vooCall)) vooSrc = "explicit_call";
-      if (isMissing(iefSrc) && Number.isFinite(iefCall)) iefSrc = "explicit_call";
-
-      return {
-        row: baseRow,
-        predRow,
-        prodRow,
-        decisionDate,
-        targetDate: deriveTargetDate(predRow || prodRow),
-        vooSpot,
-        iefSpot,
-        vooCall,
-        iefCall,
-        pFinalCal,
-        alphaScale,
-        governanceTier: !isMissing(governanceTier) ? String(governanceTier) : "NA",
-        vooDelta,
-        iefDelta,
-        vooSrc: !isMissing(vooSrc) ? String(vooSrc) : "NA",
-        iefSrc: !isMissing(iefSrc) ? String(iefSrc) : "NA"
-      };
+    function buildForecastSnapshot(predLog, prodTape) {
+      const row = latestRow(predLog, "decision_date") || latestRow(prodTape, "Date");
+      if (!row) return null;
+      const decisionDate = !isMissing(row.decision_date) ? fmtDate(row.decision_date) : fmtDate(row.Date);
+      const vooSpot = Number.isFinite(toNumber(row.px_voo_t)) ? toNumber(row.px_voo_t) : NaN;
+      const iefSpot = Number.isFinite(toNumber(row.px_ief_t)) ? toNumber(row.px_ief_t) : NaN;
+      const vooCall = Number.isFinite(toNumber(row.px_voo_call_7d)) ? toNumber(row.px_voo_call_7d) : Number.isFinite(toNumber(row.voo_call_7d)) ? toNumber(row.voo_call_7d) : NaN;
+      const iefCall = Number.isFinite(toNumber(row.px_ief_call_7d)) ? toNumber(row.px_ief_call_7d) : Number.isFinite(toNumber(row.ief_call_7d)) ? toNumber(row.ief_call_7d) : NaN;
+      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
+      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
+      return { row, decisionDate, targetDate: deriveTargetDate(row), vooSpot, iefSpot, vooCall, iefCall, vooDelta, iefDelta, vooSrc: !isMissing(row.voo_call_src) ? row.voo_call_src : "NA", iefSrc: !isMissing(row.ief_call_src) ? row.ief_call_src : "NA" };
     }
 
-    function buildDefenseSnapshot(prodTape, govTape, part3Summary = null) {
+    function buildDefenseSnapshot(prodTape, govTape) {
       const tapeRow = latestRow(prodTape, "Date");
       const govRow = latestRow(govTape, "Date");
       const row = govRow || tapeRow;
       if (!row) return null;
-
-      const govMode = firstValue(
-        govRow,
-        ["GovMode", "gov_mode", "publish_mode"],
-        firstValue(tapeRow, ["GovMode", "gov_mode", "publish_mode"], part3Summary?.publish_mode || "NA")
-      );
-
-      const govReasonRaw = firstValue(
-        govRow,
-        ["GovReason", "gov_reason"],
-        firstValue(tapeRow, ["GovReason", "gov_reason"], "NA")
-      );
-
-      const alphaEffFinal = firstNumber(govRow, ["alpha_eff_final"],
-        firstNumber(tapeRow, ["alpha_eff_final", "alpha_eff_final_live"])
-      );
-
-      const govScale = firstNumber(govRow, ["gov_scale", "scale"],
-        firstNumber(tapeRow, ["defense_scale_final", "alpha_scale", "gov_scale"])
-      );
-
+      const alphaEffFinal = Number.isFinite(toNumber(govRow?.alpha_eff_final)) ? toNumber(govRow.alpha_eff_final) :
+                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final)) ? toNumber(tapeRow.alpha_eff_final) :
+                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final_live)) ? toNumber(tapeRow.alpha_eff_final_live) : NaN;
       return {
-        date: fmtDate(firstValue(row, ["Date"], "NA")),
-        GovMode: !isMissing(govMode) ? String(govMode) : "NA",
-        GovReason: normalizeGovReasonDisplay(govReasonRaw),
-        wExec: firstNumber(tapeRow, ["w_exec", "w_target_voo", "core_voo"]),
-        scale: govScale,
+        date: row ? fmtDate(row.Date) : "NA",
+        GovMode: !isMissing(govRow?.GovMode) ? govRow.GovMode : "NA",
+        GovReason: !isMissing(govRow?.GovReason) ? String(govRow.GovReason) : "NA",
+        wExec: Number.isFinite(toNumber(tapeRow?.w_exec)) ? toNumber(tapeRow.w_exec) : NaN,
+        scale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
+               Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) :
+               Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) : NaN,
         alphaEffFinal,
-        healthLive: firstNumber(govRow, ["GovHealthScore_live", "GovHealthScore"]),
-        healthReal: firstNumber(govRow, ["GovHealthScore_realized"]),
-        healthAny: firstNumber(govRow, ["GovHealthScore_live", "GovHealthScore"]),
-        liftEnd: firstNumber(govRow, ["Lift_End"]),
-        desEnd: firstNumber(govRow, ["dES_P_End"]),
-        costRoll: firstNumber(govRow, ["AnnCostDrag_Roll", "ann_cost_drag_roll"]),
-        turnEff: firstNumber(govRow, ["TurnEff_Roll", "turn_eff_roll"]),
-        zeroActive: firstNumber(govRow, ["ZeRO_Active_End", "zero_active"]),
-        tooGood: firstNumber(govRow, ["TooGood_Alarm_End", "too_good"]),
-        govScale
+        healthLive: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
+        healthReal: toNumber(govRow?.GovHealthScore_realized),
+        healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
+        liftEnd: toNumber(govRow?.Lift_End),
+        desEnd: toNumber(govRow?.dES_P_End),
+        costRoll: Number.isFinite(toNumber(govRow?.AnnCostDrag_Roll)) ? toNumber(govRow.AnnCostDrag_Roll) : toNumber(govRow?.ann_cost_drag_roll),
+        turnEff: Number.isFinite(toNumber(govRow?.TurnEff_Roll)) ? toNumber(govRow.TurnEff_Roll) : toNumber(govRow?.turn_eff_roll),
+        zeroActive: toNumber(govRow?.ZeRO_Active_End),
+        tooGood: toNumber(govRow?.TooGood_Alarm_End),
+        govScale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
+                  Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) : NaN
       };
     }
 
-    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility, alphaSummaryJson = null) {
+    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility) {
       const tapeRow = latestRow(prodTape, "Date");
       const summaryRow = latestRow(alphaSummaryTape, "Date");
       const posLive = latestRowsByDate(alphaPositions, "Date");
       const eligLive = latestRowsByDate(alphaEligibility, "asof_date");
-
       const selectedRows = posLive.filter(r => toNumber(r.selected) === 1);
       const selectedNames = selectedRows.map(r => String(r.Ticker || "")).filter(Boolean);
-
-      const eligibleRows = eligLive.filter(r => {
-        const inSet = toNumber(r.in_elig_set);
-        const eligible = toNumber(r.eligible);
-        return inSet === 1 || eligible === 1;
-      });
-      const eligibleNames = eligibleRows.map(r => String(r.Ticker || "")).filter(Boolean);
-
+      const eligibleNames = eligLive.filter(r => toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1).map(r => String(r.Ticker || "")).filter(Boolean);
       return {
-        alphaState: firstValue(tapeRow, ["alpha_state_display", "alpha_state"], "UNAVAILABLE"),
-        alphaLive: firstNumber(tapeRow, ["alpha_live"]),
-        fusionLive: firstNumber(tapeRow, ["fusion_live"]),
-        budgetMult: firstNumber(tapeRow, ["budget_mult"], firstNumber(alphaSummaryJson, ["latest_alpha_scale_effective"])),
-        realizedDates: firstNumber(tapeRow, ["realized_dates"], firstNumber(alphaSummaryJson, ["realized_dates"])),
-
-        meanRankIc: firstNumber(
-          tapeRow,
-          ["mean_rank_ic"],
-          firstNumber(summaryRow, ["rank_ic_roll", "rank_ic"], firstNumber(alphaSummaryJson, ["mean_rank_ic"]))
-        ),
-
-        meanTopkNet: firstNumber(
-          tapeRow,
-          ["mean_topk_rel_ret_net"],
-          firstNumber(summaryRow, ["topk_rel_ret_net_roll", "topk_rel_ret_net"], firstNumber(alphaSummaryJson, ["mean_topk_rel_ret_net"]))
-        ),
-
-        irTopk: firstNumber(
-          tapeRow,
-          ["ir_topk_rel_ret_net"],
-          firstNumber(alphaSummaryJson, ["ir_topk_rel_ret_net"])
-        ),
-
-        driftRate: firstNumber(
-          tapeRow,
-          ["alpha_drift_alarm_rate"],
-          firstNumber(alphaSummaryJson, ["alpha_drift_alarm_rate"])
-        ),
-
-        qualityOk: firstNumber(tapeRow, ["alpha_quality_ok"]),
-        driftOk: firstNumber(tapeRow, ["alpha_drift_ok"]),
-        trialOpen: firstNumber(tapeRow, ["alpha_trial_gate_open"]),
-        fusedOpen: firstNumber(tapeRow, ["alpha_fused_gate_open"]),
-        ready: firstNumber(tapeRow, ["alpha_promotion_ready"]),
-        blocker: firstValue(tapeRow, ["alpha_blocker_text"], "NONE"),
-
-        tier: firstValue(
-          summaryRow,
-          ["alpha_governance_tier"],
-          firstValue(selectedRows[0], ["alpha_governance_tier"], "NA")
-        ),
-
-        driftAlarm: firstNumber(
-          summaryRow,
-          ["alpha_drift_alarm"],
-          firstNumber(alphaSummaryJson, ["alpha_drift_alarm_rate"])
-        ),
-
-        overlayScale: firstNumber(
-          summaryRow,
-          ["alpha_overlay_scale"],
-          firstNumber(alphaSummaryJson, ["latest_alpha_scale_effective", "mean_alpha_scale_effective"])
-        ),
-
-        rankIcRoll: firstNumber(
-          summaryRow,
-          ["rank_ic_roll", "rank_ic"],
-          firstNumber(alphaSummaryJson, ["mean_rank_ic"])
-        ),
-
-        topkRoll: firstNumber(
-          summaryRow,
-          ["topk_rel_ret_net_roll", "topk_rel_ret_net"],
-          firstNumber(alphaSummaryJson, ["mean_topk_rel_ret_net"])
-        ),
-
-        budgetUsed: firstNumber(summaryRow, ["gross_alpha_budget_used"]),
-        eligibleBreadth: firstNumber(summaryRow, ["eligible_breadth"]),
-        hitRate: firstNumber(summaryRow, ["selection_hit_rate"]),
-        date: fmtDate(firstValue(summaryRow, ["Date"], firstValue(tapeRow, ["Date"], alphaSummaryJson?.last_date || "NA"))),
-
+        alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : (!isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE"),
+        alphaLive: toNumber(tapeRow?.alpha_live),
+        fusionLive: toNumber(tapeRow?.fusion_live),
+        budgetMult: toNumber(tapeRow?.budget_mult),
+        realizedDates: toNumber(tapeRow?.realized_dates),
+        meanRankIc: Number.isFinite(toNumber(tapeRow?.mean_rank_ic)) ? toNumber(tapeRow.mean_rank_ic) : toNumber(summaryRow?.rank_ic_roll),
+        meanTopkNet: Number.isFinite(toNumber(tapeRow?.mean_topk_rel_ret_net)) ? toNumber(tapeRow.mean_topk_rel_ret_net) : Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
+        irTopk: toNumber(tapeRow?.ir_topk_rel_ret_net),
+        driftRate: toNumber(tapeRow?.alpha_drift_alarm_rate),
+        qualityOk: toNumber(tapeRow?.alpha_quality_ok),
+        driftOk: toNumber(tapeRow?.alpha_drift_ok),
+        trialOpen: toNumber(tapeRow?.alpha_trial_gate_open),
+        fusedOpen: toNumber(tapeRow?.alpha_fused_gate_open),
+        ready: toNumber(tapeRow?.alpha_promotion_ready),
+        blocker: !isMissing(tapeRow?.alpha_blocker_text) ? tapeRow.alpha_blocker_text : "NONE",
+        tier: !isMissing(summaryRow?.alpha_governance_tier) ? summaryRow.alpha_governance_tier : (!isMissing(selectedRows[0]?.alpha_governance_tier) ? selectedRows[0].alpha_governance_tier : "NA"),
+        driftAlarm: toNumber(summaryRow?.alpha_drift_alarm),
+        overlayScale: toNumber(summaryRow?.alpha_overlay_scale),
+        rankIcRoll: toNumber(summaryRow?.rank_ic_roll),
+        topkRoll: Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
+        budgetUsed: toNumber(summaryRow?.gross_alpha_budget_used),
+        eligibleBreadth: toNumber(summaryRow?.eligible_breadth),
+        hitRate: toNumber(summaryRow?.selection_hit_rate),
+        date: summaryRow ? fmtDate(summaryRow.Date) : (tapeRow ? fmtDate(tapeRow.Date) : "NA"),
         selectedCount: selectedRows.length,
         eligibleNames: eligibleNames.length ? eligibleNames.join(", ") : "NA",
         selectedNames: selectedNames.length ? selectedNames.join(", ") : "NA"
       };
     }
 
-
-    function normalizeGovReasonDisplay(value) {
-      if (isMissing(value)) return "NA";
-      const s = String(value).trim();
-      if (!s) return "NA";
-      if (s.toUpperCase() === "OK") return "OK";
-      return s.replace(/_/g, " ");
-    }
-
     function buildFusionMeta(allocRows) {
       const latestAlloc = latestRowsByDate(allocRows, "Date");
-      const meta = {
-        allocDate: "NA",
-        coreVoo: NaN,
-        coreIef: NaN,
-        alphaGross: NaN,
-        sumWeight: NaN,
-        nRows: 0
-      };
-
+      const meta = { allocDate: "NA", coreVoo: NaN, coreIef: NaN, alphaGross: NaN, sumWeight: NaN, nRows: 0 };
       if (!latestAlloc.length) return { meta, latestAlloc: [] };
-
       meta.allocDate = fmtDate(latestAlloc[0].Date);
       meta.nRows = latestAlloc.length;
-
       let coreVoo = 0, coreIef = 0, alphaGross = 0, sum = 0;
       for (const r of latestAlloc) {
         const w = toNumber(r.weight);
@@ -1307,16 +1132,8 @@
         else if (tk === "IEF_CORE") coreIef += w;
         else alphaGross += w;
       }
-
-      meta.coreVoo = coreVoo;
-      meta.coreIef = coreIef;
-      meta.alphaGross = alphaGross;
-      meta.sumWeight = sum;
-
-      return {
-        meta,
-        latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight))
-      };
+      meta.coreVoo = coreVoo; meta.coreIef = coreIef; meta.alphaGross = alphaGross; meta.sumWeight = sum;
+      return { meta, latestAlloc: latestAlloc.sort((a,b) => toNumber(b.weight) - toNumber(a.weight)) };
     }
 
     function buildValidationSnapshot(part2Summary, part3Summary) {
@@ -1439,11 +1256,11 @@
     function populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
       setText("heroVooCall", fmtPrice(forecast?.vooCall));
       setText("heroVooMeta", `Current: ${fmtPrice(forecast?.vooSpot)} | Δ: ${fmtPct(forecast?.vooDelta)}`);
-      setText("heroVooSrc", `Source: ${forecast?.vooSrc && forecast.vooSrc !== "NA" ? forecast.vooSrc : "explicit_call"}`);
+      setText("heroVooSrc", `Source: ${forecast?.vooSrc || "NA"}`);
 
       setText("heroIefCall", fmtPrice(forecast?.iefCall));
       setText("heroIefMeta", `Current: ${fmtPrice(forecast?.iefSpot)} | Δ: ${fmtPct(forecast?.iefDelta)}`);
-      setText("heroIefSrc", `Source: ${forecast?.iefSrc && forecast.iefSrc !== "NA" ? forecast.iefSrc : "explicit_call"}`);
+      setText("heroIefSrc", `Source: ${forecast?.iefSrc || "NA"}`);
 
       setText("heroSystemStatus", system.status);
       setText("heroMaturity", `Maturity: ${system.maturity}`);
@@ -1590,16 +1407,13 @@
       badges.push(`<div class="status-pill ${latestRealizedFilled ? "good" : "warn"}">${latestRealizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>`);
       badges.push(`<div class="status-pill good">VOO CALL: ${fmtPrice(forecast?.vooCall)}</div>`);
       badges.push(`<div class="status-pill good">IEF CALL: ${fmtPrice(forecast?.iefCall)}</div>`);
-      if (Number.isFinite(toNumber(forecast?.vooSpot))) {
-        badges.push(`<div class="status-pill info">CURRENT VOO: ${fmtPrice(forecast?.vooSpot)}</div>`);
-      }
       setHtml("predSnapBadges", badges.join(""));
       setText("predSnapTarget", forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending");
-      setText("predSnapTier", forecast?.governanceTier && forecast.governanceTier !== "NA" ? forecast.governanceTier : "Pending");
-      setText("predSnapPFinal", fmtValueOrPending(forecast?.pFinalCal, v => fmtNum(v, 4)));
-      setText("predSnapAlphaScale", fmtValueOrPending(forecast?.alphaScale, v => fmtNum(v, 4)));
-      setText("predSnapVoo", `${fmtValueOrPending(forecast?.vooSpot, v => fmtPrice(v))} / ${fmtPrice(forecast?.vooCall)}`);
-      setText("predSnapIef", `${fmtValueOrPending(forecast?.iefSpot, v => fmtPrice(v))} / ${fmtPrice(forecast?.iefCall)}`);
+      setText("predSnapTier", !isMissing(row?.governance_tier) ? row.governance_tier : "Pending");
+      setText("predSnapPFinal", fmtNum(row?.p_final_cal || row?.p_final_use, 4));
+      setText("predSnapAlphaScale", fmtNum(row?.alpha_scale));
+      setText("predSnapVoo", `${fmtPrice(forecast?.vooSpot)} / ${fmtPrice(forecast?.vooCall)}`);
+      setText("predSnapIef", `${fmtPrice(forecast?.iefSpot)} / ${fmtPrice(forecast?.iefCall)}`);
     }
 
     function populateGovernanceSnapshot(defense) {
@@ -1966,6 +1780,118 @@
       renderJsonTable("part9Table", part9Report || {});
     }
 
+    function buildBotSnapshot(portfolioState, performanceReport, signalLog, tradeLog, liveReport) {
+      const latestSignal = latestRow(signalLog, "date");
+      const latestTrade = latestRow(tradeLog, "decision_date");
+      const liveN = Number.isFinite(toNumber(liveReport?.n_live_realized)) ? Math.round(toNumber(liveReport.n_live_realized)) : 0;
+      const gateN = 60;
+      const initialized = portfolioState?.initialized === true || String(portfolioState?.initialized).toLowerCase() === "true";
+      const isStopped = portfolioState?.is_stopped === true || String(portfolioState?.is_stopped).toLowerCase() === "true";
+      const accuracyGatePassed = latestSignal ? String(latestSignal.accuracy_gate_passed).toLowerCase() === "true" || toNumber(latestSignal.accuracy_gate_passed) === 1 : false;
+
+      let mode = "DRY_RUN";
+      if (isStopped) mode = "STOPPED";
+      else if (accuracyGatePassed && liveN >= gateN) mode = "ACTIVE";
+
+      return {
+        mode,
+        asOf: portfolioState?.last_updated || performanceReport?.as_of_date || (latestSignal ? fmtDate(latestSignal.date) : "NA"),
+        nav: toNumber(portfolioState?.nav),
+        totalReturnPct: toNumber(portfolioState?.total_return_pct),
+        drawdownPct: toNumber(portfolioState?.drawdown_from_peak),
+        cash: toNumber(portfolioState?.cash),
+        sharesVoo: toNumber(portfolioState?.shares_voo),
+        sharesIef: toNumber(portfolioState?.shares_ief),
+        tradeCount: Number.isFinite(toNumber(portfolioState?.trade_count)) ? Math.round(toNumber(portfolioState.trade_count)) : tradeLog.length,
+        stopFloor: toNumber(portfolioState?.stop_loss_floor),
+        initialized,
+        isStopped,
+        latestSignalDate: latestSignal ? fmtDate(latestSignal.date) : "NA",
+        latestPTail: latestSignal ? toNumber(latestSignal.p_tail) : NaN,
+        latestEdge: latestSignal ? toNumber(latestSignal.edge) : NaN,
+        latestTargetW: latestSignal ? toNumber(latestSignal.target_w_voo) : NaN,
+        publishMode: latestSignal?.publish_mode || "NA",
+        finalPass: latestSignal?.final_pass ?? "NA",
+        accuracyGatePassed,
+        accuracyGateReason: latestSignal?.accuracy_gate_reason || performanceReport?.error || "NA",
+        latestActionReason: latestSignal?.action_reason || "NA",
+        targetSource: latestSignal?.target_source || "NA",
+        liveProgress: `${liveN}/${gateN}`,
+        liveProgressPct: gateN > 0 ? liveN / gateN : 0,
+        latestTradeDate: latestTrade ? fmtDate(latestTrade.decision_date) : "NA",
+        latestTradeMode: latestTrade?.mode || "NA"
+      };
+    }
+
+    function populateBotSnapshot(bot) {
+      setText("botSnapMode", bot.mode || "NA");
+      setText("botSnapAsOf", `As of: ${bot.asOf || "NA"}`);
+      const badges = [];
+      badges.push(`<div class="status-pill ${bot.mode === "ACTIVE" ? "good" : bot.mode === "STOPPED" ? "bad" : "info"}">${bot.mode}</div>`);
+      badges.push(`<div class="status-pill ${bot.accuracyGatePassed ? "good" : "warn"}">Gate ${bot.accuracyGatePassed ? "PASSED" : "WAITING"}</div>`);
+      badges.push(`<div class="status-pill ${bot.isStopped ? "bad" : "good"}">Stop ${bot.isStopped ? "TRIGGERED" : "CLEAR"}</div>`);
+      badges.push(`<div class="status-pill info">Signals ${bot.liveProgress}</div>`);
+      setHtml("botSnapBadges", badges.join(""));
+
+      setText("botSnapProgress", `${bot.liveProgress} (${fmtPct(bot.liveProgressPct)})`);
+      setText("botSnapNav", Number.isFinite(bot.nav) ? `$${fmtNum(bot.nav, 2)}` : "NA");
+      setText("botSnapReturn", Number.isFinite(bot.totalReturnPct) ? `${fmtNum(bot.totalReturnPct, 2)}%` : "NA");
+      setText("botSnapDrawdown", Number.isFinite(bot.drawdownPct) ? `${fmtNum(bot.drawdownPct, 2)}%` : "NA");
+      setText("botSnapCash", Number.isFinite(bot.cash) ? `$${fmtNum(bot.cash, 2)}` : "NA");
+      setText("botSnapShares", `${fmtNum(bot.sharesVoo, 4)} / ${fmtNum(bot.sharesIef, 4)}`);
+      setText("botSnapTrades", String(bot.tradeCount ?? 0));
+      setText("botSnapStop", Number.isFinite(bot.stopFloor) ? `$${fmtNum(bot.stopFloor, 2)}` : "NA");
+      setText("botSnapReason", bot.latestActionReason || "NA");
+      setText("botSnapGate", bot.accuracyGateReason || "NA");
+
+      renderKvGrid("botGrid", [
+        ["Latest signal date", bot.latestSignalDate || "NA"],
+        ["Latest trade date", bot.latestTradeDate || "NA"],
+        ["Target source", bot.targetSource || "NA"],
+        ["Latest target VOO", fmtPct(bot.latestTargetW)],
+        ["Latest p_tail", fmtNum(bot.latestPTail, 4)],
+        ["Latest edge", fmtNum(bot.latestEdge, 4)],
+        ["Publish mode", bot.publishMode || "NA"],
+        ["Final pass", String(bot.finalPass)],
+        ["Initialized", bot.initialized ? "YES" : "NO"],
+        ["Latest trade mode", bot.latestTradeMode || "NA"]
+      ]);
+    }
+
+    function renderBotNavChart(signalLog, portfolioState) {
+      const rows = sortByDateAsc(signalLog.filter(r => !isMissing(r.date)), "date");
+      if (!rows.length) return renderEmptyChart("botNavChart", "Bot NAV / Paper Equity", "No Part 10 signal history loaded.");
+      const x = rows.map(r => fmtDate(r.date));
+      const nav = rows.map(r => toNumber(r.nav));
+      const traces = [{ x, y: nav, type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "signal_log NAV", line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 } }];
+      const stop = toNumber(portfolioState?.stop_loss_floor);
+      const layout = plotBaseLayout("Bot NAV / Paper Equity", "Date", "NAV ($)");
+      if (Number.isFinite(stop)) {
+        layout.shapes = [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: stop, y1: stop, line: { color: "#ef4444", width: 2, dash: "dot" } }];
+        layout.annotations = [{ xref: "paper", yref: "y", x: 1, y: stop, text: `stop floor ${fmtNum(stop,2)}`, showarrow: false, xanchor: "right", yanchor: "bottom", font: { color: "#fca5a5", size: 12 } }];
+      }
+      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
+      Plotly.newPlot("botNavChart", traces, layout, plotConfig());
+    }
+
+    function renderBotSignalChart(signalLog) {
+      const rows = sortByDateAsc(signalLog.filter(r => !isMissing(r.date)), "date");
+      if (!rows.length) return renderEmptyChart("botSignalChart", "Bot Target Weight / Signal Edge", "No Part 10 signal history loaded.");
+      const x = rows.map(r => fmtDate(r.date));
+      Plotly.newPlot("botSignalChart", [
+        { x, y: rows.map(r => toNumber(r.target_w_voo)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "target_w_voo", line: { color: "#22c55e", width: 2 }, marker: { color: "#22c55e", size: 7 } },
+        { x, y: rows.map(r => toNumber(r.edge)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "edge", yaxis: "y2", line: { color: "#fb923c", width: 2 }, marker: { color: "#fb923c", size: 7 } },
+        { x, y: rows.map(r => toNumber(r.p_tail)), type: "scatter", mode: "lines", name: "p_tail", yaxis: "y2", line: { color: "#a855f7", width: 2, dash: "dot" } }
+      ], plotBaseLayout("Bot Target Weight / Signal Edge", "Date", "Target VOO Weight", { yaxis2: { title: { text: "Edge / p_tail", font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } }), plotConfig());
+    }
+
+    function populateBotTables(signalLog, tradeLog) {
+      const sigRows = headRows(sortByDateAsc(signalLog, "date").slice().reverse(), 20);
+      renderTable("botSignalTable", sigRows, ["date","p_tail","base_rate","edge","target_w_voo","action_reason","target_source","dry_run","accuracy_gate_passed","accuracy_gate_reason","publish_mode","final_pass","raw_val_auc","px_voo","px_ief","nav"]);
+      const trRows = headRows(sortByDateAsc(tradeLog, "decision_date").slice().reverse(), 20);
+      renderTable("botTradeTable", trRows, ["decision_date","executed_at","signal_p_tail","action_reason","target_source","w_voo_before","w_voo_after","delta_w_voo","trade_voo_shares","trade_ief_shares","px_voo","px_ief","tc_dollars","tc_bps","nav_before","nav_after","drawdown","trade_count","is_stopped","mode"]);
+    }
+
     function setupTabs() {
       const buttons = document.querySelectorAll(".tab-btn");
       const panels = document.querySelectorAll(".tab-panel");
@@ -1982,7 +1908,7 @@
     }
 
     function resizeAllPlots() {
-      ["predChart","errorChart","distChart","defSignalChart","alphaStateChart","fusionPathChart","fusionAllocChart","alphaSummaryChart","alphaBreadthChart","targetWeightsChart","regimeChart","execCostChart"].forEach(id => {
+      ["predChart","errorChart","distChart","defSignalChart","alphaStateChart","fusionPathChart","fusionAllocChart","alphaSummaryChart","alphaBreadthChart","targetWeightsChart","regimeChart","execCostChart","botNavChart","botSignalChart"].forEach(id => {
         const el = document.getElementById(id);
         if (el && el.data) Plotly.Plots.resize(el);
       });
@@ -2010,7 +1936,11 @@
           part7Meta,
           part8Meta,
           part8Orders,
-          part9Report
+          part9Report,
+          part10State,
+          part10Report,
+          part10SignalLogRaw,
+          part10TradeLogRaw
         ] = await Promise.all([
           fetchCsv(CFG.files.predLog),
           fetchCsv(CFG.files.prodTape),
@@ -2029,7 +1959,11 @@
           fetchJson(CFG.files.part7Meta, true),
           fetchJson(CFG.files.part8Meta, true),
           fetchJson(CFG.files.part8Orders, true),
-          fetchJson(CFG.files.part9Report, true)
+          fetchJson(CFG.files.part9Report, true),
+          fetchJson(CFG.files.part10State, true),
+          fetchJson(CFG.files.part10Report, true),
+          fetchCsvOptional(CFG.files.part10SignalLog),
+          fetchCsvOptional(CFG.files.part10TradeLog)
         ]);
 
         const predLog = sortByDateAsc(predLogRaw, "decision_date");
@@ -2040,17 +1974,20 @@
         const alphaPositions = sortByDateAsc(alphaPositionsRaw, "Date");
         const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, "asof_date");
         const part7Weights = sortByDateAsc(part7WeightsRaw, "Date");
+        const part10SignalLog = sortByDateAsc(part10SignalLogRaw, "date");
+        const part10TradeLog = sortByDateAsc(part10TradeLogRaw, "decision_date");
 
         const system = buildSystemStatus(prodTape, predLog);
-        const forecast = buildForecastSnapshot(predLog, prodTape, part3Summary);
-        const defense = buildDefenseSnapshot(prodTape, govTape, part3Summary);
-        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility, alphaSummaryJson);
+        const forecast = buildForecastSnapshot(predLog, prodTape);
+        const defense = buildDefenseSnapshot(prodTape, govTape);
+        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility);
         const validation = buildValidationSnapshot(part2Summary, part3Summary);
         const regime = buildRegimeSnapshot(part6Meta);
         const portfolio = buildPortfolioSnapshot(part7Current, part7Meta);
         const execution = buildExecutionSnapshot(part8Meta, part8Orders);
         const live = buildLiveSnapshot(part9Report);
         const fusion = buildFusionMeta(allocRows);
+        const bot = buildBotSnapshot(part10State, part10Report, part10SignalLog, part10TradeLog, part9Report);
 
         populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live);
         buildStatusPills(system, forecast, defense, alpha, validation, live);
@@ -2059,6 +1996,7 @@
         populateGovernanceSnapshot(defense);
         populateAlphaSnapshot(alpha);
         populateOpsGrids(validation, live, execution, portfolio);
+        populateBotSnapshot(bot);
 
         const counts = {
           predictionRows: predLog.length,
@@ -2068,7 +2006,9 @@
           alphaSummaryRows: alphaSummaryTape.length,
           alphaPositionRows: alphaPositions.length,
           alphaEligibilityRows: alphaEligibility.length,
-          part7Rows: part7Weights.length
+          part7Rows: part7Weights.length,
+          part10SignalRows: part10SignalLog.length,
+          part10TradeRows: part10TradeLog.length
         };
         setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary));
         populateFooter(counts, forecast);
@@ -2085,6 +2025,8 @@
         renderTargetWeightsChart(part7Weights);
         renderRegimeChart(part6Meta);
         renderExecCostChart(execution);
+        renderBotNavChart(part10SignalLog, part10State);
+        renderBotSignalChart(part10SignalLog);
 
         const opsMetaCombined = {
           part6_meta: part6Meta || {},
@@ -2095,9 +2037,10 @@
           alpha_summary_json: alphaSummaryJson || {}
         };
         populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMetaCombined, part9Report);
+        populateBotTables(part10SignalLog, part10TradeLog);
 
         document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
-        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}.`;
+        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}, bot_signal=${part10SignalLog.length}, bot_trade=${part10TradeLog.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}, part10state=${!!part10State}, part10report=${!!part10Report}.`;
 
         setTimeout(resizeAllPlots, 100);
       } catch (err) {
@@ -2113,6 +2056,7 @@
   </script>
 </body>
 </html>
+
 
 
 
