@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Canonical realized backfill script for the current PriceCall stack.
+Canonical realized backfill script for the current daily PriceCall stack.
 
 Behavior
 --------
 - Mounts Google Drive when running in Colab.
-- Audits the canonical Part 3 / Part 7 / Part 8 / Part 9 artifacts.
+- Audits the canonical Part 3 / Part 7 / Part 8 / Part 9 / Part 10 artifacts.
 - Backfills matured rows directly into artifacts_part3/prediction_log.csv.
-- Downloads VOO and IEF adjusted closes with yfinance.
+- Uses the daily H=1 model as the authoritative interpretation.
+- Prefers px_*_call_1d columns and falls back to _7d aliases only for compatibility.
 """
-# @title backfill_realized.py
+# @title File B Overwrite
+
 from __future__ import annotations
 
 import os
@@ -28,6 +30,9 @@ except Exception as exc:  # pragma: no cover
     ) from exc
 
 
+# -----------------------------------------------------------------------------
+# Environment helpers
+# -----------------------------------------------------------------------------
 def maybe_mount_drive() -> bool:
     try:
         from google.colab import drive  # type: ignore
@@ -62,6 +67,11 @@ def resolve_project_dir() -> Path:
 
 PROJECT_DIR = resolve_project_dir()
 PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+
+os.environ.setdefault("PRICECALL_ROOT", str(PROJECT_DIR))
+os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+
 PREDLOG_PATH = PROJECT_DIR / "artifacts_part3" / "prediction_log.csv"
 
 CANONICAL_ARTIFACTS: Dict[str, str] = {
@@ -73,9 +83,14 @@ CANONICAL_ARTIFACTS: Dict[str, str] = {
     "PART7": "artifacts_part7/portfolio_weights_tape.csv",
     "PART8_META": "artifacts_part8/part8_meta.json",
     "PART9": "artifacts_part9/live_attribution_report.json",
+    "PART10_STATE": "artifacts_part10_bot/portfolio_state.json",
+    "PART10_REPORT": "artifacts_part10_bot/performance_report.json",
 }
 
 
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
 def audit_paths(project_dir: Path) -> List[Tuple[str, Path, bool]]:
     rows: List[Tuple[str, Path, bool]] = []
     for label, rel in CANONICAL_ARTIFACTS.items():
@@ -111,6 +126,33 @@ def _safe_float(x) -> float:
         return np.nan
 
 
+def _resolve_call_value(row: pd.Series, asset: str) -> float:
+    asset = asset.lower()
+    if asset == "voo":
+        candidates = [
+            "px_voo_call_1d",
+            "px_voo_call_7d",   # backward-compat alias
+            "voo_call_1d",
+            "voo_call_7d",
+        ]
+    elif asset == "ief":
+        candidates = [
+            "px_ief_call_1d",
+            "px_ief_call_7d",   # backward-compat alias
+            "ief_call_1d",
+            "ief_call_7d",
+        ]
+    else:
+        return np.nan
+
+    for c in candidates:
+        if c in row.index:
+            v = _safe_float(row.get(c, np.nan))
+            if np.isfinite(v):
+                return v
+    return np.nan
+
+
 def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     start_str = start.strftime("%Y-%m-%d")
     end_str = (end + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
@@ -131,7 +173,7 @@ def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFr
     else:
         close = data.copy()
 
-    close.index = pd.to_datetime(close.index).normalize()
+    close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
     close = close[[c for c in ["VOO", "IEF"] if c in close.columns]].copy()
     close = close.dropna(how="any")
 
@@ -167,8 +209,8 @@ def _resolve_target_trading_date(
 def _compute_direction_hit(row: pd.Series) -> float:
     px_voo_t = _safe_float(row.get("px_voo_t", np.nan))
     px_ief_t = _safe_float(row.get("px_ief_t", np.nan))
-    px_voo_call = _safe_float(row.get("px_voo_call_7d", row.get("voo_call_7d", np.nan)))
-    px_ief_call = _safe_float(row.get("px_ief_call_7d", row.get("ief_call_7d", np.nan)))
+    px_voo_call = _resolve_call_value(row, "voo")
+    px_ief_call = _resolve_call_value(row, "ief")
     px_voo_real = _safe_float(row.get("px_voo_realized", row.get("voo_realized", np.nan)))
     px_ief_real = _safe_float(row.get("px_ief_realized", row.get("ief_realized", np.nan)))
 
@@ -182,17 +224,21 @@ def _compute_direction_hit(row: pd.Series) -> float:
     return float(int(np.sign(pred_spread) == np.sign(real_spread)))
 
 
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
 def main() -> int:
     print(f"ROOT: {PROJECT_DIR}")
     print(f"IN_COLAB: {IN_COLAB}")
     print(f"Prediction log exists: {PREDLOG_PATH.exists()}")
+
     print("\n=== CANONICAL BACKFILL AUDIT ===")
     for label, path, exists in audit_paths(PROJECT_DIR):
         print(f"{label}: {path} | exists = {exists}")
 
     if not PREDLOG_PATH.exists():
         print("\n[ERROR] artifacts_part3/prediction_log.csv is missing.")
-        print("Run run_tuesday_prediction.py first so Part 3 writes the canonical prediction log.")
+        print("Run File A first so Part 3 writes the canonical prediction log.")
         return 1
 
     df = pd.read_csv(PREDLOG_PATH)
@@ -210,24 +256,23 @@ def main() -> int:
     if target_col is not None:
         df[target_col] = _to_datetime_series(df[target_col])
 
-
     numeric_cols = [
-        "px_voo_realized", "px_ief_realized", "voo_realized", "ief_realized",
-        "voo_err", "ief_err", "voo_abs_err", "ief_abs_err", "voo_ape", "ief_ape",
+        "px_voo_realized", "px_ief_realized",
+        "voo_realized", "ief_realized",
+        "voo_err", "ief_err",
+        "voo_abs_err", "ief_abs_err",
+        "voo_ape", "ief_ape",
         "spread_err", "hit_direction",
     ]
-    
     for col in numeric_cols:
         if col not in df.columns:
             df[col] = np.nan
-        else:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        
+
     if "realized_target_date" not in df.columns:
-        df["realized_target_date"] = pd.Series(pd.NA, index=df.index, dtype="string")
+        df["realized_target_date"] = pd.Series([None] * len(df), dtype="object")
     else:
-        df["realized_target_date"] = df["realized_target_date"].astype("string")
-    
+        df["realized_target_date"] = df["realized_target_date"].astype("object")
+        
     start = df[decision_col].dropna().min() - pd.Timedelta(days=20)
     end = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
     close = _download_close_history(start, end)
@@ -242,7 +287,12 @@ def main() -> int:
         if pd.isna(decision_date):
             continue
 
-        h_reb = int(round(_safe_float(row.get("h_reb", 7)) if pd.notna(row.get("h_reb", np.nan)) else 7))
+        # Daily canonical default is H=1.
+        h_reb_raw = row.get("h_reb", 1)
+        h_reb = int(round(_safe_float(h_reb_raw))) if pd.notna(h_reb_raw) else 1
+        if h_reb <= 0:
+            h_reb = 1
+
         explicit_target = row[target_col] if target_col is not None else pd.NaT
 
         target_trading_date = _resolve_target_trading_date(
@@ -258,6 +308,7 @@ def main() -> int:
             continue
 
         matured_rows += 1
+
         px_voo_realized = float(close.loc[target_trading_date, "VOO"])
         px_ief_realized = float(close.loc[target_trading_date, "IEF"])
 
@@ -272,8 +323,8 @@ def main() -> int:
         df.at[idx, "voo_realized"] = px_voo_realized
         df.at[idx, "ief_realized"] = px_ief_realized
 
-        px_voo_call = _safe_float(row.get("px_voo_call_7d", row.get("voo_call_7d", np.nan)))
-        px_ief_call = _safe_float(row.get("px_ief_call_7d", row.get("ief_call_7d", np.nan)))
+        px_voo_call = _resolve_call_value(row, "voo")
+        px_ief_call = _resolve_call_value(row, "ief")
         px_voo_t = _safe_float(row.get("px_voo_t", np.nan))
         px_ief_t = _safe_float(row.get("px_ief_t", np.nan))
 
@@ -307,12 +358,16 @@ def main() -> int:
 
     df.to_csv(PREDLOG_PATH, index=False)
 
-    realized_count = int(
-        (
-            pd.to_numeric(df["px_voo_realized"], errors="coerce").notna()
-            & pd.to_numeric(df["px_ief_realized"], errors="coerce").notna()
-        ).sum()
+    realized_mask = (
+        pd.to_numeric(df["px_voo_realized"], errors="coerce").notna()
+        & pd.to_numeric(df["px_ief_realized"], errors="coerce").notna()
     )
+    realized_count = int(realized_mask.sum())
+
+    live_realized_count = realized_count
+    if "horizon_legacy" in df.columns:
+        legacy_mask = pd.to_numeric(df["horizon_legacy"], errors="coerce").fillna(0).astype(int) == 1
+        live_realized_count = int((realized_mask & ~legacy_mask).sum())
 
     print("\n=== BACKFILL SUMMARY ===")
     print(f"Prediction log: {PREDLOG_PATH}")
@@ -320,11 +375,11 @@ def main() -> int:
     print(f"Matured rows identified: {matured_rows}")
     print(f"Rows newly updated: {updated_rows}")
     print(f"Rows with realized prices now present: {realized_count}")
+    print(f"Rows with realized prices now present (non-legacy H=1 live rows): {live_realized_count}")
     return 0
-
-
 
 if __name__ == "__main__":
     main()
+
 
 
