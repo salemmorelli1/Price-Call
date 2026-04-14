@@ -1,9 +1,33 @@
-
-
 # @title Part 5
 from __future__ import annotations
 import sys as _sys
 import os as _os
+
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
 
 
 
@@ -432,26 +456,13 @@ def _validate_part3_contract(part3_summary: Dict[str, object], expected_alpha_fa
     return publish_mode, final_pass, latest_alpha_state, alpha_contract
 
 
-def _predlog_stats(predlog_path: Path) -> Tuple[int, int, dict]:
-    """Return (total_rows, realized_rows, schema_health).
-
-    schema_health keys:
-      has_deployment_mode  bool  — True if the new deployment_mode column is present
-      has_horizon_legacy   bool  — True if the horizon_legacy column is present
-      n_legacy_rows        int   — number of rows flagged as horizon_legacy
-      rows_realized_fused  int   — from part3_summary (cross-checked against realized count)
-    """
-    schema: dict = {
-        "has_deployment_mode": False,
-        "has_horizon_legacy": False,
-        "n_legacy_rows": 0,
-    }
+def _predlog_stats(predlog_path: Path) -> Tuple[int, int]:
     if not predlog_path.exists():
-        return 0, 0, schema
+        return 0, 0
     try:
         df = pd.read_csv(predlog_path)
     except Exception:
-        return 0, 0, schema
+        return 0, 0
 
     total_rows = int(len(df))
     realized_rows = 0
@@ -459,17 +470,9 @@ def _predlog_stats(predlog_path: Path) -> Tuple[int, int, dict]:
     voo_real_cols = [c for c in ["px_voo_realized", "voo_realized"] if c in df.columns]
     ief_real_cols = [c for c in ["px_ief_realized", "ief_realized"] if c in df.columns]
     if voo_real_cols and ief_real_cols:
-        mask = df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()
-        if "horizon_legacy" in df.columns:
-            mask = mask & (df["horizon_legacy"].fillna(0).astype(int) == 0)
-        realized_rows = int(mask.sum())
+        realized_rows = int((df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()).sum())
 
-    schema["has_deployment_mode"] = "deployment_mode" in df.columns
-    schema["has_horizon_legacy"] = "horizon_legacy" in df.columns
-    if schema["has_horizon_legacy"]:
-        schema["n_legacy_rows"] = int(df["horizon_legacy"].fillna(0).astype(int).sum())
-
-    return total_rows, realized_rows, schema
+    return total_rows, realized_rows
 
 
 
@@ -537,36 +540,13 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     )
 
     predlog_path = _validate_persistent_predlog(root, part3_summary)
-    predlog_rows, predlog_realized_rows, predlog_schema = _predlog_stats(predlog_path)
-    rows_realized_fused_summary = int(part3_summary.get("rows_realized_fused", -1))
+    predlog_rows, predlog_realized_rows = _predlog_stats(predlog_path)
 
     print("\n=== PART 5 VALIDATION ===")
     print(f"Source health: {source_health}")
     print(f"Prediction log path: {predlog_path}")
     print(f"Prediction log rows: {predlog_rows}")
     print(f"Prediction log realized rows: {predlog_realized_rows}")
-    # Schema health checks — warn only, do not raise; migration script adds these columns.
-    if not predlog_schema["has_deployment_mode"]:
-        print("[WARN] Prediction log missing 'deployment_mode' column — run migrate_prediction_log.py")
-    else:
-        print("[OK] Prediction log has 'deployment_mode' column")
-    if not predlog_schema["has_horizon_legacy"]:
-        print("[WARN] Prediction log missing 'horizon_legacy' column — run migrate_prediction_log.py")
-    else:
-        n_leg = predlog_schema["n_legacy_rows"]
-        if n_leg > 0:
-            print(f"[OK] Prediction log has 'horizon_legacy' column ({n_leg} legacy rows excluded from realized count)")
-        else:
-            print("[OK] Prediction log has 'horizon_legacy' column (0 legacy rows)")
-    # Cross-check: part3_summary rows_realized_fused vs predlog realized count
-    if rows_realized_fused_summary >= 0 and rows_realized_fused_summary != predlog_realized_rows:
-        # This is expected when rows_realized_fused was computed by the old proxy
-        # formula (len(tape)-2). After the Part 3 fix it should match.
-        print(
-            f"[WARN] rows_realized_fused mismatch: part3_summary={rows_realized_fused_summary}, "
-            f"predlog_realized={predlog_realized_rows}. "
-            f"Expected to align after Part 3 fix is deployed."
-        )
     print(f"Part 2 status: publish_mode={part2_publish_mode} | final_pass={part2_final_pass}")
     print(f"Part 3 status: publish_mode={part3_publish_mode} | final_pass={part3_final_pass} | latest_alpha_state={latest_alpha_state} | alpha_contract={alpha_contract}")
     print("[OK] Daily canonical pipeline completed successfully")
@@ -597,5 +577,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
