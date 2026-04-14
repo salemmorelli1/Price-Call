@@ -1,0 +1,2 @@
+Date,publish_mode,final_pass,quality_ok,drift_ok,trial_gate_open,fused_gate_open,promotion_ready,alpha_state,alpha_state_display,alpha_live,drift_alarm,drift_rate,budget_mult,alpha_blockers
+2026-04-14,FAIL_CLOSED_NEUTRAL,0,1,1,1,1,1,SHADOW,SHADOW,0,0,0.0,1.0,NONE

@@ -1,0 +1,17 @@
+{
+  "nav": 1000.0,
+  "starting_capital": 1000.0,
+  "total_return_pct": 0.0,
+  "peak_nav": 1000.0,
+  "drawdown_from_peak": 0.0,
+  "w_voo": 0.0,
+  "w_ief": 0.0,
+  "cash": 1000.0,
+  "shares_voo": 0.0,
+  "shares_ief": 0.0,
+  "trade_count": 0,
+  "is_stopped": false,
+  "stop_loss_floor": 900.0,
+  "initialized": true,
+  "last_updated": "2026-04-14"
+}

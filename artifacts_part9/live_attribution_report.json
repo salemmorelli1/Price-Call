@@ -1,3 +1,8 @@
 {
-  "error": "Prediction log not found at /home/runner/work/Price-Call/Price-Call/artifacts_part3/prediction_log.csv"
+  "generated_at": "2026-04-14T13:44:08.364812+00:00",
+  "total_predictions": 1,
+  "n_live_realized": 0,
+  "status": "IMMATURE",
+  "schema_mode_col": "publish_mode",
+  "message": "Only 0 realized predictions available. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months."
 }
