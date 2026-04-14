@@ -1,15 +1,44 @@
-
 #!/usr/bin/env python3
 # @title Part 2A Gen 6
 
 # part2a21_alpha.py
 # =============================================================================
-# PROJECT: VOO vs IEF 7D Tail-Risk
+# PROJECT: VOO vs IEF Daily Price Call
 # STAGE:   Part 2A
 # VERSION: 21.0 (Gen 5.3.2 soft-caution alpha, current production family)
 # =============================================================================
 
 from __future__ import annotations
+import sys as _sys
+import os as _os
+
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
+
+
 
 import json
 import shutil
@@ -57,7 +86,7 @@ class Part2A21Config:
     overlay_hard_veto_uncertainty: float = 0.995
 
     # Output layout
-    out_primary: str = "./artifacts_part2a_alpha"
+    out_primary: str = _DRIVE_ROOT + "/artifacts_part2a_alpha"
     out_predictions_subdir: str = "predictions"
 
     fn_positions: str = "part2a21_alpha_positions.csv"
@@ -118,7 +147,7 @@ def _safe_float(x, default=np.nan) -> float:
         return default
 
 
-def _annualized_ir(x: Iterable[float], h_reb: int = 7) -> float:
+def _annualized_ir(x: Iterable[float], h_reb: int = 1) -> float:
     x = np.asarray(list(x), dtype=float)
     x = x[np.isfinite(x)]
     if len(x) < 2:
@@ -259,8 +288,31 @@ def _resolve_qqq_col(df: pd.DataFrame) -> Optional[str]:
     return None
 
 
+def _read_part2_summary(tape_source: Path) -> Dict:
+    """Attempt to read Part 2's summary JSON from the canonical sibling path.
+
+    The tape lives at  <dir>/g532_final_consensus_tape.csv.
+    The summary lives at <dir>/part2_g532_summary.json.
+    We also try the common alternate name part2_summary.json.
+    Returns an empty dict if nothing is found so callers degrade gracefully.
+    """
+    parent = tape_source.parent
+    candidates = [
+        parent / "part2_g532_summary.json",
+        parent / "part2_summary.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
+
+
 def build_alpha_positions(
-    df: pd.DataFrame, tape_source: Path
+    df: pd.DataFrame, tape_source: Path, part2_summary: Optional[Dict] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict, pd.DataFrame]:
     x = df.copy()
 
@@ -507,14 +559,24 @@ def build_alpha_positions(
     realized_dates = int(len(mature_hist))
     mean_rank_ic = float(mature_hist["rank_ic"].mean()) if realized_dates else np.nan
     mean_topk_rel_ret_net = float(mature_hist["topk_rel_ret_net"].mean()) if realized_dates else np.nan
-    ir_topk_rel_ret_net = _annualized_ir(mature_hist["topk_rel_ret_net"], h_reb=7) if realized_dates else np.nan
+    ir_topk_rel_ret_net = _annualized_ir(mature_hist["topk_rel_ret_net"], h_reb=1) if realized_dates else np.nan
     alpha_drift_alarm_rate = float(pd.to_numeric(summary_tape["alpha_drift_alarm"], errors="coerce").fillna(0).mean())
 
     latest = positions_df.iloc[-1]
+    # Resolve publish_mode and final_pass from Part 2 summary JSON when
+    # available.  The consensus tape carries publish_fail_closed (int) but
+    # not a publish_mode string, so reading the row always returned "UNKNOWN".
+    _p2 = part2_summary or {}
+    _p2_publish_mode = str(_p2.get("publish_mode", "UNKNOWN")).strip().upper()
+    if _p2_publish_mode not in {"NORMAL", "FAIL_CLOSED_NEUTRAL", "DEFENSE_ONLY"}:
+        _p2_publish_mode = "UNKNOWN"
+    _p2_final_pass = bool(_p2.get("final_pass", False))
+
     summary_payload = {
         "version": "GEN5_PART2A21_SOFT_CAUTION_V1",
         "built_at_utc": _now_utc_iso(),
-        "final_pass": True,
+        "final_pass": _p2_final_pass,
+        "publish_mode": _p2_publish_mode,
         "source_tape": str(tape_source),
         "rows_total": int(len(positions_df)),
         "realized_dates": realized_dates,
@@ -639,7 +701,10 @@ def main() -> None:
     print(f"✅ CANONICAL TAPE DISCOVERED: {tape_source}")
 
     tape_df = load_tape(tape_source)
-    positions_df, eligibility_df, summary_df, summary_payload, summary_tape = build_alpha_positions(tape_df, tape_source)
+    part2_summary = _read_part2_summary(tape_source)
+    positions_df, eligibility_df, summary_df, summary_payload, summary_tape = build_alpha_positions(
+        tape_df, tape_source, part2_summary=part2_summary
+    )
 
     out_dirs = output_directories(tape_source)
     written = write_artifacts(
@@ -656,7 +721,7 @@ def main() -> None:
 
     mean_rank_ic = float(mature_hist["rank_ic"].mean()) if len(mature_hist) else np.nan
     mean_topk_rel_ret_net = float(mature_hist["topk_rel_ret_net"].mean()) if len(mature_hist) else np.nan
-    ir_topk_rel_ret_net = _annualized_ir(mature_hist["topk_rel_ret_net"], h_reb=7) if len(mature_hist) else np.nan
+    ir_topk_rel_ret_net = _annualized_ir(mature_hist["topk_rel_ret_net"], h_reb=1) if len(mature_hist) else np.nan
     alpha_drift_alarm_rate = float(pd.to_numeric(summary_tape["alpha_drift_alarm"], errors="coerce").fillna(0).mean())
 
     print("\n✅ PART 2A.21 SOFT-CAUTION ALPHA WRITTEN")
@@ -688,5 +753,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
