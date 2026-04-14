@@ -1,14 +1,11 @@
-## requirements.txt
-
-```txt
 numpy
 pandas
 scipy
 scikit-learn
 yfinance
-pyarrow
-duckdb
 fredapi
+duckdb
+pyarrow
 xgboost
 hmmlearn
 cvxpy
