@@ -1,4 +1,11 @@
+
+
+# @title Part 5
 from __future__ import annotations
+import sys as _sys
+import os as _os
+
+
 
 import argparse
 import ast
@@ -22,9 +29,16 @@ class Part5Config:
 
     default_drive_root: str = "/content/drive/MyDrive/PriceCallProject"
 
+    part0_candidates: Tuple[str, ...] = ("part0_data_infrastructure.py",)
     part1_candidates: Tuple[str, ...] = ("part1_builder.py",)
     part2_candidates: Tuple[str, ...] = ("part2_predictor.py",)
     part3_candidates: Tuple[str, ...] = ("part3_governance.py",)
+    part4_candidates: Tuple[str, ...] = ("part4_gui.py",)
+    part6_candidates: Tuple[str, ...] = ("part6_regime_engine.py",)
+    part7_candidates: Tuple[str, ...] = ("part7_portfolio_construction.py",)
+    part8_candidates: Tuple[str, ...] = ("part8_execution_model.py",)
+    part9_candidates: Tuple[str, ...] = ("part9_live_attribution.py",)
+    part10_candidates: Tuple[str, ...] = ("part10_trading_bot.py", "part10_tradingbot.py")
 
     part2_summary_candidates: Tuple[str, ...] = (
         "artifacts_part2_g532/predictions/part2_g532_summary.json",
@@ -74,7 +88,7 @@ def resolve_root(cfg: Part5Config = CFG) -> Path:
     raw.append(Path(cfg.default_drive_root))
 
     try:
-        raw.append(Path(__file__).resolve().parent)
+        raw.append(Path(_DRIVE_ROOT))
     except Exception:
         pass
 
@@ -418,13 +432,26 @@ def _validate_part3_contract(part3_summary: Dict[str, object], expected_alpha_fa
     return publish_mode, final_pass, latest_alpha_state, alpha_contract
 
 
-def _predlog_stats(predlog_path: Path) -> Tuple[int, int]:
+def _predlog_stats(predlog_path: Path) -> Tuple[int, int, dict]:
+    """Return (total_rows, realized_rows, schema_health).
+
+    schema_health keys:
+      has_deployment_mode  bool  — True if the new deployment_mode column is present
+      has_horizon_legacy   bool  — True if the horizon_legacy column is present
+      n_legacy_rows        int   — number of rows flagged as horizon_legacy
+      rows_realized_fused  int   — from part3_summary (cross-checked against realized count)
+    """
+    schema: dict = {
+        "has_deployment_mode": False,
+        "has_horizon_legacy": False,
+        "n_legacy_rows": 0,
+    }
     if not predlog_path.exists():
-        return 0, 0
+        return 0, 0, schema
     try:
         df = pd.read_csv(predlog_path)
     except Exception:
-        return 0, 0
+        return 0, 0, schema
 
     total_rows = int(len(df))
     realized_rows = 0
@@ -432,28 +459,38 @@ def _predlog_stats(predlog_path: Path) -> Tuple[int, int]:
     voo_real_cols = [c for c in ["px_voo_realized", "voo_realized"] if c in df.columns]
     ief_real_cols = [c for c in ["px_ief_realized", "ief_realized"] if c in df.columns]
     if voo_real_cols and ief_real_cols:
-        realized_rows = int((df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()).sum())
+        mask = df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()
+        if "horizon_legacy" in df.columns:
+            mask = mask & (df["horizon_legacy"].fillna(0).astype(int) == 0)
+        realized_rows = int(mask.sum())
 
-    return total_rows, realized_rows
+    schema["has_deployment_mode"] = "deployment_mode" in df.columns
+    schema["has_horizon_legacy"] = "horizon_legacy" in df.columns
+    if schema["has_horizon_legacy"]:
+        schema["n_legacy_rows"] = int(df["horizon_legacy"].fillna(0).astype(int).sum())
+
+    return total_rows, realized_rows, schema
+
 
 
 def run_pipeline(root: Path, validate_only: bool = False) -> None:
+    part0 = _find_first_existing(root, CFG.part0_candidates, "Part 0")
     part1 = _find_first_existing(root, CFG.part1_candidates, "Part 1")
     part2 = _find_first_existing(root, CFG.part2_candidates, "Part 2")
     expected_alpha_family = _selected_alpha_family(root, CFG)
     part2a = _find_part2a_for_family(root, expected_alpha_family, CFG)
     part3 = _find_first_existing(root, CFG.part3_candidates, "Part 3")
+    part6 = _find_first_existing(root, CFG.part6_candidates, "Part 6")
+    part7 = _find_first_existing(root, CFG.part7_candidates, "Part 7")
+    part8 = _find_first_existing(root, CFG.part8_candidates, "Part 8")
+    part9 = _find_first_existing(root, CFG.part9_candidates, "Part 9")
+    part10 = _find_first_existing(root, CFG.part10_candidates, "Part 10")
 
     print(f"ROOT: {root}")
-    print(f"PART1: {part1} | exists = {part1.exists()}")
-    print(f"PART2: {part2} | exists = {part2.exists()}")
-    print(f"PART2A: {part2a} | exists = {part2a.exists()} | family={expected_alpha_family}")
-    print(f"PART3: {part3} | exists = {part3.exists()}")
-
-    _validate_python_syntax(part1)
-    _validate_python_syntax(part2)
-    _validate_python_syntax(part2a)
-    _validate_python_syntax(part3)
+    ordered_scripts = [("PART0", part0), ("PART6", part6), ("PART1", part1), ("PART2", part2), ("PART2A", part2a), ("PART7", part7), ("PART8", part8), ("PART3", part3), ("PART9", part9), ("PART10", part10)]
+    for label, script in ordered_scripts:
+        print(f"{label}: {script} | exists = {script.exists()}")
+        _validate_python_syntax(script)
     _reject_notebook_export(part3, expected_part="part3")
     _inspect_part3_static_summary_contract(part3, CFG)
     print("[OK] All standalone Python files passed syntax + standalone checks")
@@ -467,33 +504,28 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
         CFG.alpha_family_env_var: expected_alpha_family,
     }
 
-    for label, script in [("PART 1", part1), ("PART 2", part2)]:
+    ordered = [
+        ("PART 0", part0),
+        ("PART 6", part6),
+        ("PART 1", part1),
+        ("PART 2", part2),
+        ("PART 2A", part2a),
+        ("PART 7", part7),
+        ("PART 8", part8),
+        ("PART 3", part3),
+        ("PART 9", part9),
+        ("PART 10", part10),
+    ]
+
+    for label, script in ordered:
+        if label in {"PART 2A", "PART 3"}:
+            removed = _cleanup_conflicting_session_artifacts(expected_alpha_family)
+            if removed:
+                print(f"[Cleanup before {label}] Removed conflicting session artifact trees: {removed}")
         proc = _run_subprocess(script, root, extra_env=common_env)
         _print_proc(label, proc)
         if proc.returncode != 0:
             raise RuntimeError(f"{label} failed with exit code {proc.returncode}")
-
-    removed_pre = _cleanup_conflicting_session_artifacts(expected_alpha_family)
-    if removed_pre:
-        print(f"[Cleanup before PART 2A] Removed conflicting session artifact trees: {removed_pre}")
-    else:
-        print("[Cleanup before PART 2A] No conflicting bare /content artifact trees found")
-
-    proc2a = _run_subprocess(part2a, root, extra_env=common_env)
-    _print_proc("PART 2A", proc2a)
-    if proc2a.returncode != 0:
-        raise RuntimeError(f"PART 2A failed with exit code {proc2a.returncode}")
-
-    removed_pre3 = _cleanup_conflicting_session_artifacts(expected_alpha_family)
-    if removed_pre3:
-        print(f"[Cleanup before PART 3] Removed conflicting session artifact trees: {removed_pre3}")
-    else:
-        print("[Cleanup before PART 3] No conflicting bare /content artifact trees found")
-
-    proc3 = _run_subprocess(part3, root, extra_env=common_env)
-    _print_proc("PART 3", proc3)
-    if proc3.returncode != 0:
-        raise RuntimeError(f"PART 3 failed with exit code {proc3.returncode}")
 
     part2_summary = _load_part2_summary(root)
     part3_summary = _load_part3_summary(root)
@@ -505,38 +537,44 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     )
 
     predlog_path = _validate_persistent_predlog(root, part3_summary)
-    predlog_rows, predlog_realized_rows = _predlog_stats(predlog_path)
+    predlog_rows, predlog_realized_rows, predlog_schema = _predlog_stats(predlog_path)
+    rows_realized_fused_summary = int(part3_summary.get("rows_realized_fused", -1))
 
     print("\n=== PART 5 VALIDATION ===")
     print(f"Source health: {source_health}")
-    print(
-        f"Alpha family: {part3_summary.get('alpha_family', 'UNKNOWN')} "
-        f"| normalized={_normalize_alpha_family_tag(part3_summary.get('alpha_family', 'UNKNOWN'))}"
-    )
-    print(f"Alpha contract: {alpha_contract}")
-    print(f"Strict drive only: {part3_summary.get('strict_drive_only', 'UNKNOWN')}")
     print(f"Prediction log path: {predlog_path}")
     print(f"Prediction log rows: {predlog_rows}")
     print(f"Prediction log realized rows: {predlog_realized_rows}")
-    print(
-        "Part 2 status: "
-        f"publish_mode={part2_publish_mode} | "
-        f"final_pass={part2_final_pass}"
-    )
-    print(
-        "Part 3 status: "
-        f"publish_mode={part3_publish_mode} | "
-        f"final_pass={part3_final_pass} | "
-        f"latest_alpha_state={latest_alpha_state} | "
-        f"alpha_family={part3_summary.get('alpha_family', 'UNKNOWN')} | "
-        f"strict_drive_only={part3_summary.get('strict_drive_only', 'UNKNOWN')}"
-    )
-    print("[OK] Tuesday pipeline completed successfully")
+    # Schema health checks — warn only, do not raise; migration script adds these columns.
+    if not predlog_schema["has_deployment_mode"]:
+        print("[WARN] Prediction log missing 'deployment_mode' column — run migrate_prediction_log.py")
+    else:
+        print("[OK] Prediction log has 'deployment_mode' column")
+    if not predlog_schema["has_horizon_legacy"]:
+        print("[WARN] Prediction log missing 'horizon_legacy' column — run migrate_prediction_log.py")
+    else:
+        n_leg = predlog_schema["n_legacy_rows"]
+        if n_leg > 0:
+            print(f"[OK] Prediction log has 'horizon_legacy' column ({n_leg} legacy rows excluded from realized count)")
+        else:
+            print("[OK] Prediction log has 'horizon_legacy' column (0 legacy rows)")
+    # Cross-check: part3_summary rows_realized_fused vs predlog realized count
+    if rows_realized_fused_summary >= 0 and rows_realized_fused_summary != predlog_realized_rows:
+        # This is expected when rows_realized_fused was computed by the old proxy
+        # formula (len(tape)-2). After the Part 3 fix it should match.
+        print(
+            f"[WARN] rows_realized_fused mismatch: part3_summary={rows_realized_fused_summary}, "
+            f"predlog_realized={predlog_realized_rows}. "
+            f"Expected to align after Part 3 fix is deployed."
+        )
+    print(f"Part 2 status: publish_mode={part2_publish_mode} | final_pass={part2_final_pass}")
+    print(f"Part 3 status: publish_mode={part3_publish_mode} | final_pass={part3_final_pass} | latest_alpha_state={latest_alpha_state} | alpha_contract={alpha_contract}")
+    print("[OK] Daily canonical pipeline completed successfully")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Validate and run standalone Price Call Parts 1/2/2A/3 from the project root."
+        description="Validate and run standalone daily Price Call Parts 0/6/1/2/2A/7/8/3/9/10 from the project root."
     )
     p.add_argument(
         "--validate-only",
@@ -559,4 +597,5 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
+
 
