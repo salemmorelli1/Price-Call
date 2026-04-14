@@ -414,6 +414,6 @@ def main() -> int:
     print("   Outputs:         regime_history.parquet, regime_features_used.parquet, part6_meta.json, regime_engine.pkl")
     return 0
 
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
+
