@@ -88,7 +88,7 @@ class Part2Gen53Config:
     DIAG_FILE: str = "part2_g532_diag.json"
     ABLATION_FILE: str = "part2_g532_ablation.csv"
 
-    H: int = 7
+    H: int = 1
     PURGE: int = 7
     TRAIN_WINDOW_DAYS: int = 252 * 4
     VALID_WINDOW: int = 126
@@ -177,7 +177,7 @@ class Part2Gen53Config:
     USE_XGB: bool = False
 
     EXPECTED_PART1_VERSION: str = "V19_P1_HARDENED"
-    ACCEPTED_PART1_VERSIONS: tuple[str, ...] = ("V19_P1_HARDENED", "V20_P1_DAILY")
+    ACCEPTED_PART1_VERSIONS: tuple[str, ...] = ("V19_P1_HARDENED",)
 
     LEGACY_EXPECTED_MODEL_FEATURE_COUNT: int = 64
     LEGACY_EXPECTED_FORBIDDEN_COUNT: int = 25
@@ -1365,7 +1365,7 @@ def _resolve_contract_profile(part1_meta: Dict, feature_cols: List[str], cfg) ->
     part1_version = str(part1_meta.get("version", "")).strip()
     if part1_version == "GEN4_PART1_V2B":
         return "legacy_locked_64", cfg.LEGACY_EXPECTED_MODEL_FEATURE_COUNT, cfg.LEGACY_EXPECTED_FORBIDDEN_COUNT
-    if part1_version in {"V19_P1_HARDENED", "V20_P1_DAILY"}:
+    if part1_version in {"V19_P1_HARDENED"}:
         return "live_locked_14", cfg.LIVE_EXPECTED_MODEL_FEATURE_COUNT, cfg.LIVE_EXPECTED_FORBIDDEN_COUNT
     if len(feature_cols) <= cfg.LIVE_EXPECTED_MODEL_FEATURE_COUNT + 1:
         return "live_locked_14_inferred", cfg.LIVE_EXPECTED_MODEL_FEATURE_COUNT, cfg.LIVE_EXPECTED_FORBIDDEN_COUNT
@@ -2033,4 +2033,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
