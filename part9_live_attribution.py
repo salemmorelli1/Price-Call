@@ -38,19 +38,19 @@ warnings.filterwarnings("ignore")
 
 @dataclass(frozen=True)
 class Part9Config:
-    version: str = "V1"
-    predlog_path: str = "./artifacts_part3/prediction_log.csv"
-    part2_tape_path: str = "./artifacts_part2_g532/predictions/g532_final_consensus_tape.csv"
-    part6_dir: str = "./artifacts_part6"
-    out_dir: str = "./artifacts_part9"
-    part8_cost_path: str = "./artifacts_part8/execution_cost_tape.csv"
-    horizon: int = 7
+    version: str = "V2_DAILY_CANONICAL"
+    predlog_path: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part3/prediction_log.csv"
+    part2_tape_path: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv"
+    part6_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part6"
+    out_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part9"
+    part8_cost_path: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part8/execution_cost_tape.csv"
+    horizon: int = 1                    # CHANGE: 1-day forecast horizon
 
     # Statistical thresholds
     t_stat_min: float = 2.0             # Minimum t-stat for edge significance
     t_stat_suspend: float = -1.5        # Suspend live trading below this
     max_drawdown_hard_stop: float = 0.15  # 15% max drawdown → hard stop
-    min_live_n: int = 26                # Minimum observations to make statements
+    min_live_n: int = 60                # CHANGE: 3 months daily obs for minimum significance
 
     # Calibration thresholds
     ece_warn: float = 0.08
@@ -301,7 +301,9 @@ def factor_attribution(
     r_squared = float(r_val ** 2)
 
     # Annualize alpha
-    periods_per_year = 252.0 / 7  # weekly rebalancing
+    # FIX: was 252.0 / 7 (inherited from H=7 weekly system). At H=1 daily
+    # rebalancing each row is one trading day, so annualization is simply 252.
+    periods_per_year = 252.0
     alpha_ann = alpha_daily * periods_per_year
 
     # IR of pure alpha
@@ -389,6 +391,14 @@ def evaluate_stopping_rules(
             if status == "ACTIVE":
                 status = "WARN"
 
+    # Daily-specific: annual TC drag vs edge check
+    annual_drag = live_stats.get("annual_tc_drag_bps", np.nan)
+    est_edge_bps = live_stats.get("estimated_annual_edge_bps", np.nan)
+    if np.isfinite(annual_drag) and np.isfinite(est_edge_bps) and annual_drag > est_edge_bps:
+        reasons.append(f"TC drag ({annual_drag:.0f} bps/yr) exceeds estimated edge ({est_edge_bps:.0f} bps/yr)")
+        if status == "ACTIVE":
+            status = "WARN"
+
     if not reasons:
         reasons.append("All checks passed")
 
@@ -399,104 +409,121 @@ def evaluate_stopping_rules(
 # Main report
 # ============================================================
 
+
 def generate_live_report(cfg: Part9Config) -> Dict:
     """Read prediction log and generate the full live performance report."""
     if not os.path.exists(cfg.predlog_path):
         return {"error": f"Prediction log not found at {cfg.predlog_path}"}
 
     predlog = pd.read_csv(cfg.predlog_path)
-    predlog["decision_date"] = pd.to_datetime(predlog["decision_date"], errors="coerce")
+    if "decision_date" in predlog.columns:
+        predlog["decision_date"] = pd.to_datetime(predlog["decision_date"], errors="coerce")
 
-    # Load Part 2 tape for backtest comparison
-    tape = None
-    if os.path.exists(cfg.part2_tape_path):
-        tape = pd.read_csv(cfg.part2_tape_path)
-        tape["Date"] = pd.to_datetime(tape["Date"], errors="coerce")
-
-    # Isolate realized rows
-    realized_cols = ["px_voo_realized", "voo_realized"]
-    real_col = next((c for c in realized_cols if c in predlog.columns), None)
-    if real_col is None:
-        return {"error": "No realized price column found in prediction log", "n_live": 0}
-
-    realized = predlog[predlog[real_col].notna()].copy()
-    n_live = len(realized)
+    # Use deployment_mode for operational filtering when available (Part 3 now
+    # writes both publish_mode and deployment_mode separately). Fall back to
+    # publish_mode for logs written before this schema change.
+    mode_col = "deployment_mode" if "deployment_mode" in predlog.columns else "publish_mode"
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_predictions": len(predlog),
-        "n_live_realized": n_live,
-        "status": "IMMATURE" if n_live < cfg.min_live_n else None,
+        "n_live_realized": 0,
+        "status": "IMMATURE",
+        "schema_mode_col": mode_col,
     }
+
+    voo_real_col = next((c for c in ["px_voo_realized", "voo_realized"] if c in predlog.columns), None)
+    ief_real_col = next((c for c in ["px_ief_realized", "ief_realized"] if c in predlog.columns), None)
+    if voo_real_col is None or ief_real_col is None:
+        return {"error": "No realized price columns found in prediction log", "n_live_realized": 0}
+
+    # Exclude rows flagged as legacy H=7 entries. These were written by the old
+    # weekly-horizon pipeline; their target_dates have already passed without
+    # correct realized prices being backfilled, and including them in the live
+    # realized set would pollute attribution with stale / wrong-horizon data.
+    if "horizon_legacy" in predlog.columns:
+        predlog = predlog[predlog["horizon_legacy"].fillna(0).astype(int) == 0].copy()
+
+    realized = predlog[predlog[voo_real_col].notna() & predlog[ief_real_col].notna()].copy()
+    n_live = len(realized)
+    report["n_live_realized"] = n_live
 
     if n_live < 2:
         report["message"] = (
             f"Only {n_live} realized predictions available. "
             f"Accumulate {cfg.min_live_n} before making statistical inferences. "
-            f"At weekly rebalancing, this takes {cfg.min_live_n / 52:.1f} years."
+            f"At daily rebalancing, this takes roughly {cfg.min_live_n / 21:.1f} months."
         )
         return report
 
-    # Prediction accuracy from predlog
-    voo_pred = predlog.get("px_voo_call_7d", pd.Series(dtype=float))
-    voo_real = predlog.get(real_col, pd.Series(dtype=float))
-    if not voo_pred.empty and not voo_real.empty:
-        errors = (voo_pred - voo_real).dropna()
-        mae_live = float(errors.abs().mean())
-        rmse_live = float(np.sqrt((errors ** 2).mean()))
-        report["voo_mae_live"] = mae_live
-        report["voo_rmse_live"] = rmse_live
-        report["voo_hit_rate"] = float((np.sign(voo_pred) == np.sign(voo_real)).mean()) if len(voo_pred) > 0 else np.nan
+    voo_pred_col = next((c for c in ["px_voo_call_1d", "px_voo_call_7d"] if c in realized.columns), None)
+    if voo_pred_col:
+        errors = (pd.to_numeric(realized[voo_pred_col], errors="coerce") - pd.to_numeric(realized[voo_real_col], errors="coerce")).dropna()
+        if len(errors):
+            report["voo_mae_live"] = float(errors.abs().mean())
+            report["voo_rmse_live"] = float(np.sqrt((errors ** 2).mean()))
 
-    # Load P2 tape for classification metrics
-    if tape is not None and "p_final_cal" in tape.columns and "y_rel_tail_voo_vs_ief" in tape.columns:
-        tape_real = tape[tape["y_avail"] == 1].dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
-        base_rate = float(tape_real["y_rel_tail_voo_vs_ief"].mean())
-
-        live_stat = t_stat_sign_accuracy(
-            tape_real["y_rel_tail_voo_vs_ief"].values,
-            tape_real["p_final_cal"].values,
-            base_rate,
+    live_stats = {}
+    req_cols = {"p_final_cal", "px_voo_t", "px_ief_t", voo_real_col, ief_real_col}
+    if req_cols.issubset(set(realized.columns)):
+        tail_series = pd.to_numeric(realized.get("tail_threshold", pd.Series([float(-0.015 / np.sqrt(7.0))] * len(realized))), errors="coerce").dropna()
+        tail_threshold = float(tail_series.iloc[-1]) if len(tail_series) else float(-0.015 / np.sqrt(7.0))
+        br_series = pd.to_numeric(realized.get("base_rate", pd.Series([0.20] * len(realized))), errors="coerce").dropna()
+        base_rate = float(br_series.iloc[-1]) if len(br_series) else 0.20
+        pred_p = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
+        spread_real = (
+            pd.to_numeric(realized[voo_real_col], errors="coerce").values / pd.to_numeric(realized["px_voo_t"], errors="coerce").values - 1.0
+        ) - (
+            pd.to_numeric(realized[ief_real_col], errors="coerce").values / pd.to_numeric(realized["px_ief_t"], errors="coerce").values - 1.0
         )
-        report["classification_stats_backtest"] = live_stat
-        report["base_rate"] = base_rate
+        y_live = (spread_real < tail_threshold).astype(float)
+        m = np.isfinite(pred_p) & np.isfinite(y_live)
+        if m.sum() >= 2:
+            live_stats = t_stat_sign_accuracy(y_live[m], pred_p[m], base_rate)
+            live_stats["tail_threshold"] = tail_threshold
+            live_stats["base_rate"] = base_rate
+            active_rets = -spread_real[m] * np.sign(pred_p[m] - base_rate)
+            if len(active_rets) >= 2:
+                live_stats["mean_active_return"] = float(np.mean(active_rets))
+                live_stats["estimated_annual_edge_bps"] = float(np.mean(active_rets) * 252 * 10000.0)
+            report["classification_stats_live"] = live_stats
+            report["calibration_live"] = {
+                "ece": ece_score(y_live[m], pred_p[m]),
+                "brier": float(np.mean((y_live[m] - pred_p[m]) ** 2)),
+            }
 
-        # Naive benchmark: always predict base rate
-        naive_errors = tape_real["p_final_cal"].values - base_rate
-        model_errors = tape_real["p_final_cal"].values - tape_real["y_rel_tail_voo_vs_ief"].values
-        dm_result = diebold_mariano_test(model_errors, naive_errors)
-        report["diebold_mariano_vs_naive"] = dm_result
+    if os.path.exists(cfg.part2_tape_path):
+        tape = pd.read_csv(cfg.part2_tape_path)
+        if {"p_final_cal", "y_rel_tail_voo_vs_ief"}.issubset(set(tape.columns)):
+            tape_real = tape[tape.get("y_avail", 1) == 1].dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
+            if len(tape_real) >= 2:
+                base_rate_bt = float(tape_real["y_rel_tail_voo_vs_ief"].mean())
+                report["classification_stats_backtest"] = t_stat_sign_accuracy(
+                    tape_real["y_rel_tail_voo_vs_ief"].values,
+                    tape_real["p_final_cal"].values,
+                    base_rate_bt,
+                )
 
-        # Calibration (backtest)
-        ece_bt = ece_score(
-            tape_real["y_rel_tail_voo_vs_ief"].values,
-            tape_real["p_final_cal"].values
-        )
-        report["calibration_backtest"] = {
-            "ece": ece_bt,
-            "brier": float(np.mean((tape_real["y_rel_tail_voo_vs_ief"].values
-                                    - tape_real["p_final_cal"].values)**2)),
-        }
+    if os.path.exists(cfg.part8_cost_path):
+        try:
+            cost_df = pd.read_csv(cfg.part8_cost_path)
+            if not cost_df.empty:
+                last_cost = cost_df.iloc[-1]
+                report["annual_tc_drag_bps"] = float(last_cost.get("annual_tc_drag_bps", np.nan))
+                if live_stats and "estimated_annual_edge_bps" in live_stats:
+                    live_stats["annual_tc_drag_bps"] = report["annual_tc_drag_bps"]
+        except Exception:
+            pass
 
-        # Strategy performance attribution
-        if "strategy_ret_net" in tape_real.columns and "benchmark_ret" in tape_real.columns:
-            attr = factor_attribution(
-                tape_real["strategy_ret_net"],
-                tape_real["benchmark_ret"],
-            )
-            report["factor_attribution"] = attr
-
-    # Health status
     stopping = evaluate_stopping_rules(
-        live_stat if "classification_stats_backtest" in report else {},
-        report.get("calibration_backtest", {}),
+        live_stats,
+        report.get("calibration_live", {}),
         pd.DataFrame(),
         cfg,
     )
     report["health_status"] = stopping["status"]
     report["health_reasons"] = stopping["reasons"]
 
-    # Print summary
     print("=" * 70)
     print("PART 9 — Live Attribution Report")
     print("=" * 70)
@@ -505,25 +532,13 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     for reason in stopping["reasons"]:
         print(f"  • {reason}")
 
-    if "classification_stats_backtest" in report:
-        cs = report["classification_stats_backtest"]
-        print(f"\nBacktest classification (N={cs['n']}):")
-        print(f"  AUC:         {cs.get('auc', np.nan):.4f}  (t={cs.get('t_stat_auc', np.nan):.2f})")
-        print(f"  Direction:   {cs.get('accuracy', np.nan):.2%}  (t={cs.get('t_stat_accuracy', np.nan):.2f})")
-        print(f"  BSS:         {cs.get('brier_skill_score', np.nan):.4f}")
-        print(f"  Significant: {'YES ✓' if cs.get('significant_5pct') else 'NO ✗'} (5%) | "
-              f"{'YES ✓' if cs.get('significant_1pct') else 'NO ✗'} (1%)")
-
-    if "diebold_mariano_vs_naive" in report:
-        dm = report["diebold_mariano_vs_naive"]
-        print(f"\nDiebold-Mariano vs naive baseline:")
-        print(f"  DM stat:     {dm.get('dm_stat', np.nan):.3f}")
-        print(f"  p-value:     {dm.get('p_value', np.nan):.4f}")
-        print(f"  MSE reduction: {dm.get('mse_reduction_pct', np.nan):.1f}%")
-        print(f"  Significant: {'YES ✓' if dm.get('significant_5pct') else 'NO ✗'}")
+    if live_stats:
+        print(f"\nLive classification (N={live_stats['n']}):")
+        print(f"  AUC:         {live_stats.get('auc', np.nan):.4f}  (t={live_stats.get('t_stat_auc', np.nan):.2f})")
+        print(f"  Direction:   {live_stats.get('accuracy', np.nan):.2%}  (t={live_stats.get('t_stat_accuracy', np.nan):.2f})")
+        print(f"  BSS:         {live_stats.get('brier_skill_score', np.nan):.4f}")
 
     return report
-
 
 def main() -> int:
     cfg = Part9Config()
