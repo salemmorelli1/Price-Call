@@ -58,10 +58,10 @@ warnings.filterwarnings("ignore")
 
 @dataclass(frozen=True)
 class Part8Config:
-    version: str = "V1"
-    part7_dir: str = "./artifacts_part7"
-    part0_dir: str = "./artifacts_part0"
-    out_dir: str = "./artifacts_part8"
+    version: str = "V2_DAILY_CANONICAL"
+    part7_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part7"
+    part0_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part0"
+    out_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part8"
 
     # === Asset-level execution parameters ===
     # VOO: ~$530/share, ~5M shares/day ADV, ~$2.6B ADV
@@ -117,6 +117,15 @@ class Part8Config:
     twap_short_pct_adv: float = 0.05          # 0.5–5% of ADV → 1-hour TWAP
     twap_long_pct_adv: float = 0.20           # 5–20% of ADV → 4-hour TWAP
     # > 20% of ADV → algorithmic execution, VWAP over full day, possibly 2 days
+
+    # NEW (daily mode): dead-band filter — skip rebalance if Δweight is tiny
+    # At daily scale, trading 0.5% of portfolio costs more in TC than it earns.
+    # Only rebalance if the target weight differs from current weight by this amount.
+    min_rebalance_threshold: float = 0.02     # 2% minimum position change to trigger a trade
+
+    # NEW (daily mode): annual TC drag warning threshold
+    # If estimated annual TC drag exceeds this fraction of portfolio, emit warning.
+    max_annual_tc_drag_bps: float = 50.0      # Warn if annual drag > 50 bps
 
     # === Commission model ===
     # Retail (Schwab/TD/Fidelity): $0 commission for ETF trades
@@ -572,6 +581,10 @@ class AlmgrenChrissScheduler:
             trade_dollars = delta_w * portfolio_dollars
             direction = "buy" if trade_dollars > 0 else "sell"
 
+            # Dead-band filter (daily mode): skip if Δweight < min_rebalance_threshold
+            if abs(delta_w) < self.cfg.min_rebalance_threshold:
+                continue
+
             if abs(trade_dollars) < 100:
                 continue
 
@@ -920,6 +933,35 @@ def compute_annual_cost_drag(
 # Main
 # ============================================================
 
+
+
+def load_part7_instructions(cfg: Part8Config = CFG) -> Dict:
+    weights_path = os.path.join(cfg.part7_dir, "portfolio_weights_tape.csv")
+    current_path = os.path.join(cfg.part7_dir, "current_target_weights.json")
+    if os.path.exists(current_path):
+        with open(current_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    if os.path.exists(weights_path):
+        df = pd.read_csv(weights_path)
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df = df.dropna(subset=["Date"]).sort_values("Date")
+        if not df.empty:
+            return df.iloc[-1].to_dict()
+    return {}
+
+def calibrate_impact_coefficients(cfg: Part8Config = CFG) -> Dict[str, float]:
+    return {k: float(v["impact_coeff_k"]) for k, v in cfg.asset_params.items()}
+
+def generate_part3_record(cfg: Part8Config, instructions: Dict, annual_drag: Dict) -> Dict[str, float]:
+    return {
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "total_estimated_cost_dollars": float(instructions.get("total_estimated_cost_dollars", 0.0)),
+        "total_estimated_cost_bps": float(instructions.get("total_estimated_cost_bps", 0.0)),
+        "annual_tc_drag_bps": float(annual_drag.get("annual_drag_bps", np.nan)) if isinstance(annual_drag, dict) else np.nan,
+    }
+
+
 def main() -> int:
     cfg = Part8Config()
     cfg = dataclasses.replace(cfg, part7_dir=_abs_path(cfg.part7_dir))
@@ -928,108 +970,77 @@ def main() -> int:
     os.makedirs(cfg.out_dir, exist_ok=True)
 
     print("=" * 70)
-    print("PART 8 — Execution & Transaction Cost Model v1")
+    print("PART 8 — Execution & Transaction Cost Model v2 (daily canonical)")
     print("=" * 70)
 
     analyzer = PreTradeAnalyzer(cfg)
     scheduler = AlmgrenChrissScheduler(cfg)
 
-    # ─── Example: Pre-trade cost table at multiple portfolio sizes ────────────
-    print("\nPre-trade cost analysis (10% rebalance, VOO):")
-    print(f"{'Portfolio':>15}  {'Trade $':>10}  {'%ADV':>7}  {'Spread':>8}  "
-          f"{'Impact':>8}  {'Total':>8}  {'Strategy':>20}  {'Window'}")
-    print("─" * 100)
+    latest = load_part7_instructions(cfg)
+    if not latest:
+        print("[Part 8] Part 7 target weights not found — writing meta only.")
+        meta = {"version": cfg.version, "built_at": datetime.now(timezone.utc).isoformat(), "warning": "no_part7_targets"}
+        with open(os.path.join(cfg.out_dir, "part8_meta.json"), "w") as f:
+            json.dump(meta, f, indent=2, default=str)
+        return 0
 
-    for size in [100_000, 500_000, 1_000_000, 5_000_000, 10_000_000, 50_000_000]:
-        trade = size * 0.10
-        c = analyzer.estimate_cost("VOO", trade, size)
-        print(f"${size:>14,.0f}  ${trade:>9,.0f}  {c['pct_adv']:>6.3%}  "
-              f"{c['spread_bps']:>7.2f}bp  {c['impact_bps']:>7.2f}bp  "
-              f"{c['total_bps']:>7.2f}bp  {c['execution_strategy']:>20}  "
-              f"{c['optimal_window']}")
+    decision_date = str(latest.get("Date", date.today().isoformat()))
+    w_voo = float(latest.get("w_target_voo", latest.get("VOO", 0.60)))
+    w_ief = float(latest.get("w_target_ief", latest.get("IEF", 0.40)))
+    prev_weights = {"VOO": 0.60, "IEF": 0.40}
+    weights_path = os.path.join(cfg.part7_dir, "portfolio_weights_tape.csv")
+    if os.path.exists(weights_path):
+        wdf = pd.read_csv(weights_path)
+        if len(wdf) >= 2:
+            prev_weights = {"VOO": float(wdf.iloc[-2].get("w_target_voo", 0.60)),
+                            "IEF": float(wdf.iloc[-2].get("w_target_ief", 0.40))}
 
-    print("\n" + "─" * 100)
-    print("\nPre-trade cost analysis (10% rebalance, IEF):")
-    print(f"{'Portfolio':>15}  {'Trade $':>10}  {'%ADV':>7}  {'Spread':>8}  "
-          f"{'Impact':>8}  {'Total':>8}  {'Strategy':>20}")
-    print("─" * 90)
-    for size in [100_000, 1_000_000, 10_000_000]:
-        trade = size * 0.10
-        c = analyzer.estimate_cost("IEF", trade, size, direction="sell")
-        sec = c["sec_fee_bps"]
-        print(f"${size:>14,.0f}  ${trade:>9,.0f}  {c['pct_adv']:>6.3%}  "
-              f"{c['spread_bps']:>7.2f}bp  {c['impact_bps']:>7.2f}bp  "
-              f"{c['total_bps']:>7.2f}bp  {c['execution_strategy']:>20}  "
-              f"(SEC: {sec:.4f}bp)")
-
-    # ─── Example: Almgren-Chriss schedule ────────────────────────────────────
-    print("\n\nAlmgren-Chriss execution schedule (example: buy $50k of VOO):")
-    schedule = scheduler.optimal_schedule("VOO", trade_shares=94.0, execution_horizon_min=60, n_slices=6)
-    print(schedule.to_string(index=False))
-
-    # ─── Example: Full order instructions ────────────────────────────────────
-    print("\n\nExample order instructions ($500k portfolio, normal market):")
     instructions = scheduler.generate_order_instructions(
-        decision_date=date.today().isoformat(),
-        allocations={"VOO": 0.52, "IEF": 0.48},
-        portfolio_dollars=500_000,
-        prev_allocations={"VOO": 0.60, "IEF": 0.40},
+        decision_date=decision_date,
+        allocations={"VOO": w_voo, "IEF": w_ief},
+        portfolio_dollars=1000.0,
+        prev_allocations=prev_weights,
         vix_level=16.5,
     )
-    print(f"  Total estimated cost: ${instructions['total_estimated_cost_dollars']:.2f} "
-          f"({instructions['total_estimated_cost_bps']:.2f} bps)")
-    print(f"  Execute window: {instructions['execute_window']}")
-    for inst in instructions["instructions"]:
-        d = inst["direction"].upper()
-        print(f"  {inst['ticker']:5s}: {d:4s} ${abs(inst['trade_dollars']):>8,.0f} | "
-              f"~{inst['trade_shares_approx']:.0f} shares | "
-              f"cost est. {inst['pre_trade_cost']['total_bps']:.2f} bps | "
-              f"strategy: {inst['pre_trade_cost']['execution_strategy']}")
 
-    # ─── Try to compute annual drag from existing Part 2 tape ────────────────
-    tape_path = "./artifacts_part2_g532/predictions/g532_final_consensus_tape.csv"
+    tape_path = os.path.join(os.path.dirname(cfg.part7_dir), "part2_g532", "predictions", "g532_final_consensus_tape.csv")
+    annual_drag = {}
     if os.path.exists(tape_path):
         tape = pd.read_csv(tape_path)
-        drag = compute_annual_cost_drag(tape, cfg, portfolio_dollars=1_000_000)
-        print("\n\nAnnual cost drag analysis (from live tape):")
-        for k, v in drag.items():
-            if k != "note":
-                print(f"  {k:40s}: {v}")
-        print(f"\n  📌 {drag.get('note', '')}")
-    else:
-        print("\n[Part 8] Part 2 tape not found — skipping annual drag analysis")
+        annual_drag = compute_annual_cost_drag(tape, cfg, portfolio_dollars=1000.0)
 
-    # ─── Save outputs ─────────────────────────────────────────────────────────
+    record = generate_part3_record(cfg, instructions, annual_drag)
+    record.update({
+        "Date": decision_date,
+        "w_target_voo": w_voo,
+        "w_target_ief": w_ief,
+    })
+
+    pd.DataFrame([record]).to_csv(os.path.join(cfg.out_dir, "execution_cost_tape.csv"), index=False)
+
     meta = {
         "version": cfg.version,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "assets_modeled": list(cfg.asset_params.keys()),
-        "model": "almgren_chriss_sqrt_impact",
-        "impact_formula": "I = k × σ × √(Q / ADV)",
-        "optimal_window": f"{cfg.optimal_exec_window_start}–{cfg.optimal_exec_window_end}",
-        "example_cost_1M_portfolio_voo": analyzer.estimate_cost("VOO", 100_000, 1_000_000)["total_bps"],
-        "example_cost_10M_portfolio_voo": analyzer.estimate_cost("VOO", 1_000_000, 10_000_000)["total_bps"],
-        "post_trade_log": str(os.path.join(cfg.out_dir, "post_trade_log.csv")),
-        "note_on_current_model": (
-            "Current 5bps flat assumption overstates costs by ~3× at retail scale. "
-            "Your strategy IR is likely ~4-5 bps/year higher than Part 2 reports."
-        ),
+        "latest_order_instructions": instructions,
+        "impact_coefficients": calibrate_impact_coefficients(cfg),
+        "annual_drag_summary": annual_drag,
+        "min_rebalance_threshold": cfg.min_rebalance_threshold,
+        "max_annual_tc_drag_bps": cfg.max_annual_tc_drag_bps,
     }
     with open(os.path.join(cfg.out_dir, "part8_meta.json"), "w") as f:
         json.dump(meta, f, indent=2, default=str)
 
-    # Save example instructions
     with open(os.path.join(cfg.out_dir, "example_order_instructions.json"), "w") as f:
         json.dump(instructions, f, indent=2, default=str)
 
-    print(f"\n✅ PART 8 COMPLETE")
-    print(f"   Model: Almgren-Chriss square-root market impact")
-    print(f"   Assets: {', '.join(cfg.asset_params.keys())}")
-    print(f"   Post-trade log: {os.path.join(cfg.out_dir, 'post_trade_log.csv')}")
-    print(f"   Optimal window: {cfg.optimal_exec_window_start}–{cfg.optimal_exec_window_end} ET")
+    print("\n✅ PART 8 COMPLETE")
+    print(f"   Wrote: {os.path.join(cfg.out_dir, 'execution_cost_tape.csv')}")
+    print(f"   Meta:  {os.path.join(cfg.out_dir, 'part8_meta.json')}")
     return 0
-
 
 if __name__ == "__main__":
     main()
+
+
 
