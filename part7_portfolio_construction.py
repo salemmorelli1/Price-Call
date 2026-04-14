@@ -207,7 +207,12 @@ def estimate_expected_returns(
         q = np.array([[float(model_view["voo_excess_view"])]])
         # Uncertainty in view: proportional to confidence
         view_confidence = float(model_view.get("view_confidence", 0.5))
-        omega = np.diag([float(P @ (tau * cov) @ P.T) * (1.0 / max(view_confidence, 0.10))])
+        # P @ (tau * cov) @ P.T is a 1x1 matrix for the single-view case.
+        # Extract the scalar explicitly so GitHub Actions and local Python
+        # handle it consistently.
+        view_var = float(np.asarray(P @ (tau * cov) @ P.T).reshape(-1)[0])
+        view_var = max(view_var, 1e-12)
+        omega = np.array([[view_var * (1.0 / max(view_confidence, 0.10))]], dtype=float)
 
         # Black-Litterman formula
         inv_tauS = np.linalg.inv(tau * cov)
@@ -599,5 +604,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
