@@ -346,14 +346,14 @@
 
     <div class="grid hero-grid">
       <div class="card hero-card">
-        <div class="label">7-Day VOO Forecast</div>
+        <div class="label">1-Day VOO Forecast</div>
         <div class="hero-big" id="heroVooCall">—</div>
         <div class="hero-sub" id="heroVooMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroVooSrc">Source: —</div>
       </div>
 
       <div class="card hero-card">
-        <div class="label">7-Day IEF Forecast</div>
+        <div class="label">1-Day IEF Forecast</div>
         <div class="hero-big" id="heroIefCall">—</div>
         <div class="hero-sub" id="heroIefMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroIefSrc">Source: —</div>
@@ -1034,16 +1034,72 @@
     }
 
     function buildForecastSnapshot(predLog, prodTape) {
-      const row = latestRow(predLog, "decision_date") || latestRow(prodTape, "Date");
-      if (!row) return null;
-      const decisionDate = !isMissing(row.decision_date) ? fmtDate(row.decision_date) : fmtDate(row.Date);
-      const vooSpot = Number.isFinite(toNumber(row.px_voo_t)) ? toNumber(row.px_voo_t) : NaN;
-      const iefSpot = Number.isFinite(toNumber(row.px_ief_t)) ? toNumber(row.px_ief_t) : NaN;
-      const vooCall = Number.isFinite(toNumber(row.px_voo_call_7d)) ? toNumber(row.px_voo_call_7d) : Number.isFinite(toNumber(row.voo_call_7d)) ? toNumber(row.voo_call_7d) : NaN;
-      const iefCall = Number.isFinite(toNumber(row.px_ief_call_7d)) ? toNumber(row.px_ief_call_7d) : Number.isFinite(toNumber(row.ief_call_7d)) ? toNumber(row.ief_call_7d) : NaN;
+      const predRow = latestRow(predLog, "decision_date");
+      const latestProdRow = latestRow(prodTape, "Date");
+
+      let matchedProdRow = null;
+      const predDecision = predRow ? fmtDate(predRow.decision_date) : "NA";
+      if (predDecision !== "NA") {
+        const sameDate = (prodTape || []).filter(r => fmtDate(r.Date) === predDecision);
+        if (sameDate.length) matchedProdRow = sameDate[sameDate.length - 1];
+      }
+
+      const baseRow = predRow || matchedProdRow || latestProdRow;
+      if (!baseRow) return null;
+
+      const vooSpot =
+        Number.isFinite(toNumber(predRow?.px_voo_t)) ? toNumber(predRow.px_voo_t) :
+        Number.isFinite(toNumber(matchedProdRow?.px_voo_t)) ? toNumber(matchedProdRow.px_voo_t) :
+        Number.isFinite(toNumber(latestProdRow?.px_voo_t)) ? toNumber(latestProdRow.px_voo_t) :
+        NaN;
+
+      const iefSpot =
+        Number.isFinite(toNumber(predRow?.px_ief_t)) ? toNumber(predRow.px_ief_t) :
+        Number.isFinite(toNumber(matchedProdRow?.px_ief_t)) ? toNumber(matchedProdRow.px_ief_t) :
+        Number.isFinite(toNumber(latestProdRow?.px_ief_t)) ? toNumber(latestProdRow.px_ief_t) :
+        NaN;
+
+      const vooCall =
+        Number.isFinite(toNumber(predRow?.px_voo_call_1d)) ? toNumber(predRow.px_voo_call_1d) :
+        Number.isFinite(toNumber(predRow?.px_voo_call_7d)) ? toNumber(predRow.px_voo_call_7d) :
+        Number.isFinite(toNumber(predRow?.voo_call_1d)) ? toNumber(predRow.voo_call_1d) :
+        Number.isFinite(toNumber(predRow?.voo_call_7d)) ? toNumber(predRow.voo_call_7d) :
+        Number.isFinite(toNumber(matchedProdRow?.px_voo_call_1d)) ? toNumber(matchedProdRow.px_voo_call_1d) :
+        Number.isFinite(toNumber(matchedProdRow?.px_voo_call_7d)) ? toNumber(matchedProdRow.px_voo_call_7d) :
+        Number.isFinite(toNumber(latestProdRow?.px_voo_call_1d)) ? toNumber(latestProdRow.px_voo_call_1d) :
+        Number.isFinite(toNumber(latestProdRow?.px_voo_call_7d)) ? toNumber(latestProdRow.px_voo_call_7d) :
+        NaN;
+
+      const iefCall =
+        Number.isFinite(toNumber(predRow?.px_ief_call_1d)) ? toNumber(predRow.px_ief_call_1d) :
+        Number.isFinite(toNumber(predRow?.px_ief_call_7d)) ? toNumber(predRow.px_ief_call_7d) :
+        Number.isFinite(toNumber(predRow?.ief_call_1d)) ? toNumber(predRow.ief_call_1d) :
+        Number.isFinite(toNumber(predRow?.ief_call_7d)) ? toNumber(predRow.ief_call_7d) :
+        Number.isFinite(toNumber(matchedProdRow?.px_ief_call_1d)) ? toNumber(matchedProdRow.px_ief_call_1d) :
+        Number.isFinite(toNumber(matchedProdRow?.px_ief_call_7d)) ? toNumber(matchedProdRow.px_ief_call_7d) :
+        Number.isFinite(toNumber(latestProdRow?.px_ief_call_1d)) ? toNumber(latestProdRow.px_ief_call_1d) :
+        Number.isFinite(toNumber(latestProdRow?.px_ief_call_7d)) ? toNumber(latestProdRow.px_ief_call_7d) :
+        NaN;
+
       const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
       const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
-      return { row, decisionDate, targetDate: deriveTargetDate(row), vooSpot, iefSpot, vooCall, iefCall, vooDelta, iefDelta, vooSrc: !isMissing(row.voo_call_src) ? row.voo_call_src : "NA", iefSrc: !isMissing(row.ief_call_src) ? row.ief_call_src : "NA" };
+
+      const vooSrc = !isMissing(predRow?.voo_call_src) ? predRow.voo_call_src : (Number.isFinite(vooCall) ? "explicit_call" : "NA");
+      const iefSrc = !isMissing(predRow?.ief_call_src) ? predRow.ief_call_src : (Number.isFinite(iefCall) ? "explicit_call" : "NA");
+
+      return {
+        row: baseRow,
+        decisionDate: predRow ? fmtDate(predRow.decision_date) : fmtDate(baseRow.Date),
+        targetDate: deriveTargetDate(predRow || baseRow),
+        vooSpot,
+        iefSpot,
+        vooCall,
+        iefCall,
+        vooDelta,
+        iefDelta,
+        vooSrc,
+        iefSrc
+      };
     }
 
     function buildDefenseSnapshot(prodTape, govTape) {
@@ -2056,6 +2112,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
