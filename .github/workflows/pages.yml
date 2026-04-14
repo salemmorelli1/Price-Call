@@ -33,6 +33,20 @@ jobs:
           mkdir -p _site
           cp index.html _site/index.html
 
+          if [ -d assets ]; then
+            cp -r assets _site/assets
+          fi
+
+          if [ -d data ]; then
+            cp -r data _site/data
+          fi
+
+          if [ -f favicon.ico ]; then
+            cp favicon.ico _site/favicon.ico
+          fi
+
+          touch _site/.nojekyll
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
