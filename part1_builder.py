@@ -3,6 +3,36 @@
 # @title Part 1 — Feature Builder (fixed live locked-14 contract)
 
 from __future__ import annotations
+import sys as _sys
+import os as _os
+
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
+
+
 
 import json
 import os
@@ -22,17 +52,17 @@ warnings.filterwarnings("ignore")
 class Part1Config:
     start: str = "2010-01-01"
     end: str = date.today().strftime("%Y-%m-%d")
-    horizon: int = 7
-    tail_threshold: float = -0.015
+    horizon: int = 1                    # CHANGE: 7-day → 1-day weekday forecast
+    tail_threshold: float = float(-0.015 / np.sqrt(7.0))  # severity-matched daily tail threshold
 
     main_tickers: Tuple[str, ...] = ("VOO", "IEF", "JNK", "RSP", "QQQ")
     vix_ticker: str = "^VIX"
     vix3m_ticker: str = "^VIX3M"
 
-    part0_dir: str = "./artifacts_part0"
-    out_dir: str = "./artifacts_part1"
+    part0_dir: str = _DRIVE_ROOT + "/artifacts_part0"
+    out_dir: str = _DRIVE_ROOT + "/artifacts_part1"
 
-    min_reg_rows: int = 200
+    min_reg_rows: int = 500             # CHANGE: more rows needed for stable daily models
     max_stale_run: int = 3
     max_missing_frac: float = 0.02
     allow_ffill_limit: int = 2
@@ -109,10 +139,10 @@ def _write_json(path: str, obj: Dict) -> None:
         json.dump(obj, f, indent=2)
 
 
-def build_part1_v19(cfg: Part1Config):
+def build_part1_v20(cfg: Part1Config):
     os.makedirs(cfg.out_dir, exist_ok=True)
     H = int(cfg.horizon)
-    print(f"-> Building Artifacts (V19_P1_HARDENED) | H={H} | Tail thr on spread: {cfg.tail_threshold:.2%}")
+    print(f"-> Building Artifacts (V20_P1_DAILY) | H={H} | Tail thr on spread: {cfg.tail_threshold:.2%}")
 
     data = _load_prices(cfg)
 
@@ -195,6 +225,7 @@ def build_part1_v19(cfg: Part1Config):
     X["tech_relative_z21"] = tech_relative_z21
 
     X_live = X.dropna().copy()
+    # NOTE: 14-feature contract is unchanged — same features, different horizon
     if len(X_live.columns) != 14:
         raise RuntimeError(f"Part 1 locked contract expects 14 features, found {len(X_live.columns)}.")
 
@@ -321,7 +352,7 @@ def build_part1_v19(cfg: Part1Config):
 
     meta = {
         "part": "part1",
-        "version": "V19_P1_HARDENED",
+        "version": "V20_P1_DAILY",
         "asof_date": last_feature_date.strftime("%Y-%m-%d"),
         "horizon": H,
         "tail_threshold": float(cfg.tail_threshold),
@@ -335,7 +366,7 @@ def build_part1_v19(cfg: Part1Config):
     _write_json(os.path.join(cfg.out_dir, "part1_meta.json"), meta)
 
     tail_rate = float(y_revealed["y_rel_tail_voo_vs_ief"].mean()) if len(y_revealed) else float("nan")
-    print(f"✅ V19_P1_HARDENED COMPLETE | Tail base rate (revealed): {tail_rate:.2%}")
+    print(f"✅ V20_P1_DAILY COMPLETE | Tail base rate (revealed): {tail_rate:.2%}")
     print("Wrote: X_features.parquet, y_labels_revealed.parquet, y_labels_full.parquet,")
     print("       y_reg_revealed.parquet, y_reg_full.parquet, regression_train.parquet,")
     print("       price_calls_live_snapshot.parquet, target_prices_snapshot.parquet,")
@@ -355,7 +386,7 @@ def build_part1_v19(cfg: Part1Config):
 
 def main():
     cfg = Part1Config()
-    summary = build_part1_v19(cfg)
+    summary = build_part1_v20(cfg)
     print("\nPart 1 summary:", summary)
 
 
@@ -363,5 +394,3 @@ if __name__ == "__main__":
     main()
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
