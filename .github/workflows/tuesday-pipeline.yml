@@ -65,6 +65,34 @@ jobs:
         run: |
           python run_tuesday_prediction.py --force
 
+      - name: Verify critical artifacts were created
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
+        run: |
+          missing=0
+
+          for path in \
+            artifacts_part2_g532/predictions/part2_g532_summary.json \
+            artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv \
+            artifacts_part3/prediction_log.csv \
+            artifacts_part3_v1/v1_final_production_tape.csv \
+            artifacts_part6/part6_meta.json \
+            artifacts_part7/current_target_weights.json \
+            artifacts_part8/part8_meta.json \
+            artifacts_part9/live_attribution_report.json
+          do
+            if [ ! -e "$path" ]; then
+              echo "MISSING: $path"
+              missing=1
+            else
+              echo "OK: $path"
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Critical production artifacts were not created."
+            exit 1
+          fi
+
       - name: Commit updated production artifacts
         if: success() && (github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true')
         run: |
