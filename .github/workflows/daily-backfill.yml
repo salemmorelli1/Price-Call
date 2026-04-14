@@ -3,7 +3,7 @@ name: Daily Backfill Realized
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 22 * * *"
+    - cron: "17 22 * * 1-5"
 
 permissions:
   contents: write
@@ -40,27 +40,37 @@ jobs:
       - name: Run realized backfill
         env:
           PRICECALL_ROOT: ${{ github.workspace }}
+          PRICECALL_STRICT_DRIVE_ONLY: "1"
+          PRICECALL_ALPHA_FAMILY: "part2a21"
         run: |
           python backfill_realized.py
 
-      - name: Commit updated prediction log
+      - name: Refresh live attribution
+        env:
+          PRICECALL_ROOT: ${{ github.workspace }}
+          PRICECALL_STRICT_DRIVE_ONLY: "1"
+          PRICECALL_ALPHA_FAMILY: "part2a21"
         run: |
-          if [ ! -f artifacts_part3/prediction_log.csv ]; then
-            echo "prediction_log.csv does not exist. Nothing to commit."
-            exit 0
-          fi
-      
+          python part9_live_attribution.py
+
+      - name: Commit updated live artifacts
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      
-          git add artifacts_part3/prediction_log.csv
-      
+
+          if [ -f artifacts_part3/prediction_log.csv ]; then
+            git add -f artifacts_part3/prediction_log.csv
+          fi
+
+          if [ -f artifacts_part9/live_attribution_report.json ]; then
+            git add -f artifacts_part9/live_attribution_report.json
+          fi
+
           if git diff --cached --quiet; then
             echo "No backfill changes to commit."
             exit 0
           fi
-      
-          git commit -m "Backfill realized prediction log"
+
+          git commit -m "Backfill realized prediction log and refresh live attribution [skip ci]"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
-          
