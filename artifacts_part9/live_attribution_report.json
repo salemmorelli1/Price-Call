@@ -1,7 +1,8 @@
 {
-  "generated_at": "2026-04-11T22:53:08.730693+00:00",
+  "generated_at": "2026-04-14T09:28:17.966652+00:00",
   "total_predictions": 3,
   "n_live_realized": 0,
   "status": "IMMATURE",
-  "message": "Only 0 realized predictions available. Accumulate 26 before making statistical inferences. At weekly rebalancing, this takes 0.5 years."
+  "schema_mode_col": "publish_mode",
+  "message": "Only 0 realized predictions available. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months."
 }
