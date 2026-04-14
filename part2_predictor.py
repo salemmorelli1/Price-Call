@@ -11,7 +11,6 @@ import warnings
 import hashlib
 import platform
 import sys
-from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -44,39 +43,6 @@ try:
 except Exception:
     xgb = None
     HAVE_XGB = False
-
-
-def _resolve_root() -> str:
-    candidates = []
-    env_root = os.environ.get("PRICECALL_ROOT", "").strip()
-    if env_root:
-        candidates.append(Path(env_root))
-    candidates.append(Path("/content/drive/MyDrive/PriceCallProject"))
-    try:
-        candidates.append(Path(__file__).resolve().parent)
-    except Exception:
-        pass
-    candidates.append(Path.cwd())
-    seen = set()
-    for p in candidates:
-        try:
-            rp = p.expanduser().resolve()
-        except Exception:
-            continue
-        s = str(rp)
-        if s == "/content" or s in seen:
-            continue
-        seen.add(s)
-        if rp.exists():
-            return s
-    return str(Path.cwd().resolve())
-
-
-def _abs_path(p: str) -> str:
-    path = Path(p)
-    if path.is_absolute():
-        return str(path)
-    return str((Path(_resolve_root()) / path).resolve())
 
 
 @dataclass
@@ -177,7 +143,7 @@ class Part2Gen53Config:
     USE_XGB: bool = False
 
     EXPECTED_PART1_VERSION: str = "V19_P1_HARDENED"
-    ACCEPTED_PART1_VERSIONS: tuple[str, ...] = ("V19_P1_HARDENED",)
+    ACCEPTED_PART1_VERSIONS: tuple[str, ...] = ("V19_P1_HARDENED", "V20_P1_DAILY")
 
     LEGACY_EXPECTED_MODEL_FEATURE_COUNT: int = 64
     LEGACY_EXPECTED_FORBIDDEN_COUNT: int = 25
@@ -1022,25 +988,66 @@ def _load_part1_contract(cfg: Part2Gen53Config) -> pd.DataFrame:
 
     revealed_dates = set(pd.to_datetime(y_revealed_aligned["Date"]).dt.normalize())
     full["y_avail"] = full["Date"].isin(revealed_dates).astype(int)
+
+    full = _ensure_locked_contract_columns(full, cfg)
     return full.sort_values("Date").reset_index(drop=True)
 
+def _ensure_locked_contract_columns(full: pd.DataFrame, cfg: Part2Gen53Config) -> pd.DataFrame:
+    out = full.copy()
+    for col in cfg.LOCKED_FORBIDDEN_FEATURES:
+        if col not in out.columns:
+            out[col] = np.nan
+    return out
 
 
-def _select_model_features(full: pd.DataFrame) -> Tuple[List[str], List[str]]:
+def _resolve_locked_live_feature_cols(part1_meta: Dict[str, object], full: pd.DataFrame) -> List[str]:
+    feature_cols = part1_meta.get("feature_cols", [])
+    if not isinstance(feature_cols, list) or len(feature_cols) == 0:
+        raise RuntimeError("Part 1 metadata is missing the locked feature_cols list required by Part 2.")
+
+    locked = [str(c) for c in feature_cols]
+    missing = [c for c in locked if c not in full.columns]
+    if missing:
+        raise RuntimeError(
+            "Part 2 could not find the locked Part 1 feature columns in the merged contract frame: "
+            f"{missing}"
+        )
+
+    non_numeric = [c for c in locked if not pd.api.types.is_numeric_dtype(full[c])]
+    if non_numeric:
+        raise RuntimeError(
+            "Locked Part 1 feature columns must all be numeric for Part 2 modeling. "
+            f"Non-numeric columns: {non_numeric}"
+        )
+
+    return locked
+
+
+def _select_model_features(
+    full: pd.DataFrame,
+    part1_meta: Dict[str, object],
+    cfg: Part2Gen53Config,
+) -> Tuple[List[str], List[str]]:
+    part1_version = str(part1_meta.get("version", "")).strip()
+
+    # Live locked-14 contract: use the exact Part 1 locked feature list.
+    if part1_version in {"V19_P1_HARDENED", "V20_P1_DAILY"}:
+        allowed = _resolve_locked_live_feature_cols(part1_meta, full)
+        forbidden = list(cfg.LOCKED_FORBIDDEN_FEATURES)
+        return allowed, forbidden
+
+    # Fallback / legacy compatibility path
     forbidden_prefixes = ("fwd_", "bench_", "px_")
-    forbidden_exact = {
-        "Date", "excess_ret", "y_voo", "y_rel_tail_voo_vs_ief", "target_date",
-        "decision_weekday", "decision_is_tuesday", "is_revealed_master", "calendar_name",
-        "row_num_in_calendar", "master_row_num", "y_avail",
-    }
+    forbidden_exact = set(cfg.LOCKED_FORBIDDEN_FEATURES) | set(cfg.OPTIONAL_FORBIDDEN_FEATURES)
+
     forbidden, allowed = [], []
     for c in full.columns:
         if c in forbidden_exact or any(c.startswith(p) for p in forbidden_prefixes):
             forbidden.append(c)
         elif pd.api.types.is_numeric_dtype(full[c]):
             allowed.append(c)
-    return allowed, sorted(forbidden)
 
+    return sorted(allowed), sorted(set(forbidden))
 
 def _is_live_contract(contract_profile: object) -> bool:
     return str(contract_profile).lower().startswith("live_locked_14")
@@ -1568,7 +1575,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     _ensure_dir(cfg.PRED_DIR)
     part1_meta = _load_part1_meta(cfg)
     full = _load_part1_contract(cfg)
-    feature_cols, forbidden_features = _select_model_features(full)
+    feature_cols, forbidden_features = _select_model_features(full, part1_meta, cfg)
     contract_info = _validate_feature_contract(feature_cols, forbidden_features, part1_meta, cfg)
     contract_profile = str(contract_info.get("contract_profile", ""))
     drift_ece_max_eff = _effective_drift_ece_max(contract_profile, cfg)
@@ -2021,10 +2028,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
 
 
 def main() -> int:
-    cfg = Part2Gen53Config()
-    cfg.PART1_DIR = _abs_path(cfg.PART1_DIR)
-    cfg.PRED_DIR = _abs_path(cfg.PRED_DIR)
-    summary = build_part2_gen53(cfg)
+    summary = build_part2_gen53(CFG)
     print("\nPart 2 Gen 5.3 summary:")
     for k, v in summary.items():
         print(f"  {k}: {v}")
@@ -2033,5 +2037,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
 
