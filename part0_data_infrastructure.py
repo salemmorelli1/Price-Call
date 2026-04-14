@@ -1,5 +1,35 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import sys as _sys
+import os as _os
+
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
+
+
 
 import hashlib
 import json
@@ -33,10 +63,10 @@ except Exception:
 
 @dataclass(frozen=True)
 class Part0Config:
-    version: str = "V1_COLAB_FINAL"
+    version: str = "V2_DAILY_CANONICAL"
     start: str = "2005-01-01"
     end: str = date.today().strftime("%Y-%m-%d")
-    horizon: int = 7
+    horizon: int = 1
 
     root_env_var: str = "PRICECALL_ROOT"
     default_drive_root: str = "/content/drive/MyDrive/PriceCallProject"
@@ -72,8 +102,7 @@ class Part0Config:
         "UMCSENT": "consumer_sentiment",
         "USREC": "recession_flag",
     })
-    fred_api_key_env_var: str = "FRED_API_KEY"
- 
+    fred_api_key: str = "09c48c7ed1bb6d3e9811c8e85bd5c48d"
 
     allow_ffill_limit: int = 2
     max_pre_clean_warn_frac: float = 0.10
@@ -94,7 +123,7 @@ def _resolve_project_root(cfg: Part0Config) -> Path:
     candidates.append(Path(cfg.default_drive_root))
 
     try:
-        candidates.append(Path(__file__).resolve().parent)
+        candidates.append(Path(_DRIVE_ROOT))
     except Exception:
         pass
 
@@ -263,14 +292,12 @@ def download_market_data(cfg: Part0Config):
 
 
 def download_fred_data(cfg: Part0Config) -> pd.DataFrame:
-    api_key = os.environ.get(cfg.fred_api_key_env_var, "").strip()
+    api_key = cfg.fred_api_key or os.environ.get("FRED_API_KEY", "")
     if not HAVE_FRED or not api_key:
         print("[Part 0] Skipping FRED download (fredapi not installed or FRED_API_KEY missing).")
         return pd.DataFrame(index=_business_day_calendar(cfg.start, cfg.end))
 
     fred = Fred(api_key=api_key)
-
-    
     bidx = _business_day_calendar(cfg.start, cfg.end)
     cols = []
     for series_id, col_name in cfg.fred_series.items():
@@ -289,6 +316,105 @@ def download_fred_data(cfg: Part0Config) -> pd.DataFrame:
     macro = pd.concat(cols, axis=1)
     macro.index.name = "Date"
     print(f"[Part 0] FRED macro: {macro.shape[0]} days × {macro.shape[1]} series")
+    return macro
+
+
+def _fill_vixcls_from_market(macro: pd.DataFrame, close: pd.DataFrame) -> pd.DataFrame:
+    """Backfill vix_fred from ^VIX market close when FRED VIXCLS download failed.
+
+    VIXCLS is the CBOE VIX index from FRED. It is identical to ^VIX from yfinance
+    up to rounding. When FRED returns None (rate-limit, API outage, or series
+    temporarily unavailable), we substitute the yfinance ^VIX close so that
+    n_macro_series stays at 14 and any downstream feature that reads vix_fred
+    does not receive NaN. The substitution is noted in the returned DataFrame's
+    column name (vix_fred is preserved for schema compatibility).
+    """
+    if "vix_fred" not in macro.columns and "^VIX" in close.columns:
+        vix_market = close["^VIX"].copy()
+        vix_market.index.name = "Date"
+        macro = macro.copy()
+        macro["vix_fred"] = vix_market.reindex(macro.index).ffill(limit=5)
+        print("[Part 0] vix_fred: FRED VIXCLS unavailable — filled from ^VIX market close (equivalent series).")
+    return macro
+
+
+def _fill_macro_from_last_good(
+    macro: pd.DataFrame,
+    cfg: Part0Config,
+    out_dir: "Path",
+) -> pd.DataFrame:
+    """Carry forward last-known-good values for FRED series that failed this run.
+
+    When FRED returns a 500 or rate-limit error, the affected column is simply
+    absent from the macro DataFrame. This function:
+      1. Identifies which expected series are missing from the current run.
+      2. Reads the previously saved macro_data.parquet from the Part 0 output dir.
+      3. For each missing series present in the prior artifact, reindexes those
+         values to the current date range and forward-fills up to 10 business
+         days (covers weekends, market holidays, and short FRED outages).
+      4. Logs clearly which series came from cache vs live.
+
+    This is the generic complement to _fill_vixcls_from_market. VIXCLS has a
+    live market equivalent (^VIX) and is handled there. Series without a live
+    market proxy — primarily curve_3m10y (T10Y3M) and hy_spread (BAMLH0A0HYM2)
+    — are recovered here via the persisted artifact.
+
+    Design properties:
+      • Stable checksum: a successful run writes all 14 series to macro_data.parquet.
+        A failed run falls back to those same values, so the feature matrix produced
+        is identical to the previous clean run. features_checksum stays constant
+        under transient FRED outages.
+      • Cold-start safe: if no prior artifact exists, missing series remain absent
+        and an error is printed. No crash, no silent NaN injection.
+      • Self-healing: as soon as FRED recovers, the live value replaces the cached
+        one automatically, and the updated series is written back to the artifact.
+      • No side effects on market data or the locked Part 1/Part 2 feature contract.
+    """
+    expected_cols = set(cfg.fred_series.values())
+    # vix_fred is handled by _fill_vixcls_from_market; exclude from this path.
+    missing = sorted(c for c in expected_cols if c not in macro.columns and c != "vix_fred")
+    if not missing:
+        return macro
+
+    prev_path = out_dir / "macro_data.parquet"
+    if not prev_path.exists():
+        for col in missing:
+            sid = next((k for k, v in cfg.fred_series.items() if v == col), col.upper())
+            print(
+                f"[Part 0] {col}: FRED {sid} unavailable — "
+                f"no prior artifact for fallback (cold start, will recover on next successful run)."
+            )
+        return macro
+
+    try:
+        prev = pd.read_parquet(prev_path)
+        prev = _standardize_index(prev)
+    except Exception as e:
+        print(f"[Part 0] Could not load prior macro artifact for fallback: {e}")
+        return macro
+
+    macro = macro.copy()
+    for col in missing:
+        sid = next((k for k, v in cfg.fred_series.items() if v == col), col.upper())
+        if col not in prev.columns:
+            print(
+                f"[Part 0] {col}: FRED {sid} unavailable — "
+                f"not present in prior artifact (was never successfully fetched)."
+            )
+            continue
+        carried = prev[col].reindex(macro.index).ffill(limit=10)
+        n_filled = int(carried.notna().sum())
+        if n_filled == 0:
+            print(
+                f"[Part 0] {col}: FRED {sid} unavailable — "
+                f"prior artifact had no usable values for current date range."
+            )
+            continue
+        macro[col] = carried
+        print(
+            f"[Part 0] {col}: FRED {sid} unavailable — "
+            f"carried forward from last-good artifact ({n_filled} obs)."
+        )
     return macro
 
 
@@ -409,7 +535,9 @@ def compute_market_features(close: pd.DataFrame, macro: pd.DataFrame, cfg: Part0
             X["hy_spread_z21"] = (mm["hy_spread"] - mm["hy_spread"].rolling(21).mean()) / (mm["hy_spread"].rolling(21).std() + 1e-9)
         if "dollar_index" in mm.columns:
             X["dollar_index"] = mm["dollar_index"]
-            X["dollar_mom21"] = mm["dollar_index"].diff(21)
+            # FIX: renamed to avoid silent overwrite of UUP-based dollar_mom21 (L353).
+            # These are different signals: UUP = currency ETF; FRED = trade-weighted index.
+            X["dollar_mom21_fred"] = mm["dollar_index"].diff(21)
         if "recession_flag" in mm.columns:
             X["in_recession"] = mm["recession_flag"].ffill()
         if "consumer_sentiment" in mm.columns:
@@ -434,14 +562,15 @@ def compute_labels(close: pd.DataFrame, cfg: Part0Config) -> pd.DataFrame:
     labels = pd.DataFrame(index=close.index)
     labels.index.name = "Date"
 
-    for h in [5, 7, 10, 21]:
+    for h in [1, 5, 7, 10, 21]:
         fwd_voo = np.log(voo).shift(-h) - np.log(voo)
         fwd_ief = np.log(ief).shift(-h) - np.log(ief)
         excess = fwd_voo - fwd_ief
         labels[f"fwd_voo_{h}d"] = fwd_voo
         labels[f"fwd_ief_{h}d"] = fwd_ief
         labels[f"excess_ret_{h}d"] = excess
-        labels[f"y_tail_{h}d"] = np.where(np.isfinite(excess), (excess < -0.015).astype(float), np.nan)
+        thr_h = float(-0.015 * np.sqrt(h / 7.0))
+        labels[f"y_tail_{h}d"] = np.where(np.isfinite(excess), (excess < thr_h).astype(float), np.nan)
         labels[f"excess_rank_{h}d"] = excess.rolling(252, min_periods=63).rank(pct=True)
 
     labels["y_rel_tail_voo_vs_ief"] = labels[f"y_tail_{H}d"]
@@ -533,6 +662,8 @@ def main() -> int:
 
     close, volume, quality = download_market_data(cfg)
     macro = download_fred_data(cfg)
+    macro = _fill_vixcls_from_market(macro, close)
+    macro = _fill_macro_from_last_good(macro, cfg, out_dir)
     features = compute_market_features(close, macro, cfg)
     labels = compute_labels(close, cfg)
     save_outputs(close, volume, features, macro, labels, quality, cfg)
@@ -565,4 +696,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
