@@ -1,9 +1,7 @@
-# @title Part 6
 #!/usr/bin/env python3
 from __future__ import annotations
-import sys as _sys
-import os as _os
 
+import sys as _sys
 
 import json
 import os
@@ -26,12 +24,6 @@ try:
     from hmmlearn import hmm
     HAVE_HMM = True
 except Exception:
-    # hmmlearn missing — attempt a silent pip install and retry once.
-    # This closes the environment-consistency gap where the interactive
-    # !pip install hmmlearn cell was not run before the automated pipeline
-    # (run_tuesday_prediction.py → part5_validator.py → part6) executes.
-    # Without this, Part 6 silently falls back to GMM, producing materially
-    # different regime distributions that shift Part 7's base weights.
     try:
         import subprocess as _subprocess
         _subprocess.run(
@@ -54,11 +46,41 @@ except Exception:
     HAVE_DUCKDB = False
 
 
+def _resolve_root() -> str:
+    candidates = []
+    env_root = os.environ.get("PRICECALL_ROOT", "").strip()
+    if env_root:
+        candidates.append(Path(env_root))
+    candidates.append(Path("/content/drive/MyDrive/PriceCallProject"))
+    candidates.append(Path.cwd())
+
+    seen = set()
+    for p in candidates:
+        try:
+            rp = p.expanduser().resolve()
+        except Exception:
+            continue
+        s = str(rp)
+        if s == "/content" or s in seen:
+            continue
+        seen.add(s)
+        if rp.exists():
+            return s
+    return str(Path.cwd().resolve())
+
+
+def _abs_path(p: str) -> str:
+    path = Path(p)
+    if path.is_absolute():
+        return str(path)
+    return str((Path(_resolve_root()) / path).resolve())
+
+
 @dataclass(frozen=True)
 class Part6Config:
     version: str = "V2_DAILY_CANONICAL"
-    part0_dir: str = _DRIVE_ROOT + "/artifacts_part0"
-    out_dir: str = _DRIVE_ROOT + "/artifacts_part6"
+    part0_dir: str = "artifacts_part0"
+    out_dir: str = "artifacts_part6"
     horizon: int = 1
 
     n_regimes: int = 3
@@ -91,39 +113,6 @@ class Part6Config:
 
 
 CFG = Part6Config()
-
-def _resolve_root() -> str:
-    candidates = []
-    env_root = os.environ.get("PRICECALL_ROOT", "").strip()
-    if env_root:
-        candidates.append(Path(env_root))
-    candidates.append(Path("/content/drive/MyDrive/PriceCallProject"))
-    try:
-        candidates.append(Path(_DRIVE_ROOT))
-    except Exception:
-        pass
-    candidates.append(Path.cwd())
-    seen = set()
-    for p in candidates:
-        try:
-            rp = p.expanduser().resolve()
-        except Exception:
-            continue
-        s = str(rp)
-        if s == "/content" or s in seen:
-            continue
-        seen.add(s)
-        if rp.exists():
-            return s
-    return str(Path.cwd().resolve())
-
-
-def _abs_path(p: str) -> str:
-    path = Path(p)
-    if path.is_absolute():
-        return str(path)
-    return str((Path(_resolve_root()) / path).resolve())
-
 
 KNOWN_FOMC_DATES_2020_2026 = [
     "2020-01-29", "2020-03-03", "2020-03-15", "2020-04-29", "2020-06-10",
@@ -161,7 +150,6 @@ def build_fomc_calendar(index: pd.DatetimeIndex) -> pd.DataFrame:
     out["fomc_in_7d"] = fomc_in_7d
     out["fomc_this_week"] = fomc_this_week
 
-    # Approximate NFP as first Friday of month.
     is_nfp = (idx.weekday == 4) & (idx.day <= 7)
     nfp_dates = idx[is_nfp]
     days_to_nfp = []
@@ -346,7 +334,7 @@ class RegimeEngine:
         regime_series = pd.Series(result_labels, index=df.index)
         persist = []
         for i in range(len(regime_series)):
-            hist = regime_series.iloc[max(0, i-9): i+1]
+            hist = regime_series.iloc[max(0, i - 9): i + 1]
             cur = regime_series.iloc[i]
             if len(hist) < 3 or cur == "unknown":
                 persist.append(np.nan)
@@ -373,28 +361,6 @@ class RegimeEngine:
         with open(path, "wb") as f:
             pickle.dump(self, f)
         print(f"[Part 6] Regime engine saved to {path}")
-
-
-def compute_regime_conditional_stats(predictions_df: pd.DataFrame, regime_df: pd.DataFrame, target_col: str = "y_rel_tail_voo_vs_ief", prob_col: str = "p_final_cal") -> Dict[str, Dict]:
-    from sklearn.metrics import roc_auc_score
-
-    merged = predictions_df[[target_col, prob_col]].join(regime_df[["regime_label"]], how="inner").dropna()
-    stats: Dict[str, Dict] = {}
-    for regime in merged["regime_label"].astype(str).unique():
-        sub = merged.loc[merged["regime_label"] == regime]
-        if len(sub) < 10:
-            continue
-        y = sub[target_col].astype(int).values
-        p = sub[prob_col].astype(float).clip(1e-6, 1 - 1e-6).values
-        auc = float(roc_auc_score(y, p)) if len(np.unique(y)) >= 2 else np.nan
-        stats[regime] = {
-            "n": int(len(sub)),
-            "base_rate": float(y.mean()),
-            "mean_pred": float(p.mean()),
-            "calibration_error": float(abs(y.mean() - p.mean())),
-            "auc": auc,
-        }
-    return stats
 
 
 def main() -> int:
@@ -445,11 +411,9 @@ def main() -> int:
     print("\n✅ PART 6 COMPLETE")
     print(f"   Model type:      {engine.model_type.upper()}")
     print(f"   Regime features: {len(engine.feature_cols)}")
-    print(f"   Outputs:         regime_history.parquet, regime_features_used.parquet, part6_meta.json, regime_engine.pkl")
+    print("   Outputs:         regime_history.parquet, regime_features_used.parquet, part6_meta.json, regime_engine.pkl")
     return 0
 
 
 if __name__ == "__main__":
-    main()
-
-
+    raise SystemExit(main())
