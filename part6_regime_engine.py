@@ -1,6 +1,9 @@
 # @title Part 6
 #!/usr/bin/env python3
 from __future__ import annotations
+import sys as _sys
+import os as _os
+
 
 import json
 import os
@@ -23,9 +26,25 @@ try:
     from hmmlearn import hmm
     HAVE_HMM = True
 except Exception:
-    hmm = None
-    HAVE_HMM = False
-    print("[Part 6] hmmlearn not installed. pip install hmmlearn — falling back to GMM regime.")
+    # hmmlearn missing — attempt a silent pip install and retry once.
+    # This closes the environment-consistency gap where the interactive
+    # !pip install hmmlearn cell was not run before the automated pipeline
+    # (run_tuesday_prediction.py → part5_validator.py → part6) executes.
+    # Without this, Part 6 silently falls back to GMM, producing materially
+    # different regime distributions that shift Part 7's base weights.
+    try:
+        import subprocess as _subprocess
+        _subprocess.run(
+            [_sys.executable, "-m", "pip", "install", "hmmlearn", "-q"],
+            capture_output=True,
+            check=False,
+        )
+        from hmmlearn import hmm
+        HAVE_HMM = True
+    except Exception:
+        hmm = None
+        HAVE_HMM = False
+        print("[Part 6] hmmlearn unavailable after install attempt — falling back to GMM regime.")
 
 try:
     import duckdb
@@ -37,10 +56,10 @@ except Exception:
 
 @dataclass(frozen=True)
 class Part6Config:
-    version: str = "V1"
-    part0_dir: str = "./artifacts_part0"
-    out_dir: str = "./artifacts_part6"
-    horizon: int = 7
+    version: str = "V2_DAILY_CANONICAL"
+    part0_dir: str = _DRIVE_ROOT + "/artifacts_part0"
+    out_dir: str = _DRIVE_ROOT + "/artifacts_part6"
+    horizon: int = 1
 
     n_regimes: int = 3
     hmm_covariance_type: str = "full"
@@ -80,7 +99,7 @@ def _resolve_root() -> str:
         candidates.append(Path(env_root))
     candidates.append(Path("/content/drive/MyDrive/PriceCallProject"))
     try:
-        candidates.append(Path(__file__).resolve().parent)
+        candidates.append(Path(_DRIVE_ROOT))
     except Exception:
         pass
     candidates.append(Path.cwd())
@@ -432,4 +451,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
