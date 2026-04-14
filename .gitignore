@@ -1,20 +1,59 @@
 # Python
 __pycache__/
-*.pyc
-.ipynb_checkpoints/
-.DS_Store
+*.py[cod]
+*$py.class
 
-# Do not track notebook-export helper files
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Notebook / Colab / editor
+.ipynb_checkpoints/
+*.ipynb
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Local secrets / env
+.env
+.env.*
+secrets.json
+
+# Generated artifacts — do not track rebuildable outputs
+artifacts_part0/
+artifacts_part1/
+artifacts_part2_g532/
+artifacts_part2a_alpha/
+artifacts_part3/
+artifacts_part3_v1/
+artifacts_part6/
+artifacts_part7/
+artifacts_part8/
+artifacts_part9/
+artifacts_part10_bot/
+
+# Common generated data formats inside local runs
+*.parquet
+*.duckdb
+*.pkl
+
+# If you keep notebook export helpers locally, ignore them
 6_price_call.py
 6_1_file_a.py
 6_2_file_b.py
-
-# Rebuildable heavy artifacts
-artifacts_part0/
-artifacts_part1/
-*.parquet
-*.duckdb
-
-# Local temp files
-*.tmp
-*.log
