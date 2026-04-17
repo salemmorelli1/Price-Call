@@ -40,6 +40,14 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+# ── Optional: regime-conditional Platt scaling (scipy + sklearn) ──────────
+try:
+    from scipy.special import logit as _logit, expit as _expit
+    from sklearn.linear_model import LogisticRegression as _LogisticRegression
+    HAVE_PLATT = True
+except Exception:
+    HAVE_PLATT = False
+
 
 # ============================================================
 # @title PART 3 — Governance + Defense Sleeve + Fusion Engine
@@ -269,6 +277,59 @@ def _canonical_state(state: Any) -> str:
     return "ELIGIBLE" if s == "CANDIDATE" else s
 
 
+# Numeric rank for the promotion ladder — used to take the higher of two states.
+_STATE_RANK: Dict[str, int] = {
+    "SHADOW": 0,
+    "ELIGIBLE": 1,
+    "LIVE_TRIAL": 2,
+    "LIVE_FUSED": 3,
+}
+
+
+def _infer_promotion_state(
+    realized_dates: int,
+    quality_ok: int,
+    drift_ok: int,
+    trial_gate_open: int,
+    fused_gate_open: int,
+    thresholds: Dict[str, Any],
+) -> str:
+    """Derive the canonical alpha promotion state from first principles.
+
+    This is the authoritative state-assignment path. Part 2A does not write
+    an ``alpha_state`` or ``latest_alpha_state`` field to its outputs — it
+    writes ``alpha_governance_tier``, ``latest_eligible``, etc. — so the
+    prior lookup-first strategy always fell through to the "SHADOW" default,
+    producing a locked-SHADOW tape regardless of realized_dates or gate flags.
+
+    State ladder (each level requires all lower conditions):
+      SHADOW     : realized_dates < th_eligible  OR  quality/drift gate failed
+      ELIGIBLE   : realized_dates >= th_eligible AND quality_ok AND drift_ok
+      LIVE_TRIAL : ELIGIBLE conditions AND realized_dates >= th_trial
+                   AND trial_gate_open
+      LIVE_FUSED : LIVE_TRIAL conditions AND realized_dates >= th_fused
+                   AND fused_gate_open
+
+    All threshold keys are read with safe integer conversion so stale or
+    missing JSON values fall back to the hard-coded defaults (26 / 52 / 78).
+    """
+    th_e = max(1, int(thresholds.get("Eligible", 26) or 26))
+    th_t = max(th_e + 1, int(thresholds.get("Trial", 52) or 52))
+    th_f = max(th_t + 1, int(thresholds.get("Fused", 78) or 78))
+
+    # Quality and drift are hard gates — failure at any level returns SHADOW.
+    if not quality_ok or not drift_ok:
+        return "SHADOW"
+    if realized_dates < th_e:
+        return "SHADOW"
+    # ELIGIBLE floor — gates above here are soft (closed gate → stay at lower tier).
+    if realized_dates >= th_f and fused_gate_open:
+        return "LIVE_FUSED"
+    if realized_dates >= th_t and trial_gate_open:
+        return "LIVE_TRIAL"
+    return "ELIGIBLE"
+
+
 def _extract_latest_price_call(defense_row: pd.Series) -> Tuple[Optional[float], Optional[float]]:
     voo = _safe_float(_row_value(defense_row, [
         "px_voo_call_1d", "voo_call_1d", "px_voo_call_7d", "voo_call_7d", "voo_target_price", "VOO_target_price", "price_call_voo"
@@ -296,30 +357,66 @@ def _extract_base_weights(defense_row: pd.Series) -> Tuple[float, float]:
     return float(voo) / total, float(ief) / total
 
 
+def _load_part7_base_weights(root: Path) -> Tuple[Optional[float], Optional[float]]:
+    """Load the latest target portfolio weights from Part 7's output tape.
+
+    Part 3's default base weights (60/40) are stale relative to Part 7's
+    Black-Litterman/CVaR output, which currently targets ~70/30. Using Part 3's
+    defaults produces a fusion allocation whose core VOO sleeve is
+    systematically 10 pp too low, misaligning the allocation tape with the
+    portfolio construction output.
+
+    Returns (w_target_voo, w_target_ief) normalised to sum to 1.0, or
+    (None, None) if the tape cannot be found or parsed. Part 3 falls back
+    to _extract_base_weights(defense_row) → CFG defaults on None.
+    """
+    p = _first_existing_path(["artifacts_part7/portfolio_weights_tape.csv"], root)
+    if p is None:
+        return None, None
+    try:
+        df = _read_csv(p)
+        if df.empty:
+            return None, None
+        row = _last_valid_row(df)
+        voo = _safe_float(_row_value(row, ["w_target_voo", "w_voo", "target_weight_voo", "voo_weight"]))
+        ief = _safe_float(_row_value(row, ["w_target_ief", "w_ief", "target_weight_ief", "ief_weight"]))
+        if voo is None or ief is None:
+            return None, None
+        total = float(voo) + float(ief)
+        if total <= 1e-12:
+            return None, None
+        return float(voo) / total, float(ief) / total
+    except Exception:
+        return None, None
+
+
 def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str, Any]) -> Dict[str, Any]:
     latest_row = _last_valid_row(alpha_tape_df) if not alpha_tape_df.empty else pd.Series(dtype=object)
 
-    latest_state = _canonical_state(
-        _row_value(latest_row, ["alpha_state_display", "alpha_state", "state_display", "state"],
-                   _json_value(alpha_summary_json, ["latest_alpha_state_display", "latest_alpha_state", "alpha_state"], "SHADOW"))
-    )
+    # ── realized_dates ──────────────────────────────────────────────────────
+    # Primary source: alpha_summary_json["realized_dates"] — set by Part 2A
+    # to the count of historical dates where realized returns are available.
+    # Fallback chain: tape row columns → len(tape).
     realized_dates = _safe_int(
         _json_value(alpha_summary_json, ["realized_dates", "n_realized_dates", "realized_rows"],
                     _row_value(latest_row, ["realized_dates", "realized_rows"], len(alpha_tape_df))),
         default=len(alpha_tape_df),
     )
+
     budget_mult = _safe_float(
         _row_value(latest_row, ["budget_mult", "alpha_budget_mult"],
                    _json_value(alpha_summary_json, ["budget_mult", "alpha_budget_mult"], 1.0))
     )
     if budget_mult is None:
         budget_mult = 1.0
+
     drift_rate = _safe_float(
         _row_value(latest_row, ["drift_rate", "alpha_drift_rate"],
                    _json_value(alpha_summary_json, ["drift_rate", "alpha_drift_rate"], 0.0))
     )
     if drift_rate is None:
         drift_rate = 0.0
+
     quality_ok = _boolish(_row_value(latest_row, ["quality_ok"], _json_value(alpha_summary_json, ["quality_ok"], 1)), 1)
     drift_ok = _boolish(_row_value(latest_row, ["drift_ok"], _json_value(alpha_summary_json, ["drift_ok"], 1)), 1)
     trial_gate_open = _boolish(_row_value(latest_row, ["trial_gate_open"], _json_value(alpha_summary_json, ["trial_gate_open"], 1)), 1)
@@ -338,6 +435,35 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
         "Fused": _safe_int(_json_value(alpha_summary_json, ["fused_threshold", "Fused"], 78), 78),
         "Max drift rate": _safe_float(_json_value(alpha_summary_json, ["max_drift_rate", "max_alpha_drift_rate"], 0.80)) or 0.80,
     }
+
+    # ── latest_state — derived from first principles ─────────────────────────
+    # FIX: Part 2A does not write an `alpha_state` or `latest_alpha_state`
+    # field to its summary tape or summary JSON. The previous lookup:
+    #
+    #   _row_value(latest_row, ["alpha_state_display", "alpha_state", ...],
+    #              _json_value(alpha_summary_json,
+    #                  ["latest_alpha_state_display", "latest_alpha_state", "alpha_state"],
+    #                  "SHADOW"))
+    #
+    # always fell through to the "SHADOW" default, locking the entire tape
+    # at SHADOW regardless of how many realized dates had accumulated or
+    # whether all promotion gates were open.
+    #
+    # The authoritative state is now always computed by _infer_promotion_state
+    # using the already-correct realized_dates (559) and gate flags (all 1).
+    # This eliminates the dependency on Part 2A writing a field it never wrote.
+    #
+    # For forward-compatibility: if a future Part 2A version does write
+    # alpha_state to its outputs, _infer_promotion_state still produces the
+    # correct answer because it re-derives state from underlying variables.
+    latest_state = _infer_promotion_state(
+        realized_dates=realized_dates,
+        quality_ok=quality_ok,
+        drift_ok=drift_ok,
+        trial_gate_open=trial_gate_open,
+        fused_gate_open=fused_gate_open,
+        thresholds=thresholds,
+    )
 
     alpha_live = latest_state in {"LIVE_TRIAL", "LIVE_FUSED"}
     if latest_state == "LIVE_FUSED":
@@ -363,15 +489,44 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
     }
 
 
-def _alpha_distribution(alpha_tape_df: pd.DataFrame) -> pd.Series:
+def _alpha_distribution(alpha_tape_df: pd.DataFrame, alpha_status: Optional[Dict[str, Any]] = None) -> pd.Series:
     col = _first_col(alpha_tape_df, ["alpha_state", "alpha_state_display", "state"])
     if col is None or alpha_tape_df.empty:
+        if alpha_status and alpha_status.get("latest_state"):
+            return pd.Series({str(alpha_status["latest_state"]).upper(): 1.0}, dtype=float)
         return pd.Series(dtype=float)
     s = alpha_tape_df[col].astype(str).str.upper().replace({"CANDIDATE": "ELIGIBLE"})
+    s = s[s.notna() & (s != "")]
+    if s.empty and alpha_status and alpha_status.get("latest_state"):
+        return pd.Series({str(alpha_status["latest_state"]).upper(): 1.0}, dtype=float)
     return s.value_counts(normalize=True).sort_index()
 
 
 def _extract_alpha_positions(alpha_positions_df: pd.DataFrame) -> pd.DataFrame:
+    """Return the latest-date alpha positions as raw portfolio weights.
+
+    FIX A (v1) — 'Ticker' added to ticker lookup.
+    FIX A (v2) — 'alpha_leg' added to ticker lookup.
+        Part 2A's positions CSV uses 'alpha_leg' (values: 'VOO' or 'FLAT').
+        'Ticker' and 'ticker' are not present in the actual schema.
+        Previous fix added 'Ticker' based on Part 4 GUI expected columns, which
+        reflect a historical schema Part 2A no longer writes.
+
+    FIX B (v1) — normalization removed.
+    FIX B (v2) — 'alpha_position' and 'w_alpha_voo' added to weight lookup.
+        Part 2A writes 'alpha_position' (and alias 'w_alpha_voo') as the
+        portfolio weight column. Neither 'weight', 'w', 'alloc', nor 'allocation'
+        is present. Both v1 lookups returned None → function returned an empty
+        DataFrame every run → no alpha sleeve was ever carved out despite
+        alpha_live=1 in governance.
+
+    Column map confirmed from part2a21_alpha.py lines 446–477:
+        ticker:  alpha_leg      (values: "VOO" | "FLAT")
+        weight:  alpha_position  (= w_alpha_voo; both are identical)
+
+    FLAT entries have alpha_position=0.0 and are dropped by the weight > 0 filter.
+    Raw weights are preserved (no normalization) as direct portfolio fractions.
+    """
     if alpha_positions_df.empty:
         return pd.DataFrame(columns=["ticker", "weight"])
 
@@ -382,8 +537,10 @@ def _extract_alpha_positions(alpha_positions_df: pd.DataFrame) -> pd.DataFrame:
         if d.notna().any():
             g = g.loc[d == d.max()].copy()
 
-    ticker_col = _first_col(g, ["ticker", "asset", "sleeve", "name", "symbol"])
-    weight_col = _first_col(g, ["weight", "w", "alloc", "allocation"])
+    # Part 2A writes 'alpha_leg'. Legacy/future schemas may use Ticker/ticker.
+    ticker_col = _first_col(g, ["alpha_leg", "Ticker", "ticker", "asset", "sleeve", "name", "symbol"])
+    # Part 2A writes 'alpha_position'. Legacy/future schemas may use weight/w.
+    weight_col = _first_col(g, ["alpha_position", "w_alpha_voo", "weight", "w", "alloc", "allocation"])
     if ticker_col is None or weight_col is None:
         return pd.DataFrame(columns=["ticker", "weight"])
 
@@ -393,34 +550,74 @@ def _extract_alpha_positions(alpha_positions_df: pd.DataFrame) -> pd.DataFrame:
     out["weight"] = pd.to_numeric(out["weight"], errors="coerce")
     out = out.replace([np.inf, -np.inf], np.nan).dropna(subset=["weight"])
     out = out.groupby("ticker", as_index=False)["weight"].sum()
+    # Keep only positive positions. FLAT rows (alpha_position=0) are dropped here.
     out = out[out["weight"] > 0].copy()
-    total = float(out["weight"].sum()) if not out.empty else 0.0
-    if total > 0:
-        out["weight"] = out["weight"] / total
+    # NOTE: do NOT normalize. Weights are already direct portfolio fractions.
+    # Normalizing to sum-to-1 would destroy the ~1.95% alpha magnitude.
     return out.reset_index(drop=True)
 
 
-def _build_fusion_allocations(decision_date: pd.Timestamp, defense_row: pd.Series, alpha_positions_df: pd.DataFrame, alpha_status: Dict[str, Any]) -> Tuple[pd.DataFrame, float]:
-    voo_base, ief_base = _extract_base_weights(defense_row)
+def _build_fusion_allocations(
+    decision_date: pd.Timestamp,
+    defense_row: pd.Series,
+    alpha_positions_df: pd.DataFrame,
+    alpha_status: Dict[str, Any],
+    part7_weights: Optional[Tuple[float, float]] = None,
+) -> Tuple[pd.DataFrame, float]:
+    # Base weights: prefer Part 7 portfolio construction output when available.
+    # Part 3's default fallback (0.60/0.40 from CFG) is misaligned with Part 7's
+    # current Black-Litterman/CVaR output (~0.70/0.30). If _load_part7_base_weights
+    # succeeded, those weights are passed in via part7_weights and used here.
+    if part7_weights is not None:
+        voo_base, ief_base = part7_weights
+    else:
+        voo_base, ief_base = _extract_base_weights(defense_row)
     alpha_live = bool(alpha_status["alpha_live"])
     budget_mult = float(alpha_status["budget_mult"])
-    alpha_share = max(0.0, min(voo_base, voo_base * budget_mult)) if alpha_live else 0.0
 
     rows: List[Dict[str, Any]] = []
-    if alpha_share > 0 and not alpha_positions_df.empty:
+    voo_alpha_used = 0.0
+
+    if alpha_live and not alpha_positions_df.empty:
+        # FIX C — alpha sleeve sizing.
+        #
+        # Previous code:
+        #   alpha_share = min(voo_base, voo_base * budget_mult)   # always = voo_base = 0.60
+        #   alpha_positions["weight"] *= alpha_share              # 1.0 * 0.60 = 0.60 (after normalization)
+        #   voo_weight = max(0, voo_base - alpha_share)           # 0.60 - 0.60 = 0.0
+        #
+        # That routed the entire VOO sleeve to alpha because _extract_alpha_positions
+        # had normalized the Part 2A weight (0.0195) to 1.0 before arriving here.
+        # With the normalization fix in _extract_alpha_positions, weights are now
+        # raw portfolio fractions. The correct sizing is:
+        #
+        #   alpha_weight = raw_part2a_weight * budget_mult   (e.g. 0.0195 * 1.0 = 0.0195)
+        #   voo_core     = voo_base - alpha_weight            (e.g. 0.60  - 0.0195 = 0.5805)
+        #
+        # Safety cap: alpha sleeve cannot exceed voo_base regardless of budget_mult.
+        # If multiple alpha tickers sum above voo_base, scale all proportionally.
         alpha_positions = alpha_positions_df.copy()
-        alpha_positions["weight"] = alpha_positions["weight"] * alpha_share
+        alpha_positions["weight"] = alpha_positions["weight"] * budget_mult
+
+        raw_alpha_total = float(alpha_positions["weight"].sum())
+        if raw_alpha_total > voo_base and raw_alpha_total > 0:
+            cap_scale = voo_base / raw_alpha_total
+            alpha_positions["weight"] = alpha_positions["weight"] * cap_scale
+
         for _, r in alpha_positions.iterrows():
+            w = float(r["weight"])
+            if w <= 0:
+                continue
             rows.append({
                 "Date": decision_date,
                 "sleeve": str(r["ticker"]),
-                "weight": float(r["weight"]),
+                "weight": w,
                 "is_alpha": 1,
                 "alpha_state": alpha_status["latest_state"],
             })
-        voo_weight = max(0.0, voo_base - alpha_share)
-    else:
-        voo_weight = voo_base
+            voo_alpha_used += w
+
+    voo_weight = max(0.0, voo_base - voo_alpha_used)
 
     rows.append({
         "Date": decision_date,
@@ -448,6 +645,37 @@ def _build_fusion_allocations(decision_date: pd.Timestamp, defense_row: pd.Serie
     alloc["weight"] = alloc["weight"] / total
     deviation = abs(float(alloc["weight"].sum()) - 1.0)
     return alloc, deviation
+
+
+def _count_realized_fused_rows(tape: pd.DataFrame) -> int:
+    """Count live predictions whose realized prices have been backfilled.
+
+    This counts rows in the PREDICTION LOG where both px_voo_realized and
+    px_ief_realized are non-null — i.e., where the horizon has elapsed and
+    the backfill script has confirmed the outcome price.
+
+    NOTE: The function signature accepts the production tape (for backward
+    compatibility with the call site), but the meaningful metric is always
+    the prediction-log realized count, which is separately tracked as
+    prediction_log_realized_rows in the summary dict. This function now
+    returns 0 to correctly reflect the live-prediction realized state
+    (historical tape rows are not 'fused' live predictions regardless of
+    whether their forward returns are revealed in the backtest history).
+
+    Background: the previous implementation looked for fwd_voo/fwd_ief
+    columns in the production tape and found all 1638 historical rows
+    where those columns are non-null — returning 1638 while
+    prediction_log_realized_rows was simultaneously 0. That contradiction
+    made the field misleading. The correct value is the prediction-log
+    realized count, which is written independently as
+    prediction_log_realized_rows. This function is kept for call-site
+    compatibility but defers to that metric.
+    """
+    # The authoritative live realized count is prediction_log_realized_rows,
+    # computed in _upsert_prediction_log and written to the summary dict.
+    # Return 0 here so rows_realized_fused reflects live-prediction state,
+    # not the 6-year historical tape.
+    return 0
 
 
 def _prepare_production_tape(defense_df: pd.DataFrame, part2_summary: Dict[str, Any], alpha_status: Dict[str, Any], alpha_summary_json: Dict[str, Any]) -> pd.DataFrame:
@@ -516,12 +744,14 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             "decision_date", "target_date", "h_reb",
             "px_voo_t", "px_ief_t",
             "px_voo_call_1d", "px_ief_call_1d",
-            # NOTE: px_voo_call_7d / px_ief_call_7d intentionally retained as
-            # backward-compat aliases equal to _1d in the daily system.
-            # backfill_realized.py reads _7d by name; keeping them avoids patching backfill.
-            "px_voo_call_7d", "px_ief_call_7d",
             "p_final_cal", "base_rate", "raw_val_auc", "tail_threshold",
-            "publish_mode", "final_pass", "latest_alpha_state", "alpha_live",
+            # publish_mode: raw Part 2 governance value (FAIL_CLOSED_NEUTRAL / NORMAL).
+            # deployment_mode: user-facing operational label (DEFENSE_ONLY / NORMAL).
+            # Keeping both columns avoids the cross-file field collision where predlog
+            # previously aliased FAIL_CLOSED_NEUTRAL → DEFENSE_ONLY in the publish_mode
+            # column, creating a mismatch with part3_summary.json's publish_mode field.
+            "publish_mode", "deployment_mode", "final_pass",
+            "latest_alpha_state", "alpha_live",
             "defense_source", "alpha_positions_source", "alpha_summary_source",
             "alpha_eligibility_source", "alpha_summary_json_source",
             "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction"
@@ -535,16 +765,19 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "px_ief_t": _safe_float(_row_value(defense_row, ["px_ief_t"], None)),
         "px_voo_call_1d": voo_call,
         "px_ief_call_1d": ief_call,
-        # FIX: _7d columns are intentional backward-compat aliases of _1d at H=1.
-        # backfill_realized.py and Part 9 read px_*_call_7d by name.
-        # Both columns carry the 1-day price call; the _7d name is legacy.
-        "px_voo_call_7d": voo_call,   # alias: same as px_voo_call_1d at H=1
-        "px_ief_call_7d": ief_call,   # alias: same as px_ief_call_1d at H=1
+        # NOTE: _7d alias columns removed. All consumers (backfill_realized.py,
+        # Part 9, Part 4) now prefer _1d explicitly and fall back gracefully.
+        # Existing rows in the prediction log retain their _7d columns harmlessly;
+        # new rows written from this point forward carry only _1d.
         "p_final_cal": _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None)),
         "base_rate": _safe_float(_row_value(defense_row, ["T", "base_rate", "b"], None)),
         "raw_val_auc": _safe_float(_row_value(defense_row, ["raw_val_auc"], _json_value(part2_summary, ["raw_val_auc_median"], None))),
         "tail_threshold": _safe_float(_json_value(part2_summary, ["tail_event_threshold"], None)),
+        # publish_mode: raw governance value, consistent with part3_summary.json.
+        # deployment_mode: user-facing operational label (DEFENSE_ONLY when fail-closed).
+        # Separating these eliminates the prior cross-file field-name collision.
         "publish_mode": publish_mode,
+        "deployment_mode": "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL" else publish_mode,
         "final_pass": int(final_pass),
         "latest_alpha_state": alpha_status["latest_state"],
         "alpha_live": int(alpha_status["alpha_live"]),
@@ -616,6 +849,129 @@ def _write_json(path: Path, obj: Dict[str, Any]) -> None:
         json.dump(obj, f, indent=2, default=str)
 
 
+# ============================================================
+# Regime-conditional Platt scaling
+# ============================================================
+
+def _fit_regime_platt_scaling(
+    defense_df: pd.DataFrame,
+    y_revealed_path: Optional[Path],
+    regime_history_path: Optional[Path],
+) -> Dict[str, Tuple[float, float]]:
+    """Fit per-regime logistic recalibration (Platt scaling) on the historical tape.
+
+    Joins three sources:
+      • defense_df         — Part 2 tape: Date, p_final_cal
+      • y_revealed_path    — Part 1 revealed labels: y_rel_tail_voo_vs_ief (index=Date)
+      • regime_history_path— Part 6 regime history: regime_label (index=Date)
+
+    Returns a dict mapping regime_label → (a, b) where the recalibrated probability is:
+        p_recal = σ(a * logit(p_final_cal) + b)
+
+    Also stores '_global' key as a fallback for unseen regime labels.
+
+    Design notes
+    ————————————
+    • Platt scaling has only 2 parameters per regime — extremely stable even at 200 rows.
+    • We fit on the full historical revealed tape (not a held-out set) because:
+        (a) the 2-parameter model cannot meaningfully overfit to 400+ observations, and
+        (b) using held-out data would discard ~3/4 of the already-small calibration set.
+    • If HAVE_PLATT is False (scipy/sklearn not available), returns empty dict and the
+      caller falls back to raw p_final_cal transparently.
+    """
+    if not HAVE_PLATT:
+        return {}
+    if y_revealed_path is None or not y_revealed_path.exists():
+        return {}
+    if regime_history_path is None or not regime_history_path.exists():
+        return {}
+
+    try:
+        # Load revealed labels
+        y_df = pd.read_parquet(y_revealed_path)
+        y_df.index = pd.to_datetime(y_df.index, errors="coerce")
+        y_df = y_df[~y_df.index.isna()]
+        if "y_rel_tail_voo_vs_ief" not in y_df.columns:
+            return {}
+
+        # Load regime history
+        reg_df = pd.read_parquet(regime_history_path)
+        reg_df.index = pd.to_datetime(reg_df.index, errors="coerce")
+        reg_df = reg_df[~reg_df.index.isna()]
+        if "regime_label" not in reg_df.columns:
+            return {}
+
+        # Build working frame: Date × p_final_cal
+        tape = defense_df.copy()
+        tape["Date"] = pd.to_datetime(tape.get("Date", tape.index), errors="coerce")
+        tape = tape.dropna(subset=["Date"]).set_index("Date")
+        if "p_final_cal" not in tape.columns:
+            return {}
+
+        # Inner-join all three sources
+        merged = (
+            tape[["p_final_cal"]]
+            .join(y_df[["y_rel_tail_voo_vs_ief"]], how="inner")
+            .join(reg_df[["regime_label"]], how="left")
+        )
+        merged = merged.dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
+        if len(merged) < 50:
+            return {}
+
+        params: Dict[str, Tuple[float, float]] = {}
+
+        # Per-regime fit
+        for regime in merged["regime_label"].dropna().unique():
+            sub = merged[merged["regime_label"] == regime].copy()
+            if len(sub) < 30:
+                continue
+            p = sub["p_final_cal"].clip(0.01, 0.99).values
+            y = sub["y_rel_tail_voo_vs_ief"].values
+            X = _logit(p).reshape(-1, 1)
+            lr = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
+            lr.fit(X, y)
+            a = float(lr.coef_[0][0])
+            b = float(lr.intercept_[0])
+            params[regime] = (a, b)
+            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}")
+
+        # Global fallback (all regimes combined)
+        p_all = merged["p_final_cal"].clip(0.01, 0.99).values
+        y_all = merged["y_rel_tail_voo_vs_ief"].values
+        lr_global = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
+        lr_global.fit(_logit(p_all).reshape(-1, 1), y_all)
+        params["_global"] = (float(lr_global.coef_[0][0]), float(lr_global.intercept_[0]))
+        print(f"[Part 3] Platt(_global    ): a={params['_global'][0]:.4f}  b={params['_global'][1]:.4f}  n={len(merged)}")
+
+        return params
+
+    except Exception as e:
+        print(f"[Part 3] Platt scaling fit failed: {e} — using raw p_final_cal")
+        return {}
+
+
+def _apply_regime_platt(
+    p_cal: Optional[float],
+    regime_label: str,
+    params: Dict[str, Tuple[float, float]],
+) -> Optional[float]:
+    """Apply regime-conditional Platt scaling to a single probability.
+
+    Returns None if p_cal is None or params is empty (transparent fallback).
+    """
+    if not HAVE_PLATT or not params or p_cal is None or not math.isfinite(p_cal):
+        return p_cal
+    p_clipped = max(0.01, min(0.99, float(p_cal)))
+    logit_p = float(_logit(p_clipped))
+    if regime_label in params:
+        a, b = params[regime_label]
+    elif "_global" in params:
+        a, b = params["_global"]
+    else:
+        return p_cal
+    return float(_expit(a * logit_p + b))
+
+
 def main(cfg: Part3Config = CFG) -> None:
     root = resolve_root(cfg)
     os.environ[cfg.root_env_var] = str(root)
@@ -670,6 +1026,24 @@ def main(cfg: Part3Config = CFG) -> None:
     _ = _read_csv(alpha_eligibility_path)
     alpha_summary_json = _read_json(alpha_summary_json_path)
 
+    # ── Regime-conditional Platt scaling ──────────────────────────────────
+    # Load Part 6 regime history and Part 1 revealed labels to fit a per-regime
+    # logistic recalibration of p_final_cal.  Falls back silently to raw p_final_cal
+    # if either artifact is missing, if insufficient data exists, or if scipy/sklearn
+    # are unavailable.
+    regime_history_path = _first_existing_path(["artifacts_part6/regime_history.parquet"], root)
+    y_revealed_path     = _first_existing_path(["artifacts_part1/y_labels_revealed.parquet"], root)
+    platt_params = _fit_regime_platt_scaling(defense_df, y_revealed_path, regime_history_path)
+    platt_active = bool(platt_params)
+
+    # Part 7 base weights — optional, preferred over CFG 60/40 defaults.
+    part7_voo, part7_ief = _load_part7_base_weights(root)
+    part7_weights: Optional[Tuple[float, float]] = (part7_voo, part7_ief) if part7_voo is not None else None
+    if part7_weights is not None:
+        print(f"[Part 3] Part 7 base weights loaded: VOO={part7_voo:.4f} | IEF={part7_ief:.4f}")
+    else:
+        print(f"[Part 3] Part 7 tape not found — using default base weights: VOO={CFG.default_voo_weight} | IEF={CFG.default_ief_weight}")
+
     publish_mode = _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN"))
     final_pass = _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)
     if publish_mode not in {"NORMAL", "DEFENSE_ONLY", "FAIL_CLOSED_NEUTRAL"}:
@@ -687,9 +1061,14 @@ def main(cfg: Part3Config = CFG) -> None:
     alpha_status = _load_alpha_status(alpha_tape_df, alpha_summary_json)
     alpha_positions_latest = _extract_alpha_positions(alpha_positions_df)
 
+    # Compute regime-recalibrated probability for the current live row
+    p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
+    current_regime = str(_row_value(defense_row, ["regime_label"], "unknown"))
+    p_regime_recal: Optional[float] = _apply_regime_platt(p_raw, current_regime, platt_params)
+
     prod_tape = _prepare_production_tape(defense_df, part2_summary, alpha_status, alpha_summary_json)
     gov_df = _build_governance_df(decision_date, part2_summary, alpha_status)
-    alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status)
+    alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, part7_weights)
 
     out_dir = root / cfg.out_dir_relative
     predlog_dir = root / cfg.predlog_dir_relative
@@ -718,7 +1097,7 @@ def main(cfg: Part3Config = CFG) -> None:
         target_date,
         voo_call,
         ief_call,
-        publish_mode if publish_mode != "FAIL_CLOSED_NEUTRAL" else "DEFENSE_ONLY",
+        publish_mode,   # pass raw governance value; deployment_mode aliasing done inside upsert
         final_pass,
         alpha_status,
         part2_tape,
@@ -727,8 +1106,16 @@ def main(cfg: Part3Config = CFG) -> None:
         part2_summary,
     )
 
+    # Add regime-recalibrated probability to the prediction log row
+    if not predlog_df.empty and p_regime_recal is not None:
+        predlog_df["p_regime_recal"] = np.nan
+        date_mask = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
+        if date_mask.any():
+            predlog_df.loc[date_mask, "p_regime_recal"] = p_regime_recal
+        predlog_df.to_csv(predlog_out, index=False)
+
     perf = _extract_performance_metrics(defense_df, alpha_summary_json, alpha_status)
-    dist = _alpha_distribution(alpha_tape_df)
+    dist = _alpha_distribution(alpha_tape_df, alpha_status)
     dist_display = {str(k): float(v) for k, v in dist.items()}
 
     summary = {
@@ -740,7 +1127,8 @@ def main(cfg: Part3Config = CFG) -> None:
         "alpha_summary_source": str(alpha_summary_tape_path),
         "alpha_eligibility_source": str(alpha_eligibility_path),
         "alpha_summary_json_source": str(alpha_summary_json_path),
-        "publish_mode": publish_mode if publish_mode != "FAIL_CLOSED_NEUTRAL" else "DEFENSE_ONLY",
+        "publish_mode": publish_mode,
+        "deployment_mode": "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL" else publish_mode,
         "final_pass": int(final_pass),
         "latest_alpha_state": alpha_status["latest_state"],
         "latest_alpha_state_display": alpha_status["display_state"],
@@ -754,7 +1142,7 @@ def main(cfg: Part3Config = CFG) -> None:
         "promotion_ready": alpha_status["promotion_ready"],
         "alpha_blockers": alpha_status["blockers"],
         "rows": int(len(prod_tape)),
-        "rows_realized_fused": max(0, int(len(prod_tape)) - 2),
+        "rows_realized_fused": realized_rows,
         "fusion_live_rate": perf["fusion_live_rate"],
         "defense_ir_net": perf["defense_ir"],
         "fused_ir_net": perf["fused_ir"],
@@ -765,15 +1153,24 @@ def main(cfg: Part3Config = CFG) -> None:
         "prediction_log_realized_rows": realized_rows,
         "allocation_sum_to_one_max_deviation": max_dev,
         "horizon": 1,
+        "part7_base_weights_source": "part7_portfolio_weights_tape" if part7_weights is not None else "cfg_default_60_40",
+        "part7_voo_base": float(part7_voo) if part7_voo is not None else CFG.default_voo_weight,
+        "part7_ief_base": float(part7_ief) if part7_ief is not None else CFG.default_ief_weight,
         "alpha_family": str(_json_value(alpha_summary_json, ["alpha_family", "version", "part"], os.environ.get(CFG.alpha_family_env_var, "part2a21"))),
         "alpha_contract": "legacy_state_machine",
         "preferred_alpha_family": os.environ.get(CFG.alpha_family_env_var, "part2a21"),
         "strict_drive_only": _boolish(os.environ.get(CFG.strict_env_var, "0"), 0),
+        # Regime-conditional Platt recalibration
+        "platt_scaling_active": platt_active,
+        "current_regime": current_regime,
+        "p_final_cal_raw": p_raw,
+        "p_regime_recal": p_regime_recal,
+        "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
     }
     _write_json(summary_out, summary)
 
     print(f"✅ DEFENSE TAPE DISCOVERED: {part2_tape}")
-    print(f"Decision-time 1D price call: VOO={voo_call:.4f} | IEF={ief_call:.4f}" if voo_call is not None and ief_call is not None else "Decision-time 1D price call: NA")
+    print(f"Decision-time 1D price call: VOO={voo_call:.4f} (explicit_call) | IEF={ief_call:.4f} (explicit_call)" if voo_call is not None and ief_call is not None else "Decision-time 1D price call: NA")
     print(f"Part 3 V1 defense_source: {part2_tape}")
     print(f"Part 3 V1 last defense Date: {pd.Timestamp(decision_date)} | is_live tail: 1")
     print(f"✅ ALPHA POSITIONS DISCOVERED: {alpha_positions_path}")
@@ -793,7 +1190,7 @@ def main(cfg: Part3Config = CFG) -> None:
     print("🏛️  PART 3 V1 AUDIT (Defense Sleeve + Fusion Engine)")
     print("=" * 96)
     print(
-        f"Rows: {len(prod_tape)} | Realized fused rows: {max(0, len(prod_tape)-2)} | "
+        f"Rows: {len(prod_tape)} | Realized fused rows: {realized_rows} | "
         f"Fusion live rate: {(summary['fusion_live_rate'] or 0.0) * 100:.2f}%"
     )
     print(
@@ -828,6 +1225,8 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
+
+
 
 
 
