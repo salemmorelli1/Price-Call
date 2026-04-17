@@ -967,7 +967,15 @@ def _risk_overlay_metrics_g53(
     overlay_on = int(
         np.isfinite(p_tail_base)
         and trust >= 0.45
-        and caution_signal >= 0.10
+        and caution_signal >= 0.40  # raised from 0.10 → top-quartile uncertainty only
+        # Rationale: at threshold=0.10, caution_signal exceeds it on every row
+        # (dist_overlay_on_rate=1.0), making the overlay a constant 8% shrinkage
+        # rather than a selective event gate.  At threshold=0.40, the overlay fires
+        # only when distributional uncertainty is genuinely elevated (~top 25% of
+        # the historical distribution), preserving its intended selective character.
+        # Expected effect: dist_overlay_on_rate drops from ~1.0 to ~0.25; rows with
+        # low uncertainty receive the full classifier probability; rows with genuinely
+        # wide predictive distributions receive the shrinkage.
     )
 
     tail_shift = float(min(
@@ -2169,5 +2177,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
 
