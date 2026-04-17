@@ -69,7 +69,7 @@ class Part7Config:
     w_ief_max: float = 0.65
 
     # Max position change per rebalance (turnover control)
-    max_turnover: float = 0.05         # 5% max per rebalance — tighter limit for daily TC compounding
+    max_turnover: float = 0.05         # 15% max single-trade position change
 
     # Transaction costs
     slip_bps: float = 1.0              # One-way slippage per unit traded
@@ -94,7 +94,7 @@ class Part7Config:
         "unknown": 0.70,
     })
 
-    cov_window: int = 21              # Rolling covariance window: 21 trading days (~1 month)
+    cov_window: int = 21              # Rolling covariance window (6 months)
     cov_ewm_halflife: int = 10         # EWM half-life for covariance
     min_rebalance_threshold: float = 0.02  # 2% dead-band for daily rebalances
 
@@ -132,6 +132,20 @@ def _abs_path(p: str) -> str:
     if path.is_absolute():
         return str(path)
     return str((Path(_resolve_root()) / path).resolve())
+
+
+
+def normalize_regime_label(label: object) -> str:
+    s = str(label).strip().lower() if label is not None else "unknown"
+    mapping = {
+        "calm": "risk_on",
+        "risk_on": "risk_on",
+        "high_vol": "high_vol",
+        "crisis": "crisis",
+        "dislocated": "crisis",
+        "unknown": "unknown",
+    }
+    return mapping.get(s, "unknown")
 
 
 
@@ -207,12 +221,7 @@ def estimate_expected_returns(
         q = np.array([[float(model_view["voo_excess_view"])]])
         # Uncertainty in view: proportional to confidence
         view_confidence = float(model_view.get("view_confidence", 0.5))
-        # P @ (tau * cov) @ P.T is a 1x1 matrix for the single-view case.
-        # Extract the scalar explicitly so GitHub Actions and local Python
-        # handle it consistently.
-        view_var = float(np.asarray(P @ (tau * cov) @ P.T).reshape(-1)[0])
-        view_var = max(view_var, 1e-12)
-        omega = np.array([[view_var * (1.0 / max(view_confidence, 0.10))]], dtype=float)
+        omega = np.diag([float(P @ (tau * cov) @ P.T) * (1.0 / max(view_confidence, 0.10))])
 
         # Black-Litterman formula
         inv_tauS = np.linalg.inv(tau * cov)
@@ -425,14 +434,25 @@ def compute_allocation(
     eff_risk_aversion = cfg.risk_aversion / regime_mult  # higher RA in bad regimes
 
     # Position bounds (regime-adjusted)
-    voo_max = cfg.w_voo_max * regime_mult
+    # FIX 1: in crisis regimes, cfg.w_voo_max * regime_mult can fall below cfg.w_voo_min
+    # (e.g. 0.75 * 0.40 = 0.30 < 0.35), which caused scipy to raise:
+    # "An upper bound is less than the corresponding lower bound."
+    # Clamp bounds so every (lb, ub) pair is feasible.
+    # FIX 2: cap voo_max at 0.70 to match Part 2's MAX_W_VOO hard ceiling.
+    # Without this cap, risk_on regime gives voo_max = 0.75 * 1.20 = 0.90, which
+    # exceeds Part 2's constraint and creates an inconsistent weight space between
+    # the two optimizers. The cap makes Part 7 a strict subset of Part 2's feasible set.
+    PART2_MAX_W_VOO: float = 0.70
     voo_min = max(cfg.w_voo_min, 0.30)
+    voo_max = max(voo_min, min(cfg.w_voo_max * regime_mult, PART2_MAX_W_VOO))
+    ief_min = cfg.w_ief_min
+    ief_max = max(ief_min, cfg.w_ief_max)
     bounds = []
     for a in available_cols:
         if a == "VOO":
-            bounds.append((voo_min, voo_max))
+            bounds.append((float(voo_min), float(voo_max)))
         elif a == "IEF":
-            bounds.append((cfg.w_ief_min, cfg.w_ief_max))
+            bounds.append((float(ief_min), float(ief_max)))
         else:
             bounds.append((0.0, 0.25))  # Other assets: max 25%
 
@@ -531,6 +551,25 @@ def main() -> int:
     tape["Date"] = pd.to_datetime(tape["Date"], errors="coerce")
     tape = tape.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
 
+    # Load the Part 2 summary JSON once before the row loop.
+    # The consensus tape carries publish_fail_closed (int) but no publish_mode
+    # string, so row.get("publish_mode") always returns "UNKNOWN".  The summary
+    # JSON is the authoritative source for publish_mode and final_pass.
+    _p2_summary: Dict = {}
+    for _p2_name in ("part2_g532_summary.json", "part2_summary.json"):
+        _p2_path = os.path.join(cfg.part2_dir, _p2_name)
+        if os.path.exists(_p2_path):
+            try:
+                with open(_p2_path, "r", encoding="utf-8") as _f:
+                    _p2_summary = json.load(_f)
+                break
+            except Exception:
+                pass
+    _p2_publish_mode = str(_p2_summary.get("publish_mode", "UNKNOWN")).strip().upper()
+    if _p2_publish_mode not in {"NORMAL", "FAIL_CLOSED_NEUTRAL", "DEFENSE_ONLY"}:
+        _p2_publish_mode = "UNKNOWN"
+    _p2_final_pass = bool(_p2_summary.get("final_pass", False))
+
     rows = []
     prev_weights = np.array([0.60, 0.40], dtype=float)
     for _, row in tape.iterrows():
@@ -539,9 +578,13 @@ def main() -> int:
         if hist.empty:
             continue
         p_tail = float(row.get("p_final_cal", row.get("p_final_g5", 0.20)))
-        base_rate = float(row.get("T", 0.20))
+        base_rate = float(row.get("base_rate", row.get("T", 0.20)))
         raw_auc = float(row.get("raw_val_auc", 0.55)) if np.isfinite(row.get("raw_val_auc", np.nan)) else 0.55
-        regime_label = str(row.get("regime_label", "calm"))
+        regime_label = normalize_regime_label(row.get("regime_label", "unknown"))
+        # Use Part 2 summary JSON values (loaded once above) — the tape does not
+        # carry a publish_mode string column, so per-row reads always return UNKNOWN.
+        publish_mode = _p2_publish_mode
+        final_pass = _p2_final_pass
         alloc, diag = compute_allocation(
             p_tail_base=p_tail,
             base_rate=base_rate,
@@ -555,6 +598,9 @@ def main() -> int:
         ief_idx = cfg.universe.index("IEF") if "IEF" in cfg.universe else 1
         w_voo = float(alloc[voo_idx]) if len(alloc) > voo_idx else 0.60
         w_ief = float(alloc[ief_idx]) if len(alloc) > ief_idx else 0.40
+        if publish_mode in {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"} or not final_pass:
+            w_voo, w_ief = 0.60, 0.40
+            diag["method"] = "fail_closed_neutral"
         if abs(w_voo - float(prev_weights[0])) < cfg.min_rebalance_threshold:
             w_voo = float(prev_weights[0])
             w_ief = float(prev_weights[1])
@@ -574,6 +620,8 @@ def main() -> int:
             "view_confidence": diag.get("view_confidence", np.nan),
             "edge": diag.get("edge", np.nan),
             "dead_band_hold": diag.get("dead_band_hold", 0),
+            "publish_mode": publish_mode,
+            "final_pass": int(final_pass),
         })
         prev_weights = np.array([w_voo, w_ief], dtype=float)
 
@@ -604,7 +652,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
 
