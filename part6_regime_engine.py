@@ -88,7 +88,7 @@ class Part6Config:
     out_dir: str = _DRIVE_ROOT + "/artifacts_part6"
     horizon: int = 1
 
-    n_regimes: int = 3
+    n_regimes: int = 4
     hmm_covariance_type: str = "full"
     hmm_n_iter: int = 500
     hmm_min_train_rows: int = 252
@@ -236,20 +236,30 @@ def _load_part0_features(cfg: Part6Config) -> pd.DataFrame:
 
 
 def _label_regimes_by_vol(cluster_labels: np.ndarray, feature_df: pd.DataFrame, vol_col: str = "vix_z21") -> Dict[int, str]:
+    """Assign regime names ordered by ascending VIX z-score mean.
+
+    4-regime semantic map (from calmest to most stressed):
+      calm     — bottom quartile of VIX: quiet bull, very low vol
+      risk_on  — second quartile: normal expansionary environment
+      high_vol — third quartile: elevated vol, policy uncertainty, moderate stress
+      crisis   — top quartile: genuine tail events, crash episodes
+
+    With 4 regimes, each occupies ~25% of history, keeping "crisis" semantically
+    meaningful (vs the 3-regime version where the top-VIX tercile ≈ 33% of all
+    days was labeled crisis, including normal rate-hiking periods).
+    """
     if vol_col not in feature_df.columns:
-        return {0: "risk_on", 1: "high_vol", 2: "crisis"}
+        return {0: "calm", 1: "risk_on", 2: "high_vol", 3: "crisis"}
     means = {}
     for k in np.unique(cluster_labels):
         mask = cluster_labels == k
         means[int(k)] = float(np.nanmean(feature_df.loc[mask, vol_col].values))
     ordered = sorted(means.keys(), key=lambda k: means[k])
     names = {}
-    if len(ordered) >= 1:
-        names[ordered[0]] = "risk_on"
-    if len(ordered) >= 2:
-        names[ordered[1]] = "high_vol"
-    if len(ordered) >= 3:
-        names[ordered[2]] = "crisis"
+    regime_name_order = ["calm", "risk_on", "high_vol", "crisis"]
+    for i, regime_id in enumerate(ordered):
+        if i < len(regime_name_order):
+            names[regime_id] = regime_name_order[i]
     return names
 
 
@@ -338,7 +348,7 @@ class RegimeEngine:
         if Xg.empty:
             out["regime_label"] = "unknown"
             out["regime_id"] = -1
-            for name in ["risk_on", "high_vol", "crisis"]:
+            for name in ["calm", "risk_on", "high_vol", "crisis"]:
                 out[f"regime_prob_{name}"] = np.nan
             out["regime_persistence"] = np.nan
             out["transition_prob_crisis"] = np.nan
@@ -365,7 +375,7 @@ class RegimeEngine:
         out["regime_id"] = result_ids
         for cid, name in self.regime_map.items():
             out[f"regime_prob_{name}"] = result_probs[:, cid]
-        for name in ["risk_on", "high_vol", "crisis"]:
+        for name in ["calm", "risk_on", "high_vol", "crisis"]:
             col = f"regime_prob_{name}"
             if col not in out.columns:
                 out[col] = np.nan
@@ -478,4 +488,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
