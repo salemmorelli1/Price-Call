@@ -1541,8 +1541,7 @@
       lines.push("");
       lines.push("ROW COUNTS:");
       Object.entries(counts).forEach(([k, v]) => lines.push(`- ${k}=${v}`));
-      return lines.join("
-");
+      return lines.join("\n");
     }
 
     function populatePredictionSnapshotCard(forecast) {
