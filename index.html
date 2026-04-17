@@ -335,7 +335,7 @@
     <div class="header">
       <div class="title">
         <h1>Price-Call — Production Dashboard</h1>
-        <p>Monitoring system for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once the Bot successfully trades, use ALPCA API to move a small live capital after the maturity gate and execution plumbing are proven. </p>
+        <p>GitHub-connected monitor for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution.</p>
       </div>
       <div class="controls">
         <button id="refreshBtn" class="primary">Refresh</button>
@@ -346,14 +346,14 @@
 
     <div class="grid hero-grid">
       <div class="card hero-card">
-        <div class="label">1-Day VOO Forecast</div>
+        <div class="label">7-Day VOO Forecast</div>
         <div class="hero-big" id="heroVooCall">—</div>
         <div class="hero-sub" id="heroVooMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroVooSrc">Source: —</div>
       </div>
 
       <div class="card hero-card">
-        <div class="label">1-Day IEF Forecast</div>
+        <div class="label">7-Day IEF Forecast</div>
         <div class="hero-big" id="heroIefCall">—</div>
         <div class="hero-sub" id="heroIefMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroIefSrc">Source: —</div>
@@ -461,7 +461,7 @@
           <div id="predChart" class="chart"></div>
         </div>
         <div class="card">
-          <div class="label">7D Forecast Error Panel</div>
+          <div class="label">1-Day Forecast Error Panel</div>
           <div id="errorChart" class="chart"></div>
         </div>
       </div>
@@ -507,15 +507,15 @@
           </div>
           <div class="snapshot-grid">
             <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val" id="govSnapDate">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">alpha_eff_final</div><div class="snapshot-val" id="govSnapAlphaEff">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">gov_scale</div><div class="snapshot-val" id="govSnapScale">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_live</div><div class="snapshot-val" id="govSnapHealthLive">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore_realized</div><div class="snapshot-val" id="govSnapHealthReal">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Lift_End</div><div class="snapshot-val" id="govSnapLift">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">dES_P_End</div><div class="snapshot-val" id="govSnapDes">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">AnnCostDrag_Roll</div><div class="snapshot-val" id="govSnapCost">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">TurnEff_Roll</div><div class="snapshot-val" id="govSnapTurnEff">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">GovHealthScore</div><div class="snapshot-val" id="govSnapHealthAny">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">final_pass</div><div class="snapshot-val" id="govSnapAlphaEff">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">quality_ok</div><div class="snapshot-val" id="govSnapScale">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">drift_ok</div><div class="snapshot-val" id="govSnapHealthLive">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">trial_gate_open</div><div class="snapshot-val" id="govSnapHealthReal">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">fused_gate_open</div><div class="snapshot-val" id="govSnapLift">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">promotion_ready</div><div class="snapshot-val" id="govSnapDes">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">alpha_state_display</div><div class="snapshot-val" id="govSnapCost">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">alpha_live</div><div class="snapshot-val" id="govSnapTurnEff">—</div></div>
+            <div class="snapshot-item"><div class="snapshot-key">drift_rate</div><div class="snapshot-val" id="govSnapHealthAny">—</div></div>
           </div>
         </div>
       </div>
@@ -830,13 +830,54 @@
       if (!row) return false;
       return Number.isFinite(toNumber(row.px_voo_realized)) && Number.isFinite(toNumber(row.px_ief_realized));
     }
+
+    function rowCall(row, asset) {
+      if (!row) return NaN;
+      const cols = asset === "VOO"
+        ? ["px_voo_call_1d", "voo_call_1d", "px_voo_call_7d", "voo_call_7d"]
+        : ["px_ief_call_1d", "ief_call_1d", "px_ief_call_7d", "ief_call_7d"];
+      for (const c of cols) {
+        const v = toNumber(row[c]);
+        if (Number.isFinite(v)) return v;
+      }
+      return NaN;
+    }
+
+    function normalizeAllocRow(r) {
+      const sleeve = String(r.sleeve || r.Ticker || r.ticker || r.asset || "").trim();
+      const isAlphaNum = toNumber(r.is_alpha);
+      const isAlpha = Number.isFinite(isAlphaNum)
+        ? isAlphaNum === 1
+        : (!isMissing(r.bucket) && String(r.bucket).toLowerCase().includes("alpha"));
+
+      const state = !isMissing(r.alpha_state_display)
+        ? r.alpha_state_display
+        : (!isMissing(r.alpha_state) ? r.alpha_state : "NA");
+
+      const bucket = isAlpha
+        ? "ALPHA"
+        : (sleeve === "VOO" ? "VOO_CORE" : (sleeve === "IEF" ? "IEF_CORE" : "CORE"));
+
+      const label = isAlpha ? `${sleeve || "ALPHA"} α` : `${sleeve || "CORE"} core`;
+
+      return {
+        ...r,
+        sleeve,
+        weight: toNumber(r.weight),
+        is_alpha: isAlpha ? 1 : 0,
+        alpha_state_display: state,
+        bucket,
+        label,
+        fusion_live: Number.isFinite(toNumber(r.fusion_live)) ? toNumber(r.fusion_live) : (isAlpha ? 1 : 0)
+      };
+    }
     function deriveTargetDate(row) {
       if (!row) return "NA";
       if (!isMissing(row.target_date)) return fmtDate(row.target_date);
       const decision = parseDateOnly(row.decision_date || row.Date);
       if (!decision) return "NA";
       const hRaw = toNumber(row.h_reb);
-      const h = Number.isFinite(hRaw) && hRaw > 0 ? Math.round(hRaw) : 7;
+      const h = Number.isFinite(hRaw) && hRaw > 0 ? Math.round(hRaw) : 1;
       const target = addCalendarDays(decision, h);
       return target ? fmtDate(target) : "NA";
     }
@@ -999,23 +1040,26 @@
     }
 
     function aggregateFusionAllocations(allocRows) {
+      const norm = (allocRows || []).map(normalizeAllocRow);
       const map = new Map();
-      for (const r of allocRows) {
+      for (const r of norm) {
         const dt = fmtDate(r.Date);
         if (dt === "NA") continue;
-        if (!map.has(dt)) map.set(dt, { Date: dt, core_voo: 0, core_ief: 0, alpha_gross: 0, total: 0, alpha_state_display: "NA", fusion_live: NaN });
+        if (!map.has(dt)) {
+          map.set(dt, { Date: dt, core_voo: 0, core_ief: 0, alpha_gross: 0, total: 0, alpha_state_display: "NA", fusion_live: 0 });
+        }
         const rec = map.get(dt);
         const w = toNumber(r.weight);
         if (!Number.isFinite(w)) continue;
         rec.total += w;
-        const tk = String(r.Ticker || "");
-        if (tk === "VOO_CORE") rec.core_voo += w;
-        else if (tk === "IEF_CORE") rec.core_ief += w;
-        else rec.alpha_gross += w;
+        if (r.is_alpha === 1) rec.alpha_gross += w;
+        else if (r.sleeve === "VOO") rec.core_voo += w;
+        else if (r.sleeve === "IEF") rec.core_ief += w;
         if (!isMissing(r.alpha_state_display)) rec.alpha_state_display = r.alpha_state_display;
         if (Number.isFinite(toNumber(r.fusion_live))) rec.fusion_live = toNumber(r.fusion_live);
+        else if (r.is_alpha === 1 && w > 0) rec.fusion_live = 1;
       }
-      return [...map.values()].sort((a,b) => new Date(a.Date) - new Date(b.Date));
+      return [...map.values()].sort((a, b) => new Date(a.Date) - new Date(b.Date));
     }
 
     function buildSystemStatus(prodTape, predLog) {
@@ -1025,12 +1069,22 @@
       const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       let ageDays = NaN;
       if (lastDate) ageDays = Math.round((todayUtc - lastDate) / 86400000);
+
       let status = "STALE";
       if (Number.isFinite(ageDays) && ageDays <= 1) status = "LIVE";
       else if (Number.isFinite(ageDays) && ageDays <= CFG.maxDelayDays) status = "DELAYED";
+
       const realizedRows = realizedRowCount(predLog);
-      const maturity = realizedRows < 10 ? "PARTIALLY MATURED" : "MATURED";
-      return { status, maturity, lastDate: latestTape ? fmtDate(latestTape.Date) : "NA", todayUtc: todayUtc.toISOString().slice(0,10), ageDays: Number.isFinite(ageDays) ? ageDays : "NA", realizedRows };
+      const maturity = realizedRows < 60 ? "IMMATURE" : "MATURED";
+
+      return {
+        status,
+        maturity,
+        lastDate: latestTape ? fmtDate(latestTape.Date) : "NA",
+        todayUtc: todayUtc.toISOString().slice(0, 10),
+        ageDays: Number.isFinite(ageDays) ? ageDays : "NA",
+        realizedRows
+      };
     }
 
     function buildForecastSnapshot(predLog, prodTape) {
@@ -1060,25 +1114,15 @@
         NaN;
 
       const vooCall =
-        Number.isFinite(toNumber(predRow?.px_voo_call_1d)) ? toNumber(predRow.px_voo_call_1d) :
-        Number.isFinite(toNumber(predRow?.px_voo_call_7d)) ? toNumber(predRow.px_voo_call_7d) :
-        Number.isFinite(toNumber(predRow?.voo_call_1d)) ? toNumber(predRow.voo_call_1d) :
-        Number.isFinite(toNumber(predRow?.voo_call_7d)) ? toNumber(predRow.voo_call_7d) :
-        Number.isFinite(toNumber(matchedProdRow?.px_voo_call_1d)) ? toNumber(matchedProdRow.px_voo_call_1d) :
-        Number.isFinite(toNumber(matchedProdRow?.px_voo_call_7d)) ? toNumber(matchedProdRow.px_voo_call_7d) :
-        Number.isFinite(toNumber(latestProdRow?.px_voo_call_1d)) ? toNumber(latestProdRow.px_voo_call_1d) :
-        Number.isFinite(toNumber(latestProdRow?.px_voo_call_7d)) ? toNumber(latestProdRow.px_voo_call_7d) :
+        Number.isFinite(rowCall(predRow, "VOO")) ? rowCall(predRow, "VOO") :
+        Number.isFinite(rowCall(matchedProdRow, "VOO")) ? rowCall(matchedProdRow, "VOO") :
+        Number.isFinite(rowCall(latestProdRow, "VOO")) ? rowCall(latestProdRow, "VOO") :
         NaN;
 
       const iefCall =
-        Number.isFinite(toNumber(predRow?.px_ief_call_1d)) ? toNumber(predRow.px_ief_call_1d) :
-        Number.isFinite(toNumber(predRow?.px_ief_call_7d)) ? toNumber(predRow.px_ief_call_7d) :
-        Number.isFinite(toNumber(predRow?.ief_call_1d)) ? toNumber(predRow.ief_call_1d) :
-        Number.isFinite(toNumber(predRow?.ief_call_7d)) ? toNumber(predRow.ief_call_7d) :
-        Number.isFinite(toNumber(matchedProdRow?.px_ief_call_1d)) ? toNumber(matchedProdRow.px_ief_call_1d) :
-        Number.isFinite(toNumber(matchedProdRow?.px_ief_call_7d)) ? toNumber(matchedProdRow.px_ief_call_7d) :
-        Number.isFinite(toNumber(latestProdRow?.px_ief_call_1d)) ? toNumber(latestProdRow.px_ief_call_1d) :
-        Number.isFinite(toNumber(latestProdRow?.px_ief_call_7d)) ? toNumber(latestProdRow.px_ief_call_7d) :
+        Number.isFinite(rowCall(predRow, "IEF")) ? rowCall(predRow, "IEF") :
+        Number.isFinite(rowCall(matchedProdRow, "IEF")) ? rowCall(matchedProdRow, "IEF") :
+        Number.isFinite(rowCall(latestProdRow, "IEF")) ? rowCall(latestProdRow, "IEF") :
         NaN;
 
       const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
@@ -1107,40 +1151,46 @@
       const govRow = latestRow(govTape, "Date");
       const row = govRow || tapeRow;
       if (!row) return null;
-      const alphaEffFinal = Number.isFinite(toNumber(govRow?.alpha_eff_final)) ? toNumber(govRow.alpha_eff_final) :
-                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final)) ? toNumber(tapeRow.alpha_eff_final) :
-                            Number.isFinite(toNumber(tapeRow?.alpha_eff_final_live)) ? toNumber(tapeRow.alpha_eff_final_live) : NaN;
+
+      const publishMode = !isMissing(govRow?.publish_mode)
+        ? String(govRow.publish_mode)
+        : (!isMissing(tapeRow?.publish_mode) ? String(tapeRow.publish_mode) : "NA");
+
+      const blockers = !isMissing(govRow?.alpha_blockers)
+        ? String(govRow.alpha_blockers)
+        : (!isMissing(tapeRow?.alpha_blockers) ? String(tapeRow.alpha_blockers) : "NA");
+
       return {
         date: row ? fmtDate(row.Date) : "NA",
-        GovMode: !isMissing(govRow?.GovMode) ? govRow.GovMode : "NA",
-        GovReason: !isMissing(govRow?.GovReason) ? String(govRow.GovReason) : "NA",
+        GovMode: publishMode,
+        GovReason: blockers,
         wExec: Number.isFinite(toNumber(tapeRow?.w_exec)) ? toNumber(tapeRow.w_exec) : NaN,
-        scale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
-               Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) :
-               Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) : NaN,
-        alphaEffFinal,
-        healthLive: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
-        healthReal: toNumber(govRow?.GovHealthScore_realized),
-        healthAny: Number.isFinite(toNumber(govRow?.GovHealthScore_live)) ? toNumber(govRow.GovHealthScore_live) : Number.isFinite(toNumber(govRow?.GovHealthScore)) ? toNumber(govRow.GovHealthScore) : NaN,
-        liftEnd: toNumber(govRow?.Lift_End),
-        desEnd: toNumber(govRow?.dES_P_End),
-        costRoll: Number.isFinite(toNumber(govRow?.AnnCostDrag_Roll)) ? toNumber(govRow.AnnCostDrag_Roll) : toNumber(govRow?.ann_cost_drag_roll),
-        turnEff: Number.isFinite(toNumber(govRow?.TurnEff_Roll)) ? toNumber(govRow.TurnEff_Roll) : toNumber(govRow?.turn_eff_roll),
-        zeroActive: toNumber(govRow?.ZeRO_Active_End),
-        tooGood: toNumber(govRow?.TooGood_Alarm_End),
-        govScale: Number.isFinite(toNumber(govRow?.gov_scale)) ? toNumber(govRow.gov_scale) :
-                  Number.isFinite(toNumber(tapeRow?.defense_scale_final)) ? toNumber(tapeRow.defense_scale_final) : NaN
+        scale: Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) :
+               Number.isFinite(toNumber(govRow?.budget_mult)) ? toNumber(govRow.budget_mult) : NaN,
+        finalPass: govRow?.final_pass,
+        qualityOk: govRow?.quality_ok,
+        driftOk: govRow?.drift_ok,
+        trialGateOpen: govRow?.trial_gate_open,
+        fusedGateOpen: govRow?.fused_gate_open,
+        promotionReady: govRow?.promotion_ready,
+        alphaStateDisplay: govRow?.alpha_state_display || "NA",
+        alphaLive: govRow?.alpha_live,
+        driftRate: govRow?.drift_rate,
+        budgetMult: govRow?.budget_mult,
+        zeroActive: govRow?.quality_ok,
+        tooGood: govRow?.drift_ok
       };
     }
 
     function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility) {
       const tapeRow = latestRow(prodTape, "Date");
       const summaryRow = latestRow(alphaSummaryTape, "Date");
-      const posLive = latestRowsByDate(alphaPositions, "Date");
-      const eligLive = latestRowsByDate(alphaEligibility, "asof_date");
-      const selectedRows = posLive.filter(r => toNumber(r.selected) === 1);
-      const selectedNames = selectedRows.map(r => String(r.Ticker || "")).filter(Boolean);
-      const eligibleNames = eligLive.filter(r => toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1).map(r => String(r.Ticker || "")).filter(Boolean);
+      const posRow = latestRow(alphaPositions, "Date");
+      const eligRow = latestRow(alphaEligibility, "Date");
+
+      const selectedCount = Number.isFinite(toNumber(posRow?.alpha_position)) && toNumber(posRow.alpha_position) > 0 ? 1 : 0;
+      const eligibleFlag = Number.isFinite(toNumber(eligRow?.eligible)) ? Math.round(toNumber(eligRow.eligible)) : NaN;
+
       return {
         alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : (!isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE"),
         alphaLive: toNumber(tapeRow?.alpha_live),
@@ -1148,7 +1198,8 @@
         budgetMult: toNumber(tapeRow?.budget_mult),
         realizedDates: toNumber(tapeRow?.realized_dates),
         meanRankIc: Number.isFinite(toNumber(tapeRow?.mean_rank_ic)) ? toNumber(tapeRow.mean_rank_ic) : toNumber(summaryRow?.rank_ic_roll),
-        meanTopkNet: Number.isFinite(toNumber(tapeRow?.mean_topk_rel_ret_net)) ? toNumber(tapeRow.mean_topk_rel_ret_net) : Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
+        meanTopkNet: Number.isFinite(toNumber(tapeRow?.mean_topk_rel_ret_net)) ? toNumber(tapeRow.mean_topk_rel_ret_net) :
+                     (Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net)),
         irTopk: toNumber(tapeRow?.ir_topk_rel_ret_net),
         driftRate: toNumber(tapeRow?.alpha_drift_alarm_rate),
         qualityOk: toNumber(tapeRow?.alpha_quality_ok),
@@ -1157,23 +1208,23 @@
         fusedOpen: toNumber(tapeRow?.alpha_fused_gate_open),
         ready: toNumber(tapeRow?.alpha_promotion_ready),
         blocker: !isMissing(tapeRow?.alpha_blocker_text) ? tapeRow.alpha_blocker_text : "NONE",
-        tier: !isMissing(summaryRow?.alpha_governance_tier) ? summaryRow.alpha_governance_tier : (!isMissing(selectedRows[0]?.alpha_governance_tier) ? selectedRows[0].alpha_governance_tier : "NA"),
+        tier: !isMissing(summaryRow?.alpha_governance_tier) ? summaryRow.alpha_governance_tier : (!isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : "NA"),
         driftAlarm: toNumber(summaryRow?.alpha_drift_alarm),
         overlayScale: toNumber(summaryRow?.alpha_overlay_scale),
         rankIcRoll: toNumber(summaryRow?.rank_ic_roll),
         topkRoll: Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
         budgetUsed: toNumber(summaryRow?.gross_alpha_budget_used),
-        eligibleBreadth: toNumber(summaryRow?.eligible_breadth),
+        eligibleBreadth: Number.isFinite(toNumber(summaryRow?.eligible_breadth)) ? toNumber(summaryRow.eligible_breadth) : eligibleFlag,
         hitRate: toNumber(summaryRow?.selection_hit_rate),
         date: summaryRow ? fmtDate(summaryRow.Date) : (tapeRow ? fmtDate(tapeRow.Date) : "NA"),
-        selectedCount: selectedRows.length,
-        eligibleNames: eligibleNames.length ? eligibleNames.join(", ") : "NA",
-        selectedNames: selectedNames.length ? selectedNames.join(", ") : "NA"
+        selectedCount,
+        eligibleNames: eligibleFlag === 1 ? "VOO" : "NA",
+        selectedNames: selectedCount > 0 ? (posRow?.alpha_leg || "VOO") : "NA"
       };
     }
 
     function buildFusionMeta(allocRows) {
-      const latestAlloc = latestRowsByDate(allocRows, "Date");
+      const latestAlloc = latestRowsByDate((allocRows || []).map(normalizeAllocRow), "Date");
       const meta = { allocDate: "NA", coreVoo: NaN, coreIef: NaN, alphaGross: NaN, sumWeight: NaN, nRows: 0 };
       if (!latestAlloc.length) return { meta, latestAlloc: [] };
       meta.allocDate = fmtDate(latestAlloc[0].Date);
@@ -1183,13 +1234,15 @@
         const w = toNumber(r.weight);
         if (!Number.isFinite(w)) continue;
         sum += w;
-        const tk = String(r.Ticker || "");
-        if (tk === "VOO_CORE") coreVoo += w;
-        else if (tk === "IEF_CORE") coreIef += w;
-        else alphaGross += w;
+        if (r.is_alpha === 1) alphaGross += w;
+        else if (r.sleeve === "VOO") coreVoo += w;
+        else if (r.sleeve === "IEF") coreIef += w;
       }
-      meta.coreVoo = coreVoo; meta.coreIef = coreIef; meta.alphaGross = alphaGross; meta.sumWeight = sum;
-      return { meta, latestAlloc: latestAlloc.sort((a,b) => toNumber(b.weight) - toNumber(a.weight)) };
+      meta.coreVoo = coreVoo;
+      meta.coreIef = coreIef;
+      meta.alphaGross = alphaGross;
+      meta.sumWeight = sum;
+      return { meta, latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight)) };
     }
 
     function buildValidationSnapshot(part2Summary, part3Summary) {
@@ -1248,16 +1301,47 @@
     }
 
     function buildExecutionSnapshot(part8Meta, part8Orders) {
+      const latestOrder = part8Meta?.latest_order_instructions || part8Orders || {};
+      const instructions = Array.isArray(latestOrder?.instructions) ? latestOrder.instructions : [];
+      const annual = part8Meta?.annual_drag_summary || {};
+
+      const assetsModeled = Array.isArray(part8Meta?.assets_modeled)
+        ? part8Meta.assets_modeled
+        : (instructions.length ? [...new Set(instructions.map(x => String(x.ticker || "").trim()).filter(Boolean))] : []);
+
+      const model =
+        part8Meta?.model ||
+        part8Meta?.execution_model ||
+        ((!isMissing(latestOrder?.execute_window) || assetsModeled.length) ? "almgren_chriss_sqrt_impact" : "NA");
+
+      const optimalWindow =
+        part8Meta?.optimal_window ||
+        part8Meta?.optimal_exec_window ||
+        latestOrder?.execute_window ||
+        "NA";
+
+      const cost1M =
+        Number.isFinite(toNumber(part8Meta?.example_cost_1M_portfolio_voo)) ? toNumber(part8Meta.example_cost_1M_portfolio_voo) :
+        Number.isFinite(toNumber(part8Meta?.example_cost_1m_voo_bps)) ? toNumber(part8Meta.example_cost_1m_voo_bps) :
+        Number.isFinite(toNumber(annual?.avg_cost_bps_actual)) ? toNumber(annual.avg_cost_bps_actual) :
+        toNumber(latestOrder?.total_estimated_cost_bps);
+
+      const cost10M =
+        Number.isFinite(toNumber(part8Meta?.example_cost_10M_portfolio_voo)) ? toNumber(part8Meta.example_cost_10M_portfolio_voo) :
+        Number.isFinite(toNumber(part8Meta?.example_cost_10m_voo_bps)) ? toNumber(part8Meta.example_cost_10m_voo_bps) :
+        Number.isFinite(toNumber(annual?.annual_drag_bps_actual)) ? toNumber(annual.annual_drag_bps_actual) :
+        NaN;
+
       return {
-        model: part8Meta?.model || "NA",
-        optimalWindow: part8Meta?.optimal_window || "NA",
-        cost1M: toNumber(part8Meta?.example_cost_1M_portfolio_voo),
-        cost10M: toNumber(part8Meta?.example_cost_10M_portfolio_voo),
-        note: part8Meta?.note_on_current_model || "NA",
-        assetsModeled: Array.isArray(part8Meta?.assets_modeled) ? part8Meta.assets_modeled.join(", ") : "NA",
-        totalEstimatedCostDollars: toNumber(part8Orders?.total_estimated_cost_dollars),
-        totalEstimatedCostBps: toNumber(part8Orders?.total_estimated_cost_bps),
-        executeWindow: part8Orders?.execute_window || part8Meta?.optimal_window || "NA"
+        model,
+        optimalWindow,
+        cost1M,
+        cost10M,
+        note: part8Meta?.note_on_current_model || annual?.note || "NA",
+        assetsModeled: assetsModeled.length ? assetsModeled.join(", ") : "NA",
+        totalEstimatedCostDollars: toNumber(part8Orders?.total_estimated_cost_dollars || latestOrder?.total_estimated_cost_dollars),
+        totalEstimatedCostBps: toNumber(part8Orders?.total_estimated_cost_bps || latestOrder?.total_estimated_cost_bps),
+        executeWindow: part8Orders?.execute_window || latestOrder?.execute_window || optimalWindow
       };
     }
 
@@ -1390,9 +1474,9 @@
       lines.push(`- decision_date=${forecast?.decisionDate || "NA"}`);
       lines.push(`- target_date=${forecast?.targetDate || "NA"}`);
       lines.push(`- px_voo_t=${fmtPrice(forecast?.vooSpot)}`);
-      lines.push(`- px_voo_call_7d=${fmtPrice(forecast?.vooCall)}`);
+      lines.push(`- px_voo_call_1d=${fmtPrice(forecast?.vooCall)}`);
       lines.push(`- px_ief_t=${fmtPrice(forecast?.iefSpot)}`);
-      lines.push(`- px_ief_call_7d=${fmtPrice(forecast?.iefCall)}`);
+      lines.push(`- px_ief_call_1d=${fmtPrice(forecast?.iefCall)}`);
       lines.push("");
       lines.push("VALIDATION / CONTRACT:");
       lines.push(`- part2_publish_mode=${validation.p2Mode}`);
@@ -1451,8 +1535,9 @@
       }
       lines.push("");
       lines.push("ROW COUNTS:");
-      Object.entries(counts).forEach(([k,v]) => lines.push(`- ${k}=${v}`));
-      return lines.join("\n");
+      Object.entries(counts).forEach(([k, v]) => lines.push(`- ${k}=${v}`));
+      return lines.join("
+");
     }
 
     function populatePredictionSnapshotCard(forecast) {
@@ -1474,24 +1559,24 @@
 
     function populateGovernanceSnapshot(defense) {
       setText("govSnapMode", defense?.GovMode || "NA");
-      setText("govSnapReason", `Reason: ${defense?.GovReason || "NA"}`);
-      setText("govBadgeMode", `GovMode: ${defense?.GovMode || "NA"}`);
-      setText("govBadgeZero", `ZeRO Active: ${Number.isFinite(toNumber(defense?.zeroActive)) ? Math.round(toNumber(defense.zeroActive)) : 0}`);
-      setText("govBadgeTooGood", `TooGood Alarm: ${Number.isFinite(toNumber(defense?.tooGood)) ? Math.round(toNumber(defense.tooGood)) : 0}`);
+      setText("govSnapReason", `Blockers: ${defense?.GovReason || "NA"}`);
+      setText("govBadgeMode", `Publish Mode: ${defense?.GovMode || "NA"}`);
+      setText("govBadgeZero", `Quality OK: ${Number.isFinite(toNumber(defense?.qualityOk)) ? Math.round(toNumber(defense.qualityOk)) : 0}`);
+      setText("govBadgeTooGood", `Drift OK: ${Number.isFinite(toNumber(defense?.driftOk)) ? Math.round(toNumber(defense.driftOk)) : 0}`);
       setText("govSnapDate", defense?.date || "NA");
-      setText("govSnapAlphaEff", fmtNum(defense?.alphaEffFinal));
-      setText("govSnapScale", fmtNum(defense?.govScale));
-      setText("govSnapHealthLive", fmtNum(defense?.healthLive));
-      setText("govSnapHealthReal", fmtNum(defense?.healthReal));
-      setText("govSnapLift", fmtNum(defense?.liftEnd));
-      setText("govSnapDes", fmtNum(defense?.desEnd));
-      setText("govSnapCost", fmtNum(defense?.costRoll, 6));
-      setText("govSnapTurnEff", fmtNum(defense?.turnEff, 6));
-      setText("govSnapHealthAny", fmtNum(defense?.healthAny));
+      setText("govSnapAlphaEff", String(defense?.finalPass ?? "NA"));
+      setText("govSnapScale", String(defense?.qualityOk ?? "NA"));
+      setText("govSnapHealthLive", String(defense?.driftOk ?? "NA"));
+      setText("govSnapHealthReal", String(defense?.trialGateOpen ?? "NA"));
+      setText("govSnapLift", String(defense?.fusedGateOpen ?? "NA"));
+      setText("govSnapDes", String(defense?.promotionReady ?? "NA"));
+      setText("govSnapCost", defense?.alphaStateDisplay || "NA");
+      setText("govSnapTurnEff", String(defense?.alphaLive ?? "NA"));
+      setText("govSnapHealthAny", fmtNum(defense?.driftRate, 4));
     }
 
     function populateAlphaSnapshot(alpha) {
-      setText("alphaSnapTier", alpha.tier || "NA");
+      setText("alphaSnapTier", alpha.tier || alpha.alphaState || "NA");
       setText("alphaBadgeDrift", `Drift Alarm: ${Number.isFinite(toNumber(alpha.driftAlarm)) ? Math.round(toNumber(alpha.driftAlarm)) : 0}`);
       setText("alphaBadgeSelected", `Selected: ${alpha.selectedCount}`);
       setText("alphaBadgeOverlay", `Overlay Scale: ${fmtValueOrPending(alpha.overlayScale, v => fmtNum(v, 2))}`);
@@ -1564,26 +1649,45 @@
       if (!rows.length) return renderEmptyChart("predChart", "Prediction Log: Calls vs Realized", "No prediction-log rows found.");
       const x = rows.map(r => fmtDate(r.decision_date));
       const traces = [];
-      const makeTrace = (col, name, color) => {
-        const y = rows.map(r => toNumber(r[col]));
+      const makeTrace = (getter, name, color) => {
+        const y = rows.map(getter);
         if (!y.some(v => Number.isFinite(v))) return;
-        traces.push({ x, y, type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name, marker: { size: rows.length === 1 ? 8 : 6, color }, line: { width: 2, color }, text: rows.length === 1 ? [name] : undefined, textposition: rows.length === 1 ? "top center" : undefined });
+        traces.push({
+          x, y,
+          type: "scatter",
+          mode: rows.length === 1 ? "markers+text" : "lines+markers",
+          name,
+          marker: { size: rows.length === 1 ? 8 : 6, color },
+          line: { width: 2, color },
+          text: rows.length === 1 ? [name] : undefined,
+          textposition: rows.length === 1 ? "top center" : undefined
+        });
       };
-      makeTrace("px_voo_call_7d", "VOO call", "#38bdf8");
-      makeTrace("px_ief_call_7d", "IEF call", "#fb923c");
-      makeTrace("px_voo_realized", "VOO realized", "#22c55e");
-      makeTrace("px_ief_realized", "IEF realized", "#ef4444");
+      makeTrace(r => rowCall(r, "VOO"), "VOO call", "#38bdf8");
+      makeTrace(r => rowCall(r, "IEF"), "IEF call", "#fb923c");
+      makeTrace(r => toNumber(r.px_voo_realized), "VOO realized", "#22c55e");
+      makeTrace(r => toNumber(r.px_ief_realized), "IEF realized", "#ef4444");
       const layout = plotBaseLayout("Prediction Log: Calls vs Realized", "Decision Date", "Price");
-      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
+      const range = smartDateRange(x, 4);
+      if (range) layout.xaxis.range = range;
       Plotly.newPlot("predChart", traces, layout, plotConfig());
     }
 
     function renderErrorPanel(predLog) {
-      const realized = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date) && Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))), "decision_date");
-      if (!realized.length) return renderEmptyChart("errorChart", "7D Forecast Error Panel", "No matured 7-day forecasts yet.");
+      const realized = sortByDateAsc(
+        predLog.filter(r =>
+          !isMissing(r.decision_date) &&
+          Number.isFinite(toNumber(r.px_voo_realized)) &&
+          Number.isFinite(toNumber(r.px_ief_realized))
+        ),
+        "decision_date"
+      );
+      if (!realized.length) return renderEmptyChart("errorChart", "1-Day Forecast Error Panel", "No matured 1-day forecasts yet.");
       const calc = realized.map(r => {
-        const vooErr = toNumber(r.px_voo_realized) - toNumber(r.px_voo_call_7d);
-        const iefErr = toNumber(r.px_ief_realized) - toNumber(r.px_ief_call_7d);
+        const vooCall = rowCall(r, "VOO");
+        const iefCall = rowCall(r, "IEF");
+        const vooErr = toNumber(r.px_voo_realized) - vooCall;
+        const iefErr = toNumber(r.px_ief_realized) - iefCall;
         const vooAbs = Math.abs(vooErr), iefAbs = Math.abs(iefErr);
         const vooApe = Number.isFinite(toNumber(r.px_voo_realized)) && toNumber(r.px_voo_realized) !== 0 ? vooAbs / Math.abs(toNumber(r.px_voo_realized)) : NaN;
         const iefApe = Number.isFinite(toNumber(r.px_ief_realized)) && toNumber(r.px_ief_realized) !== 0 ? iefAbs / Math.abs(toNumber(r.px_ief_realized)) : NaN;
@@ -1592,16 +1696,30 @@
       if (calc.length === 1) {
         const r = calc[0];
         const x = ["VOO MAE","IEF MAE","VOO MAPE%","IEF MAPE%","VOO Bias","IEF Bias"];
-        const y = [r.voo_abs_err, r.ief_abs_err, 100*r.voo_ape, 100*r.ief_ape, r.voo_err, r.ief_err];
-        return Plotly.newPlot("errorChart", [{ x, y, type: "bar", marker: { color: ["#38bdf8","#fb923c","#22c55e","#ef4444","#a855f7","#f472b6"] }, text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"), textposition: "outside", cliponaxis: false }], plotBaseLayout("7D Forecast Error Panel", "Metric", "Value"), plotConfig());
+        const y = [r.voo_abs_err, r.ief_abs_err, 100 * r.voo_ape, 100 * r.ief_ape, r.voo_err, r.ief_err];
+        return Plotly.newPlot("errorChart", [{
+          x, y, type: "bar",
+          marker: { color: ["#38bdf8","#fb923c","#22c55e","#ef4444","#a855f7","#f472b6"] },
+          text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
+          textposition: "outside",
+          cliponaxis: false
+        }], plotBaseLayout("1-Day Forecast Error Panel", "Metric", "Value"), plotConfig());
       }
       const rollN = 10;
       const series = [];
       for (let i = 0; i < calc.length; i++) {
         const start = Math.max(0, i - rollN + 1);
         const win = calc.slice(start, i + 1);
-        const mean = arr => arr.reduce((a,b) => a+b,0) / arr.length;
-        series.push({ decision_date: fmtDate(calc[i].decision_date), voo_mae_roll: mean(win.map(r => r.voo_abs_err)), ief_mae_roll: mean(win.map(r => r.ief_abs_err)), voo_mape_roll: 100 * mean(win.map(r => r.voo_ape)), ief_mape_roll: 100 * mean(win.map(r => r.ief_ape)), voo_bias_roll: mean(win.map(r => r.voo_err)), ief_bias_roll: mean(win.map(r => r.ief_err)) });
+        const mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+        series.push({
+          decision_date: fmtDate(calc[i].decision_date),
+          voo_mae_roll: mean(win.map(r => r.voo_abs_err)),
+          ief_mae_roll: mean(win.map(r => r.ief_abs_err)),
+          voo_mape_roll: 100 * mean(win.map(r => r.voo_ape)),
+          ief_mape_roll: 100 * mean(win.map(r => r.ief_ape)),
+          voo_bias_roll: mean(win.map(r => r.voo_err)),
+          ief_bias_roll: mean(win.map(r => r.ief_err))
+        });
       }
       const x = series.map(r => r.decision_date);
       Plotly.newPlot("errorChart", [
@@ -1611,16 +1729,30 @@
         { x, y: series.map(r => r.ief_mape_roll), type: "scatter", mode: "lines", name: "IEF MAPE% (roll)", line: { color: "#ef4444", width: 2 } },
         { x, y: series.map(r => r.voo_bias_roll), type: "scatter", mode: "lines", name: "VOO Bias (roll)", line: { color: "#a855f7", width: 2 } },
         { x, y: series.map(r => r.ief_bias_roll), type: "scatter", mode: "lines", name: "IEF Bias (roll)", line: { color: "#f472b6", width: 2 } }
-      ], plotBaseLayout("7D Forecast Error Panel (rolling window = 10 decisions)", "Decision Date", "Metric value"), plotConfig());
+      ], plotBaseLayout("1-Day Forecast Error Panel (rolling window = 10 decisions)", "Decision Date", "Metric value"), plotConfig());
     }
 
     function renderErrorDistribution(predLog) {
-      const realized = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date) && Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))), "decision_date");
-      if (!realized.length) return renderEmptyChart("distChart", "Forecast Error Distribution", "No matured 7-day forecasts yet.");
-      const vooErr = realized.map(r => toNumber(r.px_voo_realized) - toNumber(r.px_voo_call_7d));
-      const iefErr = realized.map(r => toNumber(r.px_ief_realized) - toNumber(r.px_ief_call_7d));
+      const realized = sortByDateAsc(
+        predLog.filter(r =>
+          !isMissing(r.decision_date) &&
+          Number.isFinite(toNumber(r.px_voo_realized)) &&
+          Number.isFinite(toNumber(r.px_ief_realized))
+        ),
+        "decision_date"
+      );
+      if (!realized.length) return renderEmptyChart("distChart", "Forecast Error Distribution", "No matured 1-day forecasts yet.");
+      const vooErr = realized.map(r => toNumber(r.px_voo_realized) - rowCall(r, "VOO"));
+      const iefErr = realized.map(r => toNumber(r.px_ief_realized) - rowCall(r, "IEF"));
       if (realized.length === 1) {
-        return Plotly.newPlot("distChart", [{ x: ["VOO error","IEF error"], y: [vooErr[0], iefErr[0]], type: "bar", marker: { color: ["#38bdf8","#fb923c"] }, text: [vooErr[0],iefErr[0]].map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"), textposition: "outside" }], plotBaseLayout("Forecast Error Distribution", "Series", "Realized - Call"), plotConfig());
+        return Plotly.newPlot("distChart", [{
+          x: ["VOO error","IEF error"],
+          y: [vooErr[0], iefErr[0]],
+          type: "bar",
+          marker: { color: ["#38bdf8","#fb923c"] },
+          text: [vooErr[0], iefErr[0]].map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
+          textposition: "outside"
+        }], plotBaseLayout("Forecast Error Distribution", "Series", "Realized - Call"), plotConfig());
       }
       Plotly.newPlot("distChart", [
         { x: vooErr, type: "histogram", name: "VOO error", opacity: 0.65, marker: { color: "#38bdf8" } },
@@ -1740,8 +1872,18 @@
       const { meta, latestAlloc } = buildFusionMeta(allocRows);
       if (!latestAlloc.length) return renderEmptyChart("fusionAllocChart", "Latest Fusion Allocations", "No fusion allocation rows loaded.");
       const stateDisplay = !isMissing(latestAlloc[0].alpha_state_display) ? latestAlloc[0].alpha_state_display : "NA";
-      const fusionLive = Number.isFinite(toNumber(latestAlloc[0].fusion_live)) ? Math.round(toNumber(latestAlloc[0].fusion_live)) : "NA";
-      Plotly.newPlot("fusionAllocChart", [{ x: latestAlloc.map(r => String(r.Ticker || "")), y: latestAlloc.map(r => toNumber(r.weight)), type: "bar", marker: { color: "#38bdf8" }, text: latestAlloc.map(r => fmtNum(r.weight)), textposition: "outside", cliponaxis: false }], plotBaseLayout(`Latest Fusion Allocations | date=${meta.allocDate} | state=${stateDisplay} | fusion_live=${fusionLive}`, "Ticker", "Weight", { margin: { l: 78, r: 72, t: 72, b: 95 } }), plotConfig());
+      const fusionLive = Number.isFinite(toNumber(latestAlloc[0].fusion_live))
+        ? Math.round(toNumber(latestAlloc[0].fusion_live))
+        : ((latestAlloc.some(r => r.is_alpha === 1 && toNumber(r.weight) > 0)) ? 1 : 0);
+      Plotly.newPlot("fusionAllocChart", [{
+        x: latestAlloc.map(r => r.label),
+        y: latestAlloc.map(r => toNumber(r.weight)),
+        type: "bar",
+        marker: { color: latestAlloc.map(r => r.is_alpha === 1 ? "#a855f7" : (r.sleeve === "VOO" ? "#38bdf8" : "#22c55e")) },
+        text: latestAlloc.map(r => fmtNum(r.weight)),
+        textposition: "outside",
+        cliponaxis: false
+      }], plotBaseLayout(`Latest Fusion Allocations | date=${meta.allocDate} | state=${stateDisplay} | fusion_live=${fusionLive}`, "Sleeve", "Weight", { margin: { l: 78, r: 72, t: 72, b: 95 } }), plotConfig());
     }
 
     function renderAlphaSleeveSummary(alphaSummaryTape) {
@@ -1761,15 +1903,24 @@
     }
 
     function renderAlphaEligibilityBreadth(alphaEligibility) {
-      const groups = new Map();
-      for (const r of alphaEligibility) {
-        const dt = fmtDate(r.asof_date); if (dt === "NA") continue;
-        if (!groups.has(dt)) groups.set(dt, 0);
-        if (toNumber(r.in_elig_set) === 1 || toNumber(r.eligible) === 1) groups.set(dt, groups.get(dt) + 1);
-      }
-      const rows = [...groups.entries()].map(([Date, count]) => ({ Date, count })).sort((a,b) => new Date(a.Date) - new Date(b.Date));
+      const rows = sortByDateAsc(
+        (alphaEligibility || [])
+          .filter(r => !isMissing(r.Date))
+          .map(r => ({ Date: fmtDate(r.Date), count: Number.isFinite(toNumber(r.eligible)) ? Math.round(toNumber(r.eligible)) : 0 })),
+        "Date"
+      );
       if (!rows.length) return renderEmptyChart("alphaBreadthChart", "Alpha Eligibility Breadth", "No alpha eligibility history loaded.");
-      Plotly.newPlot("alphaBreadthChart", [{ x: rows.map(r => r.Date), y: rows.map(r => r.count), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "eligible count", line: { width: 2, color: "#38bdf8" }, marker: { size: 6, color: "#38bdf8" }, text: rows.length === 1 ? rows.map(r => String(r.count)) : undefined, textposition: rows.length === 1 ? "top center" : undefined }], plotBaseLayout("Alpha Eligibility Breadth", "As-of Date", "Eligible Count"), plotConfig());
+      Plotly.newPlot("alphaBreadthChart", [{
+        x: rows.map(r => r.Date),
+        y: rows.map(r => r.count),
+        type: "scatter",
+        mode: rows.length === 1 ? "markers+text" : "lines+markers",
+        name: "eligible count",
+        line: { width: 2, color: "#38bdf8" },
+        marker: { size: 6, color: "#38bdf8" },
+        text: rows.length === 1 ? rows.map(r => String(r.count)) : undefined,
+        textposition: rows.length === 1 ? "top center" : undefined
+      }], plotBaseLayout("Alpha Eligibility Breadth", "Date", "Eligible Count"), plotConfig());
     }
 
     function renderTargetWeightsChart(part7Weights) {
@@ -1816,20 +1967,31 @@
     }
 
     function populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMeta, part9Report) {
-      const predDisplayRows = headRows(sortByDateAsc(predLog, "decision_date").slice().reverse().map(r => ({ ...r, target_date: deriveTargetDate(r) })), 20);
-      renderTable("predTable", predDisplayRows, ["decision_date","target_date","p_final_cal","p0","alpha_scale","governance_tier","px_voo_t","px_voo_call_7d","px_voo_realized","voo_err","px_ief_t","px_ief_call_7d","px_ief_realized","ief_err","hit_direction"]);
-      renderTable("allocTable", headRows(sortByDateAsc(allocRows, "Date").slice().reverse(), 20), ["Date","Ticker","weight","bucket","alpha_state_display","fusion_live"]);
-      renderTable("govTable", headRows(sortByDateAsc(govTape, "Date").slice().reverse(), 20), ["Date","publish_mode","final_pass","quality_ok","drift_ok","trial_gate_open","fused_gate_open","promotion_ready","alpha_state_display","alpha_live","drift_rate","budget_mult","alpha_blockers"]);
+      const predDisplayRows = headRows(
+        sortByDateAsc(predLog, "decision_date")
+          .slice()
+          .reverse()
+          .map(r => ({
+            ...r,
+            target_date: deriveTargetDate(r),
+            px_voo_call_1d: rowCall(r, "VOO"),
+            px_ief_call_1d: rowCall(r, "IEF")
+          })),
+        20
+      );
+      renderTable("predTable", predDisplayRows, ["decision_date","target_date","p_final_cal","p0","alpha_scale","governance_tier","px_voo_t","px_voo_call_1d","px_voo_realized","voo_err","px_ief_t","px_ief_call_1d","px_ief_realized","ief_err","hit_direction"]);
+
+      const allocDisplayRows = headRows(sortByDateAsc((allocRows || []).map(normalizeAllocRow), "Date").slice().reverse(), 20);
+      renderTable("allocTable", allocDisplayRows, ["Date","sleeve","weight","is_alpha","bucket","alpha_state_display"]);
+
+      renderTable("govTable", headRows(sortByDateAsc(govTape, "Date").slice().reverse(), 20), ["Date","publish_mode","final_pass","quality_ok","drift_ok","trial_gate_open","fused_gate_open","promotion_ready","alpha_state","alpha_state_display","alpha_live","drift_alarm","drift_rate","budget_mult","alpha_blockers"]);
+
       renderTable("alphaSummaryTable", headRows(sortByDateAsc(alphaSummaryTape, "Date").slice().reverse(), 20), ["Date","rank_ic","rank_ic_roll","topk_rel_ret_net","topk_rel_ret_net_roll","selection_hit_rate","breadth_selected","eligible_breadth","gross_alpha_budget_used","alpha_drift_alarm","alpha_overlay_scale","alpha_governance_tier"]);
-      renderTable("alphaPosTable", headRows(latestRowsByDate(alphaPositions, "Date"), 20), ["Date","Ticker","selected","weight","alpha_score","score_mu","score_prob","p_alpha_final","mu_alpha_hat_final","eligible_name","alpha_governance_tier"]);
-      const latestElig = latestRowsByDate(alphaEligibility, "asof_date").map(r => {
-        const eligible = toNumber(r.eligible), inSet = toNumber(r.in_elig_set);
-        let mode = "not_in_live_set";
-        if (eligible === 1 && inSet === 1) mode = "strictly_eligible";
-        else if (eligible === 0 && inSet === 1) mode = "fallback_in_elig_set";
-        return { ...r, eligibility_mode: !isMissing(r.eligibility_mode) ? r.eligibility_mode : mode };
-      });
-      renderTable("alphaEligTable", headRows(latestElig, 20), ["asof_date","Ticker","eligible","in_elig_set","n_obs","hit_rate","mean_alpha_target","mean_score","eligibility_mode"]);
+
+      renderTable("alphaPosTable", headRows(sortByDateAsc(alphaPositions, "Date").slice().reverse(), 20), ["Date","eligible","eligibility_reason","alpha_leg","alpha_position","alpha_abs","alpha_score","caution_shrink","alpha_scale_effective","prob_voo","signal_strength"]);
+
+      renderTable("alphaEligTable", headRows(sortByDateAsc(alphaEligibility, "Date").slice().reverse(), 20), ["Date","eligible","eligibility_reason","prob_voo","alpha_score","component_agreement","entry_z_eff","agreement_min_eff","signal_strength","excess_vol10","alpha_position","dist_overlay_on_g53","dist_overlay_strength_g53","dist_width_caution_g53","uncertainty_penalty_g5"]);
+
       renderJsonTable("part3SummaryTable", part3Summary || {});
       renderJsonTable("part2SummaryTable", part2Summary || {});
       renderJsonTable("opsMetaTable", opsMeta || {});
@@ -2028,7 +2190,7 @@
         const allocRows = sortByDateAsc(allocRaw, "Date");
         const alphaSummaryTape = sortByDateAsc(alphaSummaryTapeRaw, "Date");
         const alphaPositions = sortByDateAsc(alphaPositionsRaw, "Date");
-        const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, "asof_date");
+        const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, "Date");
         const part7Weights = sortByDateAsc(part7WeightsRaw, "Date");
         const part10SignalLog = sortByDateAsc(part10SignalLogRaw, "date");
         const part10TradeLog = sortByDateAsc(part10TradeLogRaw, "decision_date");
@@ -2112,6 +2274,10 @@
   </script>
 </body>
 </html>
+
+
+
+
 
 
 
