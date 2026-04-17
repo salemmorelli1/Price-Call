@@ -346,14 +346,14 @@
 
     <div class="grid hero-grid">
       <div class="card hero-card">
-        <div class="label">7-Day VOO Forecast</div>
+        <div class="label">1-Day VOO Forecast</div>
         <div class="hero-big" id="heroVooCall">—</div>
         <div class="hero-sub" id="heroVooMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroVooSrc">Source: —</div>
       </div>
 
       <div class="card hero-card">
-        <div class="label">7-Day IEF Forecast</div>
+        <div class="label">1-Day IEF Forecast</div>
         <div class="hero-big" id="heroIefCall">—</div>
         <div class="hero-sub" id="heroIefMeta">Current: — | Δ: —</div>
         <div class="hero-sub" id="heroIefSrc">Source: —</div>
@@ -786,6 +786,11 @@
     const repoBase = `https://github.com/${CFG.owner}/${CFG.repo}`;
     const rawBase = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}`;
     document.getElementById("repoLink").href = repoBase;
+
+    window.addEventListener("error", (e) => {
+      const debug = document.getElementById("debugBox");
+      if (debug) debug.innerHTML = `<div class="error">JavaScript error: ${String(e.message || e.error || e)}</div>`;
+    });
 
     function rawUrl(path) { return `${rawBase}/${path}?t=${Date.now()}`; }
     function isMissing(value) {
@@ -2263,7 +2268,7 @@
         setTimeout(resizeAllPlots, 100);
       } catch (err) {
         console.error(err);
-        debug.innerHTML = `<div class="error">Failed to load dashboard data.\n${String(err)}</div>`;
+        debug.innerHTML = `<div class="error">Failed to load dashboard data.\n${String(err && err.stack ? err.stack : err)}</div>`;
       }
     }
 
@@ -2274,6 +2279,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
