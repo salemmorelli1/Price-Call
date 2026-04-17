@@ -87,15 +87,20 @@ class Part7Config:
     max_cvar_budget: float = 0.025     # Max expected loss at 95% CVaR per period
 
     # === Regime-conditional risk budgets ===
+    # Matched to the 4-regime HMM in Part 6 (calm / risk_on / high_vol / crisis).
+    # Each multiplier scales both the VOO weight ceiling and the effective risk
+    # aversion used in the BL optimizer.  With crisis_mult=0.50, voo_max resolves
+    # to max(0.35, min(0.75*0.50, 0.70)) = 0.375 — feasible bounds guaranteed.
     regime_risk_multipliers: Dict[str, float] = field(default_factory=lambda: {
-        "risk_on": 1.20,               # 20% more equity risk when bullish
-        "high_vol": 0.80,              # 20% less when elevated vol
-        "crisis": 0.40,                # 60% less during crisis
-        "unknown": 0.70,
+        "calm":     1.30,   # quietest 25% — lean into equity risk
+        "risk_on":  1.10,   # normal expansionary — modest equity tilt
+        "high_vol": 0.75,   # elevated vol — moderate defense
+        "crisis":   0.50,   # genuine tail episode — meaningful defense
+        "unknown":  0.70,
     })
 
-    cov_window: int = 21              # Rolling covariance window (6 months)
-    cov_ewm_halflife: int = 10         # EWM half-life for covariance
+    cov_window: int = 126              # Rolling covariance window: 126 trading days (~6 months)
+    cov_ewm_halflife: int = 21         # EWM half-life for covariance (1 trading month)
     min_rebalance_threshold: float = 0.02  # 2% dead-band for daily rebalances
 
 
@@ -408,7 +413,15 @@ def compute_allocation(
     # Edge = model's prediction above base rate
     # Positive edge → VOO expected to outperform IEF
     edge = base_rate - p_tail_base  # positive = model expects VOO to outperform
-    view_confidence = float(np.clip((raw_val_auc - 0.50) / 0.15, 0.0, 1.0)) if np.isfinite(raw_val_auc) else 0.3
+    view_confidence = float(np.clip((raw_val_auc - 0.50) / 0.08, 0.0, 1.0)) if np.isfinite(raw_val_auc) else 0.3
+    # Steeper confidence mapping vs the original (auc-0.50)/0.15:
+    # At AUC=0.541: old=0.273 → new=0.513  (model view gets ~2x more weight in BL)
+    # At AUC=0.55:  old=0.333 → new=0.625
+    # At AUC=0.58:  old=0.533 → new=1.000  (saturates at strong but realistic AUC)
+    # At AUC=0.50:  both=0.000 (null model contributes nothing — unchanged)
+    # Motivation: with the old mapping the BL posterior was 79% prior / 21% model view.
+    # At AUC=0.541 with the new mapping: ~50% prior / 50% model view.  The model's
+    # signal now materially reaches the portfolio instead of being near-drowned by CAPM.
 
     # Convert edge to expected annualized excess return.
     # FIX: removed ann_factor = 252/horizon.
@@ -652,4 +665,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
