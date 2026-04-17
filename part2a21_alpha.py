@@ -421,8 +421,33 @@ def build_alpha_positions(
     alpha_abs = CFG.max_abs_alpha * base_strength * vol_shrink * alpha_scale_effective
     alpha_abs = pd.to_numeric(alpha_abs, errors="coerce").fillna(0.0).clip(lower=0.0, upper=CFG.max_abs_alpha)
 
-    alpha_position = np.where(eligible, alpha_abs, 0.0)
-    alpha_leg = np.where(alpha_position > 0, "VOO", "FLAT")
+    alpha_position_daily = np.where(eligible, alpha_abs, 0.0)
+    alpha_leg_daily = np.where(alpha_position_daily > 0, "VOO", "FLAT")
+
+    # ── Weekly rebalancing: hold previous week's position on non-rebalance days ──
+    # Reduces alpha sleeve TC by ~5x vs daily rebalancing.  The signal (alpha_score,
+    # eligibility, caution_shrink) is still computed every day; only the executed
+    # position is frozen between rebalances.
+    # Rebalance day = first trading day of each ISO calendar week (weekday == 0,
+    # or first row overall).  Positions can still change on any day if the new
+    # week starts — the signal date governs which week a row belongs to.
+    dates = pd.to_datetime(x["Date"], errors="coerce")
+    iso_weeks = dates.apply(lambda d: (d.isocalendar()[0], d.isocalendar()[1]) if pd.notna(d) else (-1, -1))
+
+    alpha_position = np.empty_like(alpha_position_daily)
+    alpha_leg = np.empty_like(alpha_leg_daily)
+    prev_week = (-1, -1)
+    prev_pos = 0.0
+    prev_leg = "FLAT"
+    for i in range(len(alpha_position_daily)):
+        week = iso_weeks.iloc[i]
+        if week != prev_week:
+            # New week → take the freshly computed position
+            prev_pos = float(alpha_position_daily[i])
+            prev_leg = str(alpha_leg_daily[i])
+            prev_week = week
+        alpha_position[i] = prev_pos
+        alpha_leg[i] = prev_leg
 
     reasons = []
     for i in range(len(x)):
@@ -753,6 +778,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
