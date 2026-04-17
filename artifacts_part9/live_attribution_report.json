@@ -1,8 +1,49 @@
 {
-  "generated_at": "2026-04-17T04:43:33.432031+00:00",
+  "generated_at": "2026-04-17T23:01:49.284520+00:00",
   "total_predictions": 2,
-  "n_live_realized": 1,
+  "n_live_realized": 2,
   "status": "IMMATURE",
   "schema_mode_col": "publish_mode",
-  "message": "Only 1 realized predictions available. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months."
+  "voo_mae_live": 11.072055341379269,
+  "voo_rmse_live": 11.214541415292341,
+  "classification_stats_live": {
+    "n": 2,
+    "accuracy": 1.0,
+    "t_stat_accuracy": Infinity,
+    "p_value_accuracy": 0.0,
+    "auc": NaN,
+    "t_stat_auc": NaN,
+    "brier": 0.042968166380739706,
+    "brier_null": 0.046489130885421684,
+    "brier_skill_score": 0.07573737194154273,
+    "significant_5pct": true,
+    "significant_1pct": true,
+    "tail_threshold": -0.0056694670951384,
+    "base_rate": 0.2156133828996282,
+    "mean_active_return": 0.01498708756096423,
+    "estimated_annual_edge_bps": 37767.46065362986,
+    "annual_tc_drag_bps": NaN
+  },
+  "calibration_live": {
+    "ece": 0.20723365045862246,
+    "brier": 0.042968166380739706
+  },
+  "classification_stats_backtest": {
+    "n": 1642,
+    "accuracy": 0.4470158343483557,
+    "t_stat_accuracy": -4.317005370430705,
+    "p_value_accuracy": 1.676143006540973e-05,
+    "auc": 0.5120676079034592,
+    "t_stat_auc": 0.9782825115337598,
+    "brier": 0.16255436981415144,
+    "brier_null": 0.16203465367833714,
+    "brier_skill_score": -0.0032074375678012856,
+    "significant_5pct": true,
+    "significant_1pct": true
+  },
+  "annual_tc_drag_bps": NaN,
+  "health_status": "IMMATURE",
+  "health_reasons": [
+    "Only 2 live observations (60 required)"
+  ]
 }
