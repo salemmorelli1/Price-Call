@@ -53,7 +53,19 @@ class Part1Config:
     start: str = "2010-01-01"
     end: str = date.today().strftime("%Y-%m-%d")
     horizon: int = 1                    # CHANGE: 7-day → 1-day weekday forecast
-    tail_threshold: float = float(-0.015 / np.sqrt(7.0))  # severity-matched daily tail threshold
+    tail_threshold: float = float(-0.015 / np.sqrt(7.0))  # fallback fixed threshold (cold-start only)
+
+    # ── Rolling quantile label ─────────────────────────────────────────────
+    # Replace the fixed tail_threshold with a backward-looking rolling quantile.
+    # This makes the label stationary across regimes: in high-vol periods the fixed
+    # threshold produced tail_rate ~28-32%; in low-vol periods ~14-16%.
+    # A rolling 20th-percentile threshold fixes the label rate at 20% within any
+    # 63-day window regardless of volatility regime, giving the classifier a
+    # genuinely consistent target.  Strictly backward-looking via shift(1) so day-t
+    # threshold uses only returns through day t-1 — no look-ahead bias.
+    tail_quantile: float = 0.20           # tail label = bottom quantile of excess return
+    rolling_quantile_window: int = 63     # trailing window in trading days (~3 months)
+    rolling_quantile_min_periods: int = 21  # fall back to fixed threshold below this
 
     main_tickers: Tuple[str, ...] = ("VOO", "IEF", "JNK", "RSP", "QQQ")
     vix_ticker: str = "^VIX"
@@ -142,7 +154,7 @@ def _write_json(path: str, obj: Dict) -> None:
 def build_part1_v20(cfg: Part1Config):
     os.makedirs(cfg.out_dir, exist_ok=True)
     H = int(cfg.horizon)
-    print(f"-> Building Artifacts (V20_P1_DAILY) | H={H} | Tail thr on spread: {cfg.tail_threshold:.2%}")
+    print(f"-> Building Artifacts (V20_P1_DAILY) | H={H} | Label: rolling {cfg.rolling_quantile_window}d {cfg.tail_quantile:.0%}-quantile (fallback fixed={cfg.tail_threshold:.2%})")
 
     data = _load_prices(cfg)
 
@@ -243,7 +255,21 @@ def build_part1_v20(cfg: Part1Config):
     fwd_ief = np.log(px_ief).shift(-H) - np.log(px_ief)
     excess_ret = fwd_voo - fwd_ief
 
-    y_rel_tail = (excess_ret < cfg.tail_threshold).astype(float)
+    # ── Label: rolling quantile threshold (stationary across regimes) ────────
+    # Compute the trailing rolling_quantile_window-day quantile of excess_ret,
+    # shifted by 1 day so the threshold for day t uses only days t-window to t-1.
+    # Days with insufficient history (< rolling_quantile_min_periods) fall back to
+    # the fixed tail_threshold so the label is always populated.
+    rolling_thr = (
+        excess_ret
+        .rolling(cfg.rolling_quantile_window, min_periods=cfg.rolling_quantile_min_periods)
+        .quantile(cfg.tail_quantile)
+        .shift(1)                      # strictly backward-looking: no day-t info
+    )
+    # Cold-start fill: use fixed threshold where rolling is NaN
+    dynamic_threshold = rolling_thr.where(rolling_thr.notna(), cfg.tail_threshold)
+
+    y_rel_tail = (excess_ret < dynamic_threshold).astype(float)
     y_rel_tail[excess_ret.isna()] = np.nan
 
     y_labels = pd.DataFrame(
@@ -253,6 +279,7 @@ def build_part1_v20(cfg: Part1Config):
             "excess_ret": excess_ret,
             "y_voo": y_rel_tail,
             "y_rel_tail_voo_vs_ief": y_rel_tail,
+            "tail_threshold_dynamic": dynamic_threshold,  # written for transparency; not used by downstream
         },
         index=data.index,
     )
@@ -357,6 +384,9 @@ def build_part1_v20(cfg: Part1Config):
         "horizon": H,
         "tail_threshold": float(cfg.tail_threshold),
         "tail_label_name": "y_rel_tail_voo_vs_ief",
+        "tail_label_mode": "rolling_quantile",      # was "fixed_threshold"
+        "tail_quantile": float(cfg.tail_quantile),
+        "rolling_quantile_window": int(cfg.rolling_quantile_window),
         "feature_cols": list(X_live.columns),
         "reg_target_cols": list(y_reg_revealed.columns),
         "n_X_live": int(len(X_live)),
@@ -392,6 +422,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
