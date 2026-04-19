@@ -922,13 +922,76 @@
       if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
       return csvToObjects(await res.text());
     }
+    function sanitizeNonStandardJson(text) {
+      let out = "";
+      let i = 0;
+      let inString = false;
+      let escape = false;
+
+      while (i < text.length) {
+        const ch = text[i];
+
+        if (inString) {
+          out += ch;
+          if (escape) {
+            escape = false;
+          } else if (ch === "\\") {
+            escape = true;
+          } else if (ch === '"') {
+            inString = false;
+          }
+          i += 1;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = true;
+          out += ch;
+          i += 1;
+          continue;
+        }
+
+        if (text.startsWith("-Infinity", i)) {
+          out += "null";
+          i += 9;
+          continue;
+        }
+        if (text.startsWith("Infinity", i)) {
+          out += "null";
+          i += 8;
+          continue;
+        }
+        if (text.startsWith("NaN", i)) {
+          out += "null";
+          i += 3;
+          continue;
+        }
+
+        out += ch;
+        i += 1;
+      }
+
+      return out;
+    }
+
     async function fetchJson(path, optional = false) {
       const res = await fetch(rawUrl(path));
       if (!res.ok) {
         if (optional) return null;
         throw new Error(`${path} failed: ${res.status}`);
       }
-      return await res.json();
+
+      const rawText = await res.text();
+      try {
+        return JSON.parse(rawText);
+      } catch (err) {
+        try {
+          return JSON.parse(sanitizeNonStandardJson(rawText));
+        } catch (err2) {
+          if (optional) return null;
+          throw new Error(`${path} invalid JSON after sanitization: ${err2.message}`);
+        }
+      }
     }
     async function fetchCsvOptional(path) {
       try { return await fetchCsv(path); } catch (e) { return []; }
@@ -2278,6 +2341,7 @@
   </script>
 </body>
 </html>
+
 
 
 
