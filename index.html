@@ -590,6 +590,20 @@
 
       <div style="height: 14px;"></div>
 
+      <!-- Part 2B / 2C Uncertainty Sleeve Status -->
+      <div class="grid two-col">
+        <div class="card">
+          <div class="label">Part 2B — XGBoost Ensemble Uncertainty</div>
+          <div class="kv-grid" id="part2bGrid"></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 2C — BNN Sleeve</div>
+          <div class="kv-grid" id="part2cGrid"></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
       <div class="grid two-col">
         <div class="card">
           <div class="label">Validation / Contract Snapshot</div>
@@ -725,6 +739,19 @@
 
       <div class="grid two-col">
         <div class="card">
+          <div class="label">Part 2B — Ensemble Uncertainty Summary</div>
+          <div class="table-wrap"><table id="part2bSummaryTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="label">Part 2C — BNN Summary</div>
+          <div class="table-wrap"><table id="part2cSummaryTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <div style="height: 14px;"></div>
+
+      <div class="grid two-col">
+        <div class="card">
           <div class="label">Part 6 / Part 7 / Part 8</div>
           <div class="table-wrap"><table id="opsMetaTable"><thead></thead><tbody></tbody></table></div>
         </div>
@@ -776,6 +803,9 @@
         part8Meta: "artifacts_part8/part8_meta.json",
         part8Orders: "artifacts_part8/example_order_instructions.json",
         part9Report: "artifacts_part9/live_attribution_report.json",
+        // Experimental sleeves — optional, present only after deployment
+        part2bSummary: "artifacts_part2b_xgb/predictions/part2b_xgb_summary.json",
+        part2cSummary: "artifacts_part2c_bnn/predictions/part2c_bnn_summary.json",
         part10State: "artifacts_part10_bot/portfolio_state.json",
         part10Report: "artifacts_part10_bot/performance_report.json",
         part10SignalLog: "artifacts_part10_bot/signal_log.csv",
@@ -1528,7 +1558,7 @@
       setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | target=${forecast?.targetDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)} | Part9=${live.healthStatus || "NA"}`);
     }
 
-    function buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary) {
+    function buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary, part2bSummary, part2cSummary) {
       const lines = [];
       lines.push(`Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`);
       lines.push("");
@@ -1583,6 +1613,7 @@
       lines.push("PART 2 SUMMARY:");
       if (part2Summary) {
         lines.push(`- model_feature_count=${part2Summary.model_feature_count}`);
+        lines.push(`- dist_overlay_on_rate=${fmtNum(part2Summary.dist_overlay_on_rate, 3)}`);
         lines.push(`- drift_alarm_rate=${part2Summary.drift_alarm_rate}`);
         lines.push(`- active_ret_net_ir=${part2Summary.active_ret_net_ir}`);
         lines.push(`- strategy_ret_net_ir=${part2Summary.strategy_ret_net_ir}`);
@@ -1593,6 +1624,33 @@
         lines.push(`- raw_coverage_mean=${fmtNum(part2Diag.distribution_validation.raw_coverage_mean)}`);
         lines.push(`- conf_coverage_mean=${fmtNum(part2Diag.distribution_validation.conf_coverage_mean)}`);
         lines.push(`- median_rmse_mean=${fmtNum(part2Diag.distribution_validation.median_rmse_mean)}`);
+      }
+      lines.push("");
+      lines.push("PART 2B — XGB ENSEMBLE UNCERTAINTY:");
+      if (part2bSummary) {
+        lines.push(`- gate_validation_passed=${part2bSummary.gate_validation_passed}`);
+        lines.push(`- bnn_sleeve_recommended=${part2bSummary.bnn_sleeve_recommended}`);
+        lines.push(`- holdout_auc=${fmtNum(part2bSummary.holdout_auc, 4)}`);
+        lines.push(`- holdout_ece=${fmtNum(part2bSummary.holdout_ece, 4)}`);
+        lines.push(`- walkforward_ece_gap=${fmtNum(part2bSummary.walkforward_ece_gap, 4)}`);
+        lines.push(`- spread_corr_vs_caution=${fmtNum(part2bSummary.walkforward_spread_corr_vs_caution, 3)}`);
+        lines.push(`- epist_threshold=${fmtNum(part2bSummary.epist_overlay_threshold_75pct, 5)}`);
+        lines.push(`- n_wf_eval_rows=${part2bSummary.n_walkforward_eval_rows ?? "NA"}`);
+      } else {
+        lines.push("- not deployed");
+      }
+      lines.push("");
+      lines.push("PART 2C — BNN SLEEVE:");
+      if (part2cSummary) {
+        lines.push(`- backend=${part2cSummary.backend}`);
+        lines.push(`- holdout_auc=${fmtNum(part2cSummary.holdout_auc, 4)}`);
+        lines.push(`- holdout_ece=${fmtNum(part2cSummary.holdout_ece, 4)}`);
+        lines.push(`- epist_threshold=${fmtNum(part2cSummary.epist_overlay_threshold_75pct, 5)}`);
+        lines.push(`- n_wf_eval_rows=${part2cSummary.n_walkforward_eval_rows ?? "NA"}`);
+        lines.push(`- live_p_bnn_mean=${fmtNum(part2cSummary.live_p_bnn_mean, 4)}`);
+        lines.push(`- live_bnn_overlay_on=${part2cSummary.live_bnn_overlay_on ?? "NA"}`);
+      } else {
+        lines.push("- not deployed");
       }
       lines.push("");
       lines.push("PART 3 SUMMARY:");
@@ -1606,7 +1664,6 @@
       Object.entries(counts).forEach(([k, v]) => lines.push(`- ${k}=${v}`));
       return lines.join("\n");
     }
-
     function populatePredictionSnapshotCard(forecast) {
       const row = forecast?.row || null;
       const latestRealizedFilled = rowHasRealized(row);
@@ -2199,6 +2256,62 @@
       });
     }
 
+    function populateUncertaintySleeveGrids(part2bSummary, part2cSummary) {
+      // ── Part 2B: XGBoost Ensemble ──────────────────────────────────────
+      if (document.getElementById("part2bGrid")) {
+        if (!part2bSummary) {
+          renderKvGrid("part2bGrid", [
+            ["Status", "<span style='color:var(--muted-2)'>Not deployed — push part2b_xgb_ensemble.py to activate</span>"]
+          ]);
+        } else {
+          const gateOk = part2bSummary.gate_validation_passed;
+          const bnnRec  = part2bSummary.bnn_sleeve_recommended;
+          renderKvGrid("part2bGrid", [
+            ["Gate validated",          `<span style="color:${gateOk ? "var(--good)" : "var(--bad)"};font-weight:700">${gateOk ? "✅ PASSED" : "❌ FAILED"}</span>`],
+            ["BNN recommended",         `<span style="color:${bnnRec  ? "var(--good)" : "var(--warn)"};font-weight:700">${bnnRec  ? "✅ YES"    : "⚠️ NOT YET"}</span>`],
+            ["Ensemble size",            part2bSummary.n_ensemble ?? "—"],
+            ["Holdout AUC",              fmtNum(part2bSummary.holdout_auc, 4)],
+            ["Holdout ECE",              fmtNum(part2bSummary.holdout_ece, 4)],
+            ["WF ECE gap (hi−lo)",       fmtNum(part2bSummary.walkforward_ece_gap, 4)],
+            ["Spread vs caution corr",   fmtNum(part2bSummary.walkforward_spread_corr_vs_caution, 3)],
+            ["Overlay threshold",        fmtNum(part2bSummary.epist_overlay_threshold_75pct, 5)],
+            ["WF eval rows (row-level)", part2bSummary.n_walkforward_eval_rows ?? "—"],
+            ["Decision utility",         fmtNum(part2bSummary.holdout_decision_utility, 4)],
+            ["Built at",                 part2bSummary.built_at ? String(part2bSummary.built_at).slice(0, 19).replace("T", " ") : "—"],
+          ]);
+        }
+      }
+
+      // ── Part 2C: BNN Sleeve ────────────────────────────────────────────
+      if (document.getElementById("part2cGrid")) {
+        if (!part2cSummary) {
+          const msg = part2bSummary?.bnn_sleeve_recommended
+            ? "Part 2B recommends BNN — push part2c_bnn_sleeve.py + uncomment torch in requirements.txt"
+            : "Not deployed — activate only after Part 2B earns bnn_sleeve_recommended: true";
+          renderKvGrid("part2cGrid", [
+            ["Status", `<span style='color:var(--muted-2)'>${msg}</span>`]
+          ]);
+        } else {
+          renderKvGrid("part2cGrid", [
+            ["Backend",                  part2cSummary.backend ?? "—"],
+            ["Ensemble size",            part2cSummary.n_ensemble ?? "—"],
+            ["MC samples",               part2cSummary.n_mc_samples ?? "—"],
+            ["Holdout AUC",              fmtNum(part2cSummary.holdout_auc, 4)],
+            ["Holdout ECE",              fmtNum(part2cSummary.holdout_ece, 4)],
+            ["Holdout Brier",            fmtNum(part2cSummary.holdout_brier, 4)],
+            ["Decision utility",         fmtNum(part2cSummary.holdout_decision_utility, 4)],
+            ["Overlay threshold",        fmtNum(part2cSummary.epist_overlay_threshold_75pct, 5)],
+            ["WF eval rows (row-level)", part2cSummary.n_walkforward_eval_rows ?? "—"],
+            ["Row-level mean epist",     fmtNum(part2cSummary.row_level_mean_epist, 5)],
+            ["Live p_bnn_mean",          fmtNum(part2cSummary.live_p_bnn_mean, 4)],
+            ["Live p_bnn_epistemic",     fmtNum(part2cSummary.live_p_bnn_epistemic, 5)],
+            ["Live overlay on",          part2cSummary.live_bnn_overlay_on !== undefined ? String(part2cSummary.live_bnn_overlay_on) : "—"],
+            ["Built at",                 part2cSummary.built_at ? String(part2cSummary.built_at).slice(0, 19).replace("T", " ") : "—"],
+          ]);
+        }
+      }
+    }
+
     async function loadAll() {
       const debug = document.getElementById("debugBox");
       debug.textContent = "Loading GitHub artifacts...";
@@ -2225,7 +2338,9 @@
           part10State,
           part10Report,
           part10SignalLogRaw,
-          part10TradeLogRaw
+          part10TradeLogRaw,
+          part2bSummary,
+          part2cSummary
         ] = await Promise.all([
           fetchCsv(CFG.files.predLog),
           fetchCsv(CFG.files.prodTape),
@@ -2248,7 +2363,9 @@
           fetchJson(CFG.files.part10State, true),
           fetchJson(CFG.files.part10Report, true),
           fetchCsvOptional(CFG.files.part10SignalLog),
-          fetchCsvOptional(CFG.files.part10TradeLog)
+          fetchCsvOptional(CFG.files.part10TradeLog),
+          fetchJson(CFG.files.part2bSummary, true),
+          fetchJson(CFG.files.part2cSummary, true)
         ]);
 
         const predLog = sortByDateAsc(predLogRaw, "decision_date");
@@ -2281,6 +2398,7 @@
         populateGovernanceSnapshot(defense);
         populateAlphaSnapshot(alpha);
         populateOpsGrids(validation, live, execution, portfolio);
+        populateUncertaintySleeveGrids(part2bSummary, part2cSummary);
         populateBotSnapshot(bot);
 
         const counts = {
@@ -2295,7 +2413,7 @@
           part10SignalRows: part10SignalLog.length,
           part10TradeRows: part10TradeLog.length
         };
-        setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary));
+        setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary, part2bSummary, part2cSummary));
         populateFooter(counts, forecast);
 
         renderPredictionChart(predLog);
@@ -2322,10 +2440,12 @@
           alpha_summary_json: alphaSummaryJson || {}
         };
         populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMetaCombined, part9Report);
+        renderJsonTable("part2bSummaryTable", part2bSummary || {});
+        renderJsonTable("part2cSummaryTable", part2cSummary || {});
         populateBotTables(part10SignalLog, part10TradeLog);
 
         document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
-        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}, bot_signal=${part10SignalLog.length}, bot_trade=${part10TradeLog.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}, part10state=${!!part10State}, part10report=${!!part10Report}.`;
+        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}, bot_signal=${part10SignalLog.length}, bot_trade=${part10TradeLog.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}, part10state=${!!part10State}, part10report=${!!part10Report}, part2b=${!!part2bSummary}${part2bSummary ? `(gate_ok=${part2bSummary.gate_validation_passed})` : ""}, part2c=${!!part2cSummary}.`;
 
         setTimeout(resizeAllPlots, 100);
       } catch (err) {
@@ -2341,11 +2461,6 @@
   </script>
 </body>
 </html>
-
-
-
-
-
 
 
 
