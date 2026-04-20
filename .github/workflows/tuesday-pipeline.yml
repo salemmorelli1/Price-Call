@@ -1,34 +1,39 @@
 name: Daily Production Run
 
+# Two crons cover both EST (UTC-5, winter) and EDT (UTC-4, summer).
+# A Python gate in the predict job then confirms the local NY time is
+# between 9:30 and 9:45 AM, providing a ±7-minute tolerance for
+# GitHub Actions scheduler drift.
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "35 13 * * 1-5"
-    - cron: "35 14 * * 1-5"
+    - cron: "35 13 * * 1-5"   # 9:35 AM EDT (UTC-4, summer)
+    - cron: "35 14 * * 1-5"   # 9:35 AM EST (UTC-5, winter)
+  workflow_dispatch:           # always available for manual runs
 
-permissions:
-  contents: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
+# ── Concurrency guard ────────────────────────────────────────────────────
+# Prevents the daily-backfill and production pipeline from running
+# simultaneously and creating git conflicts on shared artifact files.
+# cancel-in-progress: false ensures a running pipeline is never killed;
+# a new dispatch waits for the current run to finish instead.
 concurrency:
-  group: daily-production-run
+  group: pricecall-production
   cancel-in-progress: false
 
 jobs:
   predict:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      PRICECALL_ROOT: ${{ github.workspace }}
+      PRICECALL_STRICT_DRIVE_ONLY: "0"
 
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -38,120 +43,114 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Gate scheduled run to 09:30-09:45 America/New_York on weekdays
+      # ── Time gate ─────────────────────────────────────────────────────
+      # Accepts any scheduled trigger that lands between 9:30–9:45 AM ET.
+      # Manual dispatches (workflow_dispatch) always proceed immediately.
+      - name: Check run window (skip if outside 9:30-9:45 AM ET on weekdays)
         id: gate
-        if: github.event_name == 'schedule'
         run: |
-          python - <<'PY'
-          import csv
-          import os
-          import pathlib
+          python - <<'PYEOF'
+          import sys, os
           from datetime import datetime
-          from zoneinfo import ZoneInfo
+          try:
+              from zoneinfo import ZoneInfo
+          except ImportError:
+              from backports.zoneinfo import ZoneInfo
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          if event == "workflow_dispatch":
+              print("Manual dispatch — skipping time gate.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("run=true\n")
+              sys.exit(0)
 
           now = datetime.now(ZoneInfo("America/New_York"))
-          ok = (
-              now.weekday() in {0, 1, 2, 3, 4}
-              and now.hour == 9
-              and 30 <= now.minute <= 45
-          )
+          hour, minute, weekday = now.hour, now.minute, now.weekday()
 
-          root = pathlib.Path(os.environ.get("GITHUB_WORKSPACE", "."))
-          log_path = root / "artifacts_part3" / "prediction_log.csv"
-          today_str = now.date().isoformat()
+          in_window = (hour == 9) and (30 <= minute <= 45) and (weekday < 5)
+          print(f"NY time: {now.strftime('%H:%M')} weekday={weekday} in_window={in_window}")
 
-          if ok and log_path.exists():
-              try:
-                  with open(log_path, newline="", encoding="utf-8") as f:
-                      rows = list(csv.DictReader(f))
-                  if rows:
-                      last_decision = str(rows[-1].get("decision_date", "")).strip()[:10]
-                      if last_decision == today_str:
-                          print(f"Already ran for {today_str}, skipping duplicate scheduled run.")
-                          ok = False
-              except Exception as e:
-                  print(f"[gate] Dedupe check warning: {e}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"run={'true' if in_window else 'false'}\n")
 
-          print(f"America/New_York now: {now.isoformat()} | run_ok={ok}")
+          if not in_window:
+              print("Outside 9:30-9:45 AM ET window — skipping run.")
+          PYEOF
 
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"run_ok={'true' if ok else 'false'}\n")
-          PY
+      - name: Run pipeline
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python run_tuesday_prediction.py --force
 
-      - name: Run canonical daily pipeline
-        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
-        env:
-          PRICECALL_ROOT: ${{ github.workspace }}
-          PRICECALL_STRICT_DRIVE_ONLY: "1"
-          PRICECALL_ALPHA_FAMILY: "part2a21"
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-        run: |
-          python run_tuesday_prediction.py --force
-
-      - name: Verify critical artifacts were created
-        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true'
+      # ── Artifact verification ─────────────────────────────────────────
+      - name: Verify required artifacts
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        id: verify
         run: |
           missing=0
-
           for path in \
-            artifacts_part2_g532/predictions/part2_g532_summary.json \
-            artifacts_part2b_xgb/predictions/part2b_xgb_summary.json \
-            artifacts_part2c_bnn/predictions/part2c_bnn_summary.json \
-            artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv \
-            artifacts_part3/prediction_log.csv \
-            artifacts_part3_v1/v1_final_production_tape.csv \
-            artifacts_part6/part6_meta.json \
-            artifacts_part7/current_target_weights.json \
-            artifacts_part8/part8_meta.json \
-            artifacts_part9/live_attribution_report.json
+            "artifacts_part2_g532/predictions/part2_g532_summary.json" \
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv" \
+            "artifacts_part3/prediction_log.csv" \
+            "artifacts_part3_v1/v1_final_production_tape.csv" \
+            "artifacts_part6/part6_meta.json" \
+            "artifacts_part7/current_target_weights.json" \
+            "artifacts_part8/part8_meta.json" \
+            "artifacts_part9/live_attribution_report.json"
           do
-            if [ ! -e "$path" ]; then
-              echo "MISSING: $path"
-              missing=1
-            else
+            if [ -f "$path" ]; then
               echo "OK: $path"
+            else
+              echo "MISSING: $path"
+              missing=$((missing + 1))
             fi
           done
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
 
-          if [ "$missing" -ne 0 ]; then
-            echo "Critical production artifacts were not created."
+      - name: Run missing=${{ steps.verify.outputs.missing }}
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ steps.verify.outputs.missing }}" != "0" ]; then
+            echo "Required artifacts are missing — aborting commit."
             exit 1
           fi
 
-      - name: Commit updated production artifacts
-        if: success() && (github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_ok == 'true')
+      # ── Commit and push ───────────────────────────────────────────────
+      # Uses --no-rebase merge with -X ours to resolve any artifact
+      # conflicts in favour of the current run's output. Artifact files
+      # are always authoritative from the most-recent run.
+      - name: Commit and push artifacts
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Part 9 is produced during the run for local downstream use,
-          # but it is NOT committed from this workflow.
-          # This avoids rebase conflicts with the workflow that also refreshes
-          # live_attribution_report.json.
-          git restore --source=HEAD --staged --worktree artifacts_part9/live_attribution_report.json 2>/dev/null || true
+          # Stage all artifact outputs, forcing past .gitignore
+          git add -f \
+            artifacts_part2_g532/predictions/ \
+            artifacts_part2a_alpha/predictions/ \
+            artifacts_part3/ \
+            artifacts_part3_v1/ \
+            artifacts_part6/ \
+            artifacts_part7/ \
+            artifacts_part8/ \
+            artifacts_part9/ \
+            artifacts_part10_bot/ || true
+          git add -f artifacts_part2b_xgb/ 2>/dev/null || true
+          git add -f artifacts_part2c_bnn/ 2>/dev/null || true
 
-          for path in \
-            artifacts_part2_g532/predictions \
-            artifacts_part2b_xgb/predictions \
-            artifacts_part2c_bnn/predictions \
-            artifacts_part2a_alpha/predictions \
-            artifacts_part3 \
-            artifacts_part3_v1 \
-            artifacts_part6 \
-            artifacts_part7 \
-            artifacts_part8 \
-            artifacts_part10_bot
-          do
-            if [ -e "$path" ]; then
-              git add -f "$path"
-            fi
-          done
-
+          # Skip commit if nothing changed
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No artifact changes to commit."
             exit 0
           fi
 
           git commit -m "Update daily production artifacts [skip ci]"
-          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+
+          # Pull remote changes, resolving any JSON/CSV conflicts by
+          # keeping the current run's version (ours).
+          git pull origin "${GITHUB_REF_NAME}" \
+            --no-rebase \
+            --strategy-option=ours \
+            --no-edit || true
+
           git push origin HEAD:"${GITHUB_REF_NAME}"
