@@ -1,5 +1,6 @@
 
 
+
 # @title Part 5
 from __future__ import annotations
 import sys as _sys
@@ -289,6 +290,13 @@ def _cleanup_candidates_for_family(expected_alpha_family: str) -> List[Path]:
 
 
 def _cleanup_conflicting_session_artifacts(expected_alpha_family: str) -> List[str]:
+    # NOTE (Finding #18, 2026-04): This function only operates in Google Colab
+    # sessions where artifact trees live under /content/artifacts_*.  In GitHub
+    # Actions (and any other CI environment) paths resolve under /home/runner/work/
+    # or similar, which does NOT start with "/content/artifacts_", so the guard
+    # below makes this function a guaranteed no-op in CI.  This is intentional:
+    # we never want the CI runner to delete persisted artifact directories that
+    # have been committed to the repo by a prior workflow run.
     removed: List[str] = []
     for p in _cleanup_candidates_for_family(expected_alpha_family):
         try:
@@ -297,7 +305,7 @@ def _cleanup_conflicting_session_artifacts(expected_alpha_family: str) -> List[s
             rp = p
         rp_str = str(rp)
         if not rp_str.startswith("/content/artifacts_"):
-            continue
+            continue  # Only runs in Colab; no-op in CI / GitHub Actions
         if rp.exists():
             shutil.rmtree(rp, ignore_errors=True)
             if not rp.exists():
@@ -679,5 +687,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
