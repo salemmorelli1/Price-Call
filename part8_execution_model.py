@@ -899,7 +899,10 @@ def compute_annual_cost_drag(
 
     # Annual aggregates
     n_rebalances = len(cost_df)
-    rebalances_per_year = 52  # Weekly
+    # FIX (Finding #11, 2026-04): was 52 (weekly). The system is H=1 DAILY.
+    # Using 52 understated annual TC drag by a factor of 252/52 ≈ 4.85×, which
+    # would make the TC gate in Part 9/10 too lenient once NORMAL mode activates.
+    rebalances_per_year = 252  # Daily H=1
     years = n_rebalances / rebalances_per_year
 
     # Current system overestimates costs (which is actually conservative — good)
@@ -958,7 +961,10 @@ def generate_part3_record(cfg: Part8Config, instructions: Dict, annual_drag: Dic
         "built_at": datetime.now(timezone.utc).isoformat(),
         "total_estimated_cost_dollars": float(instructions.get("total_estimated_cost_dollars", 0.0)),
         "total_estimated_cost_bps": float(instructions.get("total_estimated_cost_bps", 0.0)),
-        "annual_tc_drag_bps": float(annual_drag.get("annual_drag_bps", np.nan)) if isinstance(annual_drag, dict) else np.nan,
+        # FIX (Finding #10, 2026-04): compute_annual_cost_drag returns the key
+        # "annual_drag_bps_actual", not "annual_drag_bps". The prior .get() call
+        # always resolved to NaN, permanently disabling the TC gate in Part 9/10.
+        "annual_tc_drag_bps": float(annual_drag.get("annual_drag_bps_actual", annual_drag.get("annual_drag_bps", np.nan))) if isinstance(annual_drag, dict) else np.nan,
     }
 
 
