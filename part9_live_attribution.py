@@ -103,14 +103,50 @@ def _abs_path(p: str) -> str:
 # Statistical testing
 # ============================================================
 
+def _delong_se_auc(y: np.ndarray, p: np.ndarray) -> float:
+    """DeLong variance estimator for AUC (Wilcoxon-Mann-Whitney form).
+
+    Standard reference: DeLong, DeLong & Clarke-Pearson (1988).
+    This is strictly larger than the plug-in formula sqrt(AUC*(1-AUC)/n)
+    because it accounts for the correlation structure of the U-statistic.
+    Under H0 (AUC=0.5) the approximation reduces to sqrt(1/(12*n1) + 1/(12*n0)).
+
+    Returns SE under the *observed* AUC, not under H0.  For a t-stat we want
+    the SE of (AUC - 0.5), which DeLong provides directly.
+    """
+    pos_mask = y.astype(bool)
+    neg_mask = ~pos_mask
+    n1 = int(pos_mask.sum())
+    n0 = int(neg_mask.sum())
+    if n1 < 2 or n0 < 2:
+        # Fall back to plug-in when one class is too small for DeLong
+        auc_est = float(np.mean(p[pos_mask].reshape(-1, 1) > p[neg_mask].reshape(1, -1)))
+        return float(np.sqrt(max(auc_est * (1.0 - auc_est), 1e-12) / max(n1 + n0, 1)))
+    p_pos = p[pos_mask]
+    p_neg = p[neg_mask]
+    # Structural components: V10[i] = P(score_pos_i > score_neg), V01[j] = P(score_pos > score_neg_j)
+    V10 = np.array([float(np.mean(pi > p_neg) + 0.5 * np.mean(pi == p_neg)) for pi in p_pos])
+    V01 = np.array([float(np.mean(p_pos > pj) + 0.5 * np.mean(p_pos == pj)) for pj in p_neg])
+    auc = float(np.mean(V10))
+    s10 = float(np.var(V10, ddof=1))
+    s01 = float(np.var(V01, ddof=1))
+    var_auc = s10 / n1 + s01 / n0
+    return float(np.sqrt(max(var_auc, 1e-12)))
+
+
 def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: float) -> Dict:
     """
     Test if model's sign accuracy is statistically better than base rate.
     Null hypothesis: P(correct direction) = 0.5
 
-    For a binary tail event:
-    - Correct = model predicted high risk AND tail event occurred
-              OR model predicted low risk AND no tail event
+    FIX (Findings #5 & #9, 2026-04):
+    - Guard against t=∞ when n<10 or correct[] has zero variance (all same value).
+      scipy.stats.ttest_1samp returns t=inf / p=0 when std=0, which triggered
+      significant_5pct=True for n=2 — a mathematically invalid result.
+    - Replace plug-in SE(AUC) = sqrt(AUC*(1-AUC)/n) with the DeLong estimator.
+      The plug-in formula ignores the correlation structure of the Wilcoxon
+      U-statistic and systematically underestimates SE, inflating t_stat_auc.
+    - Minimum sample guard: significant_* flags are suppressed for n < 10.
     """
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(p_pred, dtype=float)
@@ -118,43 +154,77 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     y, p = y[finite], p[finite]
     n = len(y)
 
+    _null = {"n": n, "t_stat_accuracy": np.nan, "p_value_accuracy": np.nan,
+             "auc": np.nan, "t_stat_auc": np.nan,
+             "brier": np.nan, "brier_null": np.nan, "brier_skill_score": np.nan,
+             "significant_5pct": False, "significant_1pct": False}
+
     if n < 2:
-        return {"n": n, "t_stat": np.nan, "p_value": np.nan, "significant": False}
+        return {**_null, "n": n}
 
     # Brier skill score vs base rate
     brier_model = float(np.mean((y - p) ** 2))
-    brier_null = float(np.mean((y - base_rate) ** 2))
-    bss = 1.0 - brier_model / (brier_null + 1e-10)  # Positive = better than base rate
+    brier_null  = float(np.mean((y - base_rate) ** 2))
+    bss = 1.0 - brier_model / (brier_null + 1e-10)
 
     # Direction accuracy
-    pred_up = p < base_rate  # Model predicts VOO outperforms
-    actual_up = y < 0.5      # No tail event = VOO outperformed
-    correct = (pred_up == actual_up).astype(float)
-    accuracy = float(correct.mean())
+    pred_up   = p < base_rate
+    actual_up = y < 0.5
+    correct   = (pred_up == actual_up).astype(float)
+    accuracy  = float(correct.mean())
 
     # t-test: is accuracy > 0.5?
-    t, pval = stats.ttest_1samp(correct, 0.5)
+    # Guard: if std == 0 (all correct or all wrong), the t-test is undefined.
+    # Report nan rather than ±inf so downstream gates never fire on degenerate samples.
+    correct_std = float(np.std(correct, ddof=1))
+    if correct_std < 1e-12 or n < 3:
+        t    = np.nan
+        pval = np.nan
+    else:
+        t, pval = stats.ttest_1samp(correct, 0.5)
+        t    = float(t)
+        pval = float(pval)
 
-    # AUC
+    # AUC — requires at least one sample from each class
     from sklearn.metrics import roc_auc_score
-    auc = float(roc_auc_score(y.astype(int), p)) if len(np.unique(y.astype(int))) >= 2 else np.nan
+    n_classes = len(np.unique(y.astype(int)))
+    if n_classes >= 2:
+        auc = float(roc_auc_score(y.astype(int), p))
+    else:
+        auc = np.nan
 
-    # AUC t-stat
-    se_auc = float(np.sqrt(auc * (1 - auc) / max(n, 1)))
-    t_auc = (auc - 0.5) / se_auc if se_auc > 0 else np.nan
+    # AUC t-stat using DeLong SE (Finding #9)
+    # SE is meaningless when AUC itself is NaN or when n is too small.
+    if np.isfinite(auc) and n >= 4:
+        se_auc = _delong_se_auc(y.astype(int), p)
+        t_auc  = float((auc - 0.5) / se_auc) if se_auc > 0 else np.nan
+    else:
+        t_auc = np.nan
+
+    # Significance flags: require n >= 10 AND finite test statistics to prevent
+    # spurious flags from degenerate small-sample results (e.g. n=2, all correct).
+    _min_n_for_sig = 10
+    _t_fin   = np.isfinite(t)
+    _tauc_fin = np.isfinite(t_auc)
+    sig_5 = (n >= _min_n_for_sig) and (
+        (_t_fin and abs(t) > 1.96) or (_tauc_fin and abs(t_auc) > 1.96)
+    )
+    sig_1 = (n >= _min_n_for_sig) and (
+        (_t_fin and abs(t) > 2.58) or (_tauc_fin and abs(t_auc) > 2.58)
+    )
 
     return {
-        "n": n,
-        "accuracy": accuracy,
-        "t_stat_accuracy": float(t),
-        "p_value_accuracy": float(pval),
-        "auc": auc,
-        "t_stat_auc": float(t_auc),
-        "brier": brier_model,
-        "brier_null": brier_null,
-        "brier_skill_score": float(bss),
-        "significant_5pct": bool(abs(t) > 1.96 or (np.isfinite(t_auc) and abs(t_auc) > 1.96)),
-        "significant_1pct": bool(abs(t) > 2.58 or (np.isfinite(t_auc) and abs(t_auc) > 2.58)),
+        "n":                  n,
+        "accuracy":           accuracy,
+        "t_stat_accuracy":    t,
+        "p_value_accuracy":   pval,
+        "auc":                auc,
+        "t_stat_auc":         t_auc,
+        "brier":              brier_model,
+        "brier_null":         brier_null,
+        "brier_skill_score":  float(bss),
+        "significant_5pct":   bool(sig_5),
+        "significant_1pct":   bool(sig_1),
     }
 
 
