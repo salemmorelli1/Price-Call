@@ -10,10 +10,13 @@ Current authoritative behavior
 - Falls back to direct execution only if Part 5 is missing
 - Includes Part 10 trading bot in the canonical stack
 - Keeps Part 4 optional and separate (HTML / GitHub dashboard can live independently)
+- Part 2B (XGBoost ensemble) and Part 2C (BNN) are optional experimental sleeves
 
 Authoritative daily execution order
 -----------------------------------
-Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10
+Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10
+(* Part 2B and Part 2C are optional: skipped if absent, non-blocking if they fail.
+   Part 2C should only be activated after Part 2B's gate_validation_passed = true.)
 """
 
 from __future__ import annotations
@@ -73,17 +76,19 @@ os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
 # Canonical files
 # ------------------------------------------------------------
 CANONICAL_FILES: Dict[str, str] = {
-    "PART0": "part0_data_infrastructure.py",
-    "PART1": "part1_builder.py",
-    "PART2": "part2_predictor.py",
+    "PART0":  "part0_data_infrastructure.py",
+    "PART1":  "part1_builder.py",
+    "PART2":  "part2_predictor.py",
+    "PART2B": "part2b_xgb_ensemble.py",  # optional experimental sleeve
+    "PART2C": "part2c_bnn_sleeve.py",    # optional experimental sleeve
     "PART2A": "part2a21_alpha.py",
-    "PART3": "part3_governance.py",
-    "PART4": "part4_gui.py",  # optional
-    "PART5": "part5_validator.py",
-    "PART6": "part6_regime_engine.py",
-    "PART7": "part7_portfolio_construction.py",
-    "PART8": "part8_execution_model.py",
-    "PART9": "part9_live_attribution.py",
+    "PART3":  "part3_governance.py",
+    "PART4":  "part4_gui.py",            # optional
+    "PART5":  "part5_validator.py",
+    "PART6":  "part6_regime_engine.py",
+    "PART7":  "part7_portfolio_construction.py",
+    "PART8":  "part8_execution_model.py",
+    "PART9":  "part9_live_attribution.py",
 }
 
 PART10_CANDIDATES: Tuple[str, ...] = (
@@ -95,12 +100,13 @@ BACKFILL_CANDIDATES: Tuple[str, ...] = (
     "backfill_realized.py",
 )
 
-# Direct fallback order only. Preferred path is Part 5.
 DIRECT_PIPELINE_ORDER: List[str] = [
     "PART0",
     "PART6",
     "PART1",
     "PART2",
+    "PART2B",  # optional, non-blocking
+    "PART2C",  # optional, non-blocking
     "PART2A",
     "PART7",
     "PART8",
@@ -108,7 +114,12 @@ DIRECT_PIPELINE_ORDER: List[str] = [
     "PART9",
 ]
 
-REQUIRED_FOR_DIRECT_RUN: List[str] = DIRECT_PIPELINE_ORDER + ["PART5"]
+# Core files required for a valid direct run.
+# PART2B and PART2C are intentionally excluded because they are optional sleeves.
+# PART5 is intentionally excluded so the advertised fallback is actually reachable.
+REQUIRED_FOR_DIRECT_RUN: List[str] = [
+    p for p in DIRECT_PIPELINE_ORDER if p not in {"PART2B", "PART2C"}
+]
 
 
 # ------------------------------------------------------------
@@ -137,7 +148,6 @@ def check_files(project_dir: Path) -> Tuple[List[str], List[Tuple[str, Path, boo
     backfill_path = first_existing(project_dir, BACKFILL_CANDIDATES)
     audit.append(("BACKFILL", project_dir / BACKFILL_CANDIDATES[0], backfill_path is not None))
 
-    # Required core files for any sane run
     for label in REQUIRED_FOR_DIRECT_RUN:
         path = (project_dir / CANONICAL_FILES[label]).resolve()
         if not path.exists():
@@ -199,7 +209,8 @@ def run_with_validator(project_dir: Path) -> int:
 def run_direct_pipeline(project_dir: Path) -> int:
     print("\n[INFO] part5_validator.py not found. Falling back to direct execution.")
     print("[INFO] Direct daily order:")
-    print("       Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("       Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("       * Part 2B and Part 2C are optional / experimental and non-blocking.")
     print("       Part 4 remains optional / separate.\n")
 
     common_env = {
@@ -209,7 +220,20 @@ def run_direct_pipeline(project_dir: Path) -> int:
     }
 
     for label in DIRECT_PIPELINE_ORDER:
-        script = (project_dir / CANONICAL_FILES[label]).resolve()
+        script_name = CANONICAL_FILES.get(label)
+        if script_name is None:
+            continue
+        script = (project_dir / script_name).resolve()
+
+        if label in {"PART2B", "PART2C"}:
+            if not script.exists():
+                print(f"\n[INFO] {label} ({script_name}) not found — skipping.")
+                continue
+            rc_exp = run_subprocess([sys.executable, str(script)], project_dir, extra_env=common_env)
+            if rc_exp != 0:
+                print(f"\n[WARN] {label} exited with code {rc_exp} — continuing (experimental sleeve).")
+            continue
+
         rc = run_subprocess([sys.executable, str(script)], project_dir, extra_env=common_env)
         if rc != 0:
             print(f"\n[ERROR] {label} failed with exit code {rc}.")
@@ -281,7 +305,8 @@ def main() -> int:
         return 1
 
     print("\n=== AUTHORITATIVE DAILY EXECUTION ORDER ===")
-    print("Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("* Part 2B and Part 2C are optional / experimental and non-blocking.")
     if not args.with_gui:
         print("GUI note: HTML / GitHub dashboard is separate; Python GUI is not launched unless --with-gui is passed.")
 
@@ -305,7 +330,8 @@ def main() -> int:
     print("\n✅ Daily pipeline completed successfully.")
     return 0
 
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 
 
