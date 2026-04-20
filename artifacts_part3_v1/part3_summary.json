@@ -44,8 +44,8 @@
   "strict_drive_only": 1,
   "platt_scaling_active": true,
   "current_regime": "risk_on",
-  "p_final_cal_raw": 0.2003456898689979,
-  "p_regime_recal": 0.2053685930061215,
+  "p_final_cal_raw": 0.2012676678436064,
+  "p_regime_recal": 0.21281083582391333,
   "platt_regimes_fit": [
     "calm",
     "crisis",
