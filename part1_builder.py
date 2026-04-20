@@ -73,6 +73,12 @@ class Part1Config:
 
     part0_dir: str = _DRIVE_ROOT + "/artifacts_part0"
     out_dir: str = _DRIVE_ROOT + "/artifacts_part1"
+    # FIX (Finding 2, Part6 Audit 2026-04):
+    # Part 6 runs before Part 1 in the canonical execution order. Part 1 now
+    # reads Part 6's regime_history.parquet and writes regime_labels_p6.parquet
+    # into artifacts_part1/ so Part 2 can consume it and propagate the HMM
+    # regime label through to the consensus tape and on to Part 7.
+    part6_dir: str = _DRIVE_ROOT + "/artifacts_part6"
 
     min_reg_rows: int = 500             # CHANGE: more rows needed for stable daily models
     max_stale_run: int = 3
@@ -242,6 +248,51 @@ def build_part1_v20(cfg: Part1Config):
         raise RuntimeError(f"Part 1 locked contract expects 14 features, found {len(X_live.columns)}.")
 
     X_live.to_parquet(os.path.join(cfg.out_dir, "X_features.parquet"))
+
+    # FIX (Finding 2, Part6 Audit 2026-04):
+    # Write regime_labels_p6.parquet so Part 2 can use Part 6's HMM regime
+    # labels as the canonical regime source instead of its own internal GMM.
+    #
+    # Design:
+    #   - Reads artifacts_part6/regime_history.parquet (written by Part 6).
+    #   - Left-joins on the X_live date index so coverage exactly matches the
+    #     Part 1 feature set. Rows where Part 6 has "unknown" remain "unknown"
+    #     and Part 2 falls back to its internal GMM for those dates.
+    #   - Writes a thin file: Date + regime_label + regime_id +
+    #     regime_persistence + transition_prob_crisis.
+    #   - Skips gracefully (with a warning) if regime_history.parquet is absent,
+    #     so the pipeline can still run on the first cold-start before Part 6 has
+    #     ever executed. Part 2 treats a missing file as all-unknown and uses its
+    #     own GMM throughout.
+    _p6_regime_path = os.path.join(cfg.part6_dir, "regime_history.parquet")
+    _p6_regime_cols = ["regime_label", "regime_id", "regime_persistence", "transition_prob_crisis"]
+    if os.path.exists(_p6_regime_path):
+        try:
+            _reg_hist = pd.read_parquet(_p6_regime_path)
+            _reg_hist.index = pd.to_datetime(_reg_hist.index, errors="coerce")
+            _reg_hist = _reg_hist[~_reg_hist.index.isna()].sort_index()
+            # Keep only columns that exist in the parquet (future-proof)
+            _keep = [c for c in _p6_regime_cols if c in _reg_hist.columns]
+            _reg_out = X_live[[]].join(_reg_hist[_keep], how="left")
+            # Fill any dates not covered by Part 6 with "unknown" / -1 / NaN
+            if "regime_label" in _reg_out.columns:
+                _reg_out["regime_label"] = _reg_out["regime_label"].fillna("unknown")
+            if "regime_id" in _reg_out.columns:
+                _reg_out["regime_id"] = pd.to_numeric(_reg_out["regime_id"], errors="coerce").fillna(-1).astype(int)
+            _reg_out.index.name = "Date"
+            _reg_out.reset_index().to_parquet(os.path.join(cfg.out_dir, "regime_labels_p6.parquet"), index=False)
+            _n_known = int((_reg_out.get("regime_label", pd.Series(["unknown"] * len(_reg_out))) != "unknown").sum())
+            _n_total = len(_reg_out)
+            print(f"[Part 1] Wrote regime_labels_p6.parquet: {_n_known}/{_n_total} dates have a non-unknown Part 6 HMM regime label.")
+        except Exception as _p6_exc:
+            print(f"[Part 1] WARNING: Could not merge Part 6 regime labels: {_p6_exc}")
+            print("[Part 1] regime_labels_p6.parquet not written; Part 2 will use its internal GMM.")
+    else:
+        print(
+            f"[Part 1] NOTE: {_p6_regime_path} not found. "
+            "Part 6 may not have run yet. Part 2 will use its internal GMM as fallback. "
+            "Re-run Part 1 after Part 6 to propagate HMM regime labels."
+        )
 
     last_feature_date = pd.Timestamp(X_live.index.max()).normalize()
     with open(os.path.join(cfg.out_dir, "asof_date.txt"), "w", encoding="utf-8") as f:
@@ -422,7 +473,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
