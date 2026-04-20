@@ -11,3 +11,6 @@ hmmlearn
 cvxpy
 gradio
 plotly
+# Part 2C (BNN sleeve) — install when activating step 6 of the A+ sequence.
+# Keep commented until part2b_xgb_summary.json confirms bnn_sleeve_recommended: true.
+# torch
