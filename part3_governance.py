@@ -450,7 +450,10 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
     # whether all promotion gates were open.
     #
     # The authoritative state is now always computed by _infer_promotion_state
-    # using the already-correct realized_dates (559) and gate flags (all 1).
+    # using the realized_dates derived above and the gate flags read from the
+    # alpha summary JSON / tape row.  The state is fully re-derived from
+    # underlying variables on every run, so stale alpha_state fields in older
+    # artifacts do not corrupt it.
     # This eliminates the dependency on Part 2A writing a field it never wrote.
     #
     # For forward-compatibility: if a future Part 2A version does write
@@ -650,26 +653,17 @@ def _build_fusion_allocations(
 def _count_realized_fused_rows(tape: pd.DataFrame) -> int:
     """Count live predictions whose realized prices have been backfilled.
 
-    This counts rows in the PREDICTION LOG where both px_voo_realized and
-    px_ief_realized are non-null — i.e., where the horizon has elapsed and
-    the backfill script has confirmed the outcome price.
+    NOTE: This function returns 0 to correctly reflect the live-prediction
+    realized state.  Historical tape rows are not 'fused live predictions'
+    regardless of whether their forward returns are revealed in the backtest
+    history. The prior implementation returned up to ~1,638 historical rows,
+    which contradicted the simultaneously-zero prediction_log_realized_rows.
 
-    NOTE: The function signature accepts the production tape (for backward
-    compatibility with the call site), but the meaningful metric is always
-    the prediction-log realized count, which is separately tracked as
-    prediction_log_realized_rows in the summary dict. This function now
-    returns 0 to correctly reflect the live-prediction realized state
-    (historical tape rows are not 'fused' live predictions regardless of
-    whether their forward returns are revealed in the backtest history).
-
-    Background: the previous implementation looked for fwd_voo/fwd_ief
-    columns in the production tape and found all 1638 historical rows
-    where those columns are non-null — returning 1638 while
-    prediction_log_realized_rows was simultaneously 0. That contradiction
-    made the field misleading. The correct value is the prediction-log
-    realized count, which is written independently as
-    prediction_log_realized_rows. This function is kept for call-site
-    compatibility but defers to that metric.
+    The authoritative live realized count is prediction_log_realized_rows,
+    computed in _upsert_prediction_log and written to the summary dict.
+    rows_realized_fused=0 is kept for call-site compatibility; downstream
+    consumers must read prediction_log_realized_rows for the correct count.
+    See part3_summary.json: "prediction_log_realized_rows" for the live count.
     """
     # The authoritative live realized count is prediction_log_realized_rows,
     # computed in _upsert_prediction_log and written to the summary dict.
@@ -1082,7 +1076,30 @@ def main(cfg: Part3Config = CFG) -> None:
     summary_out = out_dir / cfg.summary_name
 
     prod_tape.to_csv(tape_out, index=False)
-    gov_df.to_csv(gov_out, index=False)
+
+    # FIX (Finding #19): Governance CSV now accumulates a time-series history
+    # instead of overwriting on each run. We append the new row and deduplicate
+    # on Date, keeping the most-recent entry for each date so re-runs are
+    # idempotent. This provides a complete audit trail of governance state
+    # changes (e.g. when fail-closed was entered, when alpha advanced tiers).
+    if gov_out.exists():
+        try:
+            _existing_gov = pd.read_csv(gov_out)
+            _existing_gov["Date"] = pd.to_datetime(_existing_gov["Date"], errors="coerce")
+            gov_df_combined = pd.concat([_existing_gov, gov_df], ignore_index=True)
+            gov_df_combined["Date"] = pd.to_datetime(gov_df_combined["Date"], errors="coerce")
+            gov_df_combined = (
+                gov_df_combined
+                .sort_values("Date")
+                .drop_duplicates(subset=["Date"], keep="last")
+                .reset_index(drop=True)
+            )
+            gov_df_combined.to_csv(gov_out, index=False)
+        except Exception:
+            gov_df.to_csv(gov_out, index=False)
+    else:
+        gov_df.to_csv(gov_out, index=False)
+
     alloc_df.to_csv(alloc_out, index=False)
 
     alpha_sources = {
@@ -1227,6 +1244,10 @@ if __name__ == "__main__":
     main(CFG)
 
 
+
+
+
+    
 
 
 
