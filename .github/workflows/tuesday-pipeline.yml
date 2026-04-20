@@ -22,6 +22,8 @@ concurrency:
 jobs:
   predict:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 90
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
