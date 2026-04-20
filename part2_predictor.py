@@ -78,6 +78,11 @@ except Exception:
 @dataclass
 class Part2Gen53Config:
     PART1_DIR: str = _DRIVE_ROOT + "/artifacts_part1"
+    # FIX (Finding 2, Part6 Audit 2026-04): Part 2 now reads
+    # regime_labels_p6.parquet written by Part 1 (which in turn reads Part 6's
+    # regime_history.parquet). This allows the HMM regime label to flow through
+    # Part 2's tape to Part 7, replacing the internal GMM as the canonical source.
+    PART6_DIR: str = _DRIVE_ROOT + "/artifacts_part6"   # kept for direct fallback read
     PRED_DIR: str = _DRIVE_ROOT + "/artifacts_part2_g532/predictions"
     OUT_FILE: str = "g532_final_consensus_tape.csv"
     SUMMARY_FILE: str = "part2_g532_summary.json"
@@ -484,6 +489,12 @@ def _rolling_quantile(values, lookback: int, min_history: int, q: float) -> floa
 def _regime_defense_score(regime_label: str) -> float:
     lab = str(regime_label).lower()
     if lab == "dislocated":
+        return 1.0
+    # FIX (Finding 2, Part6 Audit 2026-04): Part 6's HMM uses "crisis" as its
+    # highest-stress regime label (equivalent to Part 2's internal "dislocated").
+    # Both map to the maximum defense score of 1.0 so the defense trigger
+    # behaves identically regardless of which regime source is active.
+    if lab == "crisis":
         return 1.0
     if lab == "high_vol":
         return 0.75
@@ -1109,6 +1120,53 @@ def _load_part1_contract(cfg: Part2Gen53Config) -> pd.DataFrame:
     full = full.merge(bench, on="Date", how="left")
     full = full.merge(live_px, on="Date", how="left", suffixes=("", "_live"))
 
+    # FIX (Finding 2, Part6 Audit 2026-04):
+    # Load the Part 6 HMM regime labels written by Part 1 as regime_labels_p6.parquet.
+    # These labels are merged in as "regime_label_p6" — a separate column so the
+    # existing internal GMM label pipeline is preserved as a fallback.
+    # The walk-forward loop below uses regime_label_p6 to override current_regime
+    # when the Part 6 label is available and non-unknown.
+    #
+    # Two candidate paths are checked in priority order:
+    #   1. artifacts_part1/regime_labels_p6.parquet  (written by Part 1 after it reads Part 6)
+    #   2. artifacts_part6/regime_history.parquet    (direct Part 6 output, fallback)
+    # If neither exists, regime_label_p6 is filled with "unknown" and Part 2's
+    # internal GMM is used as it was before this fix.
+    _p6_label_candidates = [
+        os.path.join(base, "regime_labels_p6.parquet"),                        # Part 1 wrote this
+        os.path.join(cfg.PART6_DIR, "regime_history.parquet"),                  # direct Part 6 fallback
+    ]
+    _p6_df: Optional[pd.DataFrame] = None
+    for _p6_cand in _p6_label_candidates:
+        if os.path.exists(_p6_cand):
+            try:
+                _p6_raw = pd.read_parquet(_p6_cand)
+                # Normalise the Date column — Part 1's file has Date as a column;
+                # Part 6's regime_history has it as the index.
+                if "Date" in _p6_raw.columns:
+                    _p6_raw["Date"] = pd.to_datetime(_p6_raw["Date"], errors="coerce").dt.normalize()
+                else:
+                    _p6_raw = _p6_raw.reset_index()
+                    _p6_raw.rename(columns={_p6_raw.columns[0]: "Date"}, inplace=True)
+                    _p6_raw["Date"] = pd.to_datetime(_p6_raw["Date"], errors="coerce").dt.normalize()
+                if "regime_label" in _p6_raw.columns:
+                    _p6_df = _p6_raw[["Date", "regime_label"]].rename(
+                        columns={"regime_label": "regime_label_p6"}
+                    )
+                    print(f"[Part 2] Loaded Part 6 HMM regime labels from: {_p6_cand}")
+                    _n_known = int((_p6_df["regime_label_p6"] != "unknown").sum())
+                    print(f"[Part 2] Part 6 regime coverage: {_n_known}/{len(_p6_df)} dates non-unknown.")
+                    break
+            except Exception as _p6_exc:
+                print(f"[Part 2] WARNING: Could not load Part 6 labels from {_p6_cand}: {_p6_exc}")
+
+    if _p6_df is not None:
+        full = full.merge(_p6_df, on="Date", how="left")
+        full["regime_label_p6"] = full["regime_label_p6"].fillna("unknown")
+    else:
+        print("[Part 2] No Part 6 regime labels found. Internal GMM will be used as sole regime source.")
+        full["regime_label_p6"] = "unknown"
+
     if "px_voo_t_live" in full.columns and "px_voo_t" not in full.columns:
         rename_map = {"px_voo_t_live": "px_voo_t"}
         if "px_ief_t_live" in full.columns:
@@ -1295,6 +1353,9 @@ def _governance_mapping(
         (p_final_cal >= cfg.HIGH_RISK_ABS_P)
         or (downside_edge >= cfg.HIGH_RISK_EDGE)
         or (str(regime_label) == 'dislocated')
+        # FIX (Finding 2, Part6 Audit 2026-04): "crisis" is the Part 6 HMM
+        # equivalent of Part 2's internal "dislocated". Both trigger high_risk_state.
+        or (str(regime_label) == 'crisis')
     )
 
     spread_confirm = max(cfg.SPREAD_CONFIRM_MIN, cfg.SPREAD_K * max(leg_uncertainty, 0.0))
@@ -1769,6 +1830,21 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             ref_cols = [c for c in ("stress_score_raw", "vix_z21", "credit_spread_z21", "excess_vol10", "spread_ret21") if c in train_df.columns]
             ref_df = train_df[ref_cols].copy() if ref_cols else train_df.copy()
             current_regime = _fallback_regime(current_row, ref_df=ref_df).iloc[0]
+
+        # FIX (Finding 2, Part6 Audit 2026-04):
+        # Override current_regime with the Part 6 HMM label when it is available
+        # and non-unknown. Part 6 uses a 4-state Gaussian HMM trained on macro/
+        # volatility features (vix_z21, yield_curve_2s10s, etc.) — a more
+        # principled regime model than Part 2's internal GMM. The internal GMM
+        # result is retained as the fallback for dates where Part 6 returns
+        # "unknown" (e.g., cold-start or missing feature data).
+        #
+        # "crisis" (Part 6 label) is the semantic equivalent of "dislocated"
+        # (Part 2 GMM label). Both _regime_defense_score and high_risk_state
+        # have been updated to treat them identically (see fixes above).
+        _p6_label = str(current_row["regime_label_p6"].iloc[0]) if "regime_label_p6" in current_row.columns else "unknown"
+        if _p6_label not in ("unknown", "nan", "", "None"):
+            current_regime = _p6_label
         prob_pred = _predict_prob(fit_bundle["prob"], current_row[feature_cols], base_rate, cfg)
         dist_pred = _predict_dist(fit_bundle["dist"], current_row[feature_cols], tail_threshold, cfg)
         p_final_g5, p_final_g5_source, fusion_fallback_flag, dist_overlay = _apply_risk_overlay_g53(
@@ -2213,6 +2289,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
 
 
