@@ -346,12 +346,11 @@ class RegimeEngine:
 
         X = df[self.feature_cols].apply(pd.to_numeric, errors="coerce")
         # Forward-fill FRED-derived macro features before the notna filter.
-        # FRED series (yield curves, credit spreads) are weekly or monthly
-        # reporters that are valid to carry forward on non-reporting days.
-        # Without ffill, ~80% of rows get regime_label='unknown' because a
-        # single short-history series (e.g. hy_spread_fred, 785 obs out of
-        # 4073) leaves the feature NaN for all earlier dates, causing every
-        # row that pre-dates that series to fail the all-notna check.
+        # FRED series (yield curves, credit spreads) are weekly/monthly reporters
+        # valid to carry forward on non-reporting days. Without ffill, ~80% of
+        # rows get regime_label='unknown' because a short-history series like
+        # hy_spread_fred (785 obs out of 4073) leaves the feature NaN for all
+        # earlier dates, causing every pre-series row to fail the all-notna check.
         X = X.ffill()
         mask = X.notna().all(axis=1)
         Xg = X.loc[mask]
