@@ -38,29 +38,47 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Gate scheduled run to 09:35 America/New_York on weekdays
+      - name: Gate scheduled run to 09:30-09:45 America/New_York on weekdays
         id: gate
         if: github.event_name == 'schedule'
         run: |
           python - <<'PY'
+          import csv
           import os
+          import pathlib
           from datetime import datetime
           from zoneinfo import ZoneInfo
 
           now = datetime.now(ZoneInfo("America/New_York"))
 
-          # GitHub Actions cron scheduling has documented latency of 2-10 minutes
-          # under load.  The original exact-minute check (minute == 35) caused every
-          # scheduled run to be gate-blocked when the job started at 13:37 or 13:38
-          # UTC instead of exactly 13:35 UTC.  All scheduled runs completed in ~58s
-          # (gate-blocked exit) rather than the expected ~19 minutes.
-          #
-          # Fix: widen the acceptance window to 09:30-09:45 AM ET (30 <= minute <= 45).
-          # This absorbs up to 10 minutes of scheduler delay while remaining well clear
-          # of the second cron entry (14:35 UTC = 10:35 AM ET in EDT), so the two
-          # crons can never produce overlapping windows.  The concurrency group
-          # (cancel-in-progress: false) provides an additional deduplication layer.
-          ok = (now.weekday() in {0, 1, 2, 3, 4} and now.hour == 9 and 30 <= now.minute <= 45)
+          # Accept a 09:30-09:45 ET window instead of exact 09:35.
+          # This absorbs normal GitHub Actions scheduler delay.
+          ok = (
+              now.weekday() in {0, 1, 2, 3, 4}
+              and now.hour == 9
+              and 30 <= now.minute <= 45
+          )
+
+          root = pathlib.Path(os.environ.get("GITHUB_WORKSPACE", "."))
+          log_path = root / "artifacts_part3" / "prediction_log.csv"
+          today_str = now.date().isoformat()
+
+          # Belt-and-suspenders dedupe:
+          # if today's decision row already exists, skip the scheduled run.
+          if ok and log_path.exists():
+              try:
+                  with open(log_path, newline="", encoding="utf-8") as f:
+                      rows = list(csv.DictReader(f))
+                  if rows:
+                      last_decision = str(rows[-1].get("decision_date", "")).strip()[:10]
+                      if last_decision == today_str:
+                          print(f"Already ran for {today_str}, skipping duplicate scheduled run.")
+                          ok = False
+              except Exception as e:
+                  # Do not hard-fail the workflow on a dedupe read issue.
+                  # Just log it and allow the normal gate result to stand.
+                  print(f"[gate] Dedupe check warning: {e}")
+
           print(f"America/New_York now: {now.isoformat()} | run_ok={ok}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
