@@ -141,14 +141,20 @@ def _abs_path(p: str) -> str:
 
 
 def normalize_regime_label(label: object) -> str:
+    # FIX (Finding #14, 2026-04): the prior mapping collapsed 'calm' → 'risk_on',
+    # making the calm multiplier (1.30) in regime_risk_multipliers unreachable.
+    # 'calm' is now preserved as its own key so the optimizer applies the correct,
+    # more aggressive equity tilt in genuinely low-volatility regimes.
+    # 'dislocated' (Part 2 GMM label) continues to map to 'crisis' for conservative
+    # position sizing during stress episodes.
     s = str(label).strip().lower() if label is not None else "unknown"
     mapping = {
-        "calm": "risk_on",
-        "risk_on": "risk_on",
-        "high_vol": "high_vol",
-        "crisis": "crisis",
-        "dislocated": "crisis",
-        "unknown": "unknown",
+        "calm":       "calm",     # was incorrectly mapped to "risk_on" — now preserved
+        "risk_on":    "risk_on",
+        "high_vol":   "high_vol",
+        "crisis":     "crisis",
+        "dislocated": "crisis",   # Part 2 GMM stress label → crisis multiplier
+        "unknown":    "unknown",
     }
     return mapping.get(s, "unknown")
 
@@ -440,9 +446,17 @@ def compute_allocation(
         "view_confidence": view_confidence,
     }
 
-    # Expected returns from Black-Litterman
+    # Expected returns from Black-Litterman.
+    # FIX (Finding #22, 2026-04): pi and q must share the same temporal unit.
+    # cov_h = cov_ann * (H/252) is daily-scale at H=1, making pi daily-scale.
+    # But view_return is expressed as an annualized return (10% * edge), so
+    # passing cov_h caused a ~252x scale mismatch: q >> pi, meaning the model
+    # view always dominated the CAPM prior regardless of view_confidence.
+    # Fix: pass cov_ann to estimate_expected_returns so both pi and q are in
+    # annual units. The optimizer receives cov_h for the risk/variance terms
+    # (correct H-day horizon), while expected-return estimation uses annual scale.
     mu_bl = estimate_expected_returns(
-        model_view, market_w, cov_h, available_cols,
+        model_view, market_w, cov, available_cols,
         tau=cfg.tau, risk_aversion=cfg.risk_aversion
     )
 
@@ -669,5 +683,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
