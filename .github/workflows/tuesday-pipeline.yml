@@ -50,9 +50,6 @@ jobs:
           from zoneinfo import ZoneInfo
 
           now = datetime.now(ZoneInfo("America/New_York"))
-
-          # Accept a 09:30-09:45 ET window instead of exact 09:35.
-          # This absorbs normal GitHub Actions scheduler delay.
           ok = (
               now.weekday() in {0, 1, 2, 3, 4}
               and now.hour == 9
@@ -63,8 +60,6 @@ jobs:
           log_path = root / "artifacts_part3" / "prediction_log.csv"
           today_str = now.date().isoformat()
 
-          # Belt-and-suspenders dedupe:
-          # if today's decision row already exists, skip the scheduled run.
           if ok and log_path.exists():
               try:
                   with open(log_path, newline="", encoding="utf-8") as f:
@@ -75,8 +70,6 @@ jobs:
                           print(f"Already ran for {today_str}, skipping duplicate scheduled run.")
                           ok = False
               except Exception as e:
-                  # Do not hard-fail the workflow on a dedupe read issue.
-                  # Just log it and allow the normal gate result to stand.
                   print(f"[gate] Dedupe check warning: {e}")
 
           print(f"America/New_York now: {now.isoformat()} | run_ok={ok}")
@@ -102,6 +95,8 @@ jobs:
 
           for path in \
             artifacts_part2_g532/predictions/part2_g532_summary.json \
+            artifacts_part2b_xgb/predictions/part2b_xgb_summary.json \
+            artifacts_part2c_bnn/predictions/part2c_bnn_summary.json \
             artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv \
             artifacts_part3/prediction_log.csv \
             artifacts_part3_v1/v1_final_production_tape.csv \
@@ -129,15 +124,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Part 9 is produced during the run for local downstream use,
+          # but it is NOT committed from this workflow.
+          # This avoids rebase conflicts with the workflow that also refreshes
+          # live_attribution_report.json.
+          git restore --source=HEAD --staged --worktree artifacts_part9/live_attribution_report.json 2>/dev/null || true
+
           for path in \
             artifacts_part2_g532/predictions \
+            artifacts_part2b_xgb/predictions \
+            artifacts_part2c_bnn/predictions \
             artifacts_part2a_alpha/predictions \
             artifacts_part3 \
             artifacts_part3_v1 \
             artifacts_part6 \
             artifacts_part7 \
             artifacts_part8 \
-            artifacts_part9 \
             artifacts_part10_bot
           do
             if [ -e "$path" ]; then
