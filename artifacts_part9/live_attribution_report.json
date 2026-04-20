@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-19T23:48:42.206976+00:00",
+  "generated_at": "2026-04-20T05:17:56.495433+00:00",
   "total_predictions": 2,
   "n_live_realized": 2,
   "status": "IMMATURE",
@@ -29,15 +29,15 @@
     "brier": 0.042968166380739706
   },
   "classification_stats_backtest": {
-    "n": 1642,
-    "accuracy": 0.45371498172959807,
-    "t_stat_accuracy": -3.7661145460526493,
-    "p_value_accuracy": 0.0001716588164146342,
-    "auc": 0.5114862019081104,
-    "t_stat_auc": 0.9311242637620828,
-    "brier": 0.16259153406573248,
-    "brier_null": 0.16203465367833714,
-    "brier_skill_score": -0.003436797465294905,
+    "n": 1643,
+    "accuracy": 0.4485696895922094,
+    "t_stat_accuracy": -4.190303142042546,
+    "p_value_accuracy": 2.9339970097415353e-05,
+    "auc": 0.5097070945961399,
+    "t_stat_auc": 0.7870818537406228,
+    "brier": 0.162295992610353,
+    "brier_null": 0.161961200230121,
+    "brier_skill_score": -0.0020671140961512346,
     "significant_5pct": true,
     "significant_1pct": true
   },
