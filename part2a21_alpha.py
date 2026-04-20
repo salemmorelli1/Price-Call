@@ -392,13 +392,31 @@ def build_alpha_positions(
     # Current part2a21 soft-caution overlay: only extreme and jointly bad uncertainty
     # conditions should zero the sleeve outright. Otherwise caution is handled
     # through entry tightening and gross-alpha shrink.
+    #
+    # FIX (Finding #1, 2026-04): publish_fail_closed is a run-time governance flag
+    # expressing TODAY's deployment decision. It must NOT retroactively veto the
+    # 1,600+ historical rows that represent the alpha sleeve's genuine backtest
+    # track record.  Prior to this fix, Part 2 stamped publish_fail_closed=1 on
+    # every row of the tape when entering FAIL_CLOSED_NEUTRAL mode, which zeroed
+    # eligible on all rows, forced rank_ic / topk_rel_ret_net to NaN everywhere,
+    # collapsed mature_hist to empty, and locked realized_dates=0 — keeping the
+    # promotion ladder permanently at SHADOW regardless of how many historical
+    # dates had accumulated.
+    #
+    # The correct semantic: only the live row is subject to the fail-closed veto
+    # (it cannot generate an actionable signal while governance is in fail-closed
+    # mode).  Historical rows evaluate eligibility based on market conditions at
+    # each historical date, not today's governance state.
+    is_live_series = (
+        pd.to_numeric(x.get("is_live"), errors="coerce").fillna(0).astype(int) > 0
+    )
     overlay_hard_veto = (
         (
             (dist_width_caution >= CFG.overlay_hard_veto_width)
             & (uncertainty_penalty >= CFG.overlay_hard_veto_uncertainty)
             & (dist_overlay_on >= 1.0)
         )
-        | publish_fail_closed
+        | (publish_fail_closed & is_live_series)   # veto only the live row when fail-closed
     )
 
     veto_off = ~(high_risk | dislocated | deploy_downside | overlay_hard_veto)
@@ -778,9 +796,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
 
 
 
