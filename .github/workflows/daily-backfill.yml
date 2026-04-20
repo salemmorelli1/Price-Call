@@ -1,33 +1,33 @@
 name: Daily Backfill Realized
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "17 22 * * 1-5"
+    - cron: "0 20 * * 1-5"   # 4:00 PM ET (after market close, allows settled prices)
+  workflow_dispatch:
 
-permissions:
-  contents: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
+# ── Same concurrency group as the production pipeline ────────────────────
+# Prevents backfill from running while the production pipeline is active
+# and writing to the same artifact files (prediction_log.csv,
+# live_attribution_report.json). Both workflows queue rather than cancel.
 concurrency:
-  group: daily-backfill
+  group: pricecall-production
   cancel-in-progress: false
 
 jobs:
   backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      PRICECALL_ROOT: ${{ github.workspace }}
+      PRICECALL_STRICT_DRIVE_ONLY: "0"
 
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -37,40 +37,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run realized backfill
-        env:
-          PRICECALL_ROOT: ${{ github.workspace }}
-          PRICECALL_STRICT_DRIVE_ONLY: "1"
-          PRICECALL_ALPHA_FAMILY: "part2a21"
+      - name: Run backfill
+        run: python backfill_realized.py
+
+      - name: Commit and push backfill artifacts
         run: |
-          python backfill_realized.py
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Refresh live attribution
-        env:
-          PRICECALL_ROOT: ${{ github.workspace }}
-          PRICECALL_STRICT_DRIVE_ONLY: "1"
-          PRICECALL_ALPHA_FAMILY: "part2a21"
-        run: |
-          python part9_live_attribution.py
-
-      - name: Commit updated live artifacts
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if [ -f artifacts_part3/prediction_log.csv ]; then
-            git add -f artifacts_part3/prediction_log.csv
-          fi
-
-          if [ -f artifacts_part9/live_attribution_report.json ]; then
-            git add -f artifacts_part9/live_attribution_report.json
-          fi
+          git add -f \
+            artifacts_part3/prediction_log.csv \
+            artifacts_part9/live_attribution_report.json || true
 
           if git diff --cached --quiet; then
             echo "No backfill changes to commit."
             exit 0
           fi
 
-          git commit -m "Backfill realized prediction log and refresh live attribution [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push
+          git commit -m "Backfill realized prices [skip ci]"
+
+          git pull origin "${GITHUB_REF_NAME}" \
+            --no-rebase \
+            --strategy-option=ours \
+            --no-edit || true
+
+          git push origin HEAD:"${GITHUB_REF_NAME}"
