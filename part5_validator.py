@@ -1,3 +1,5 @@
+
+
 # @title Part 5
 from __future__ import annotations
 import sys as _sys
@@ -56,6 +58,9 @@ class Part5Config:
     part0_candidates: Tuple[str, ...] = ("part0_data_infrastructure.py",)
     part1_candidates: Tuple[str, ...] = ("part1_builder.py",)
     part2_candidates: Tuple[str, ...] = ("part2_predictor.py",)
+    # Part 2B and 2C are experimental sleeves — optional, validated at syntax level only.
+    part2b_candidates: Tuple[str, ...] = ("part2b_xgb_ensemble.py",)
+    part2c_candidates: Tuple[str, ...] = ("part2c_bnn_sleeve.py",)
     part3_candidates: Tuple[str, ...] = ("part3_governance.py",)
     part4_candidates: Tuple[str, ...] = ("part4_gui.py",)
     part6_candidates: Tuple[str, ...] = ("part6_regime_engine.py",)
@@ -456,13 +461,26 @@ def _validate_part3_contract(part3_summary: Dict[str, object], expected_alpha_fa
     return publish_mode, final_pass, latest_alpha_state, alpha_contract
 
 
-def _predlog_stats(predlog_path: Path) -> Tuple[int, int]:
+def _predlog_stats(predlog_path: Path) -> Tuple[int, int, dict]:
+    """Return (total_rows, realized_rows, schema_health).
+
+    schema_health keys:
+      has_deployment_mode  bool  — True if the new deployment_mode column is present
+      has_horizon_legacy   bool  — True if the horizon_legacy column is present
+      n_legacy_rows        int   — number of rows flagged as horizon_legacy
+      rows_realized_fused  int   — from part3_summary (cross-checked against realized count)
+    """
+    schema: dict = {
+        "has_deployment_mode": False,
+        "has_horizon_legacy": False,
+        "n_legacy_rows": 0,
+    }
     if not predlog_path.exists():
-        return 0, 0
+        return 0, 0, schema
     try:
         df = pd.read_csv(predlog_path)
     except Exception:
-        return 0, 0
+        return 0, 0, schema
 
     total_rows = int(len(df))
     realized_rows = 0
@@ -470,9 +488,17 @@ def _predlog_stats(predlog_path: Path) -> Tuple[int, int]:
     voo_real_cols = [c for c in ["px_voo_realized", "voo_realized"] if c in df.columns]
     ief_real_cols = [c for c in ["px_ief_realized", "ief_realized"] if c in df.columns]
     if voo_real_cols and ief_real_cols:
-        realized_rows = int((df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()).sum())
+        mask = df[voo_real_cols[0]].notna() & df[ief_real_cols[0]].notna()
+        if "horizon_legacy" in df.columns:
+            mask = mask & (df["horizon_legacy"].fillna(0).astype(int) == 0)
+        realized_rows = int(mask.sum())
 
-    return total_rows, realized_rows
+    schema["has_deployment_mode"] = "deployment_mode" in df.columns
+    schema["has_horizon_legacy"] = "horizon_legacy" in df.columns
+    if schema["has_horizon_legacy"]:
+        schema["n_legacy_rows"] = int(df["horizon_legacy"].fillna(0).astype(int).sum())
+
+    return total_rows, realized_rows, schema
 
 
 
@@ -480,6 +506,9 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     part0 = _find_first_existing(root, CFG.part0_candidates, "Part 0")
     part1 = _find_first_existing(root, CFG.part1_candidates, "Part 1")
     part2 = _find_first_existing(root, CFG.part2_candidates, "Part 2")
+    # Optional experimental sleeves — syntax-checked if present, never required.
+    part2b_path = root / CFG.part2b_candidates[0]
+    part2c_path = root / CFG.part2c_candidates[0]
     expected_alpha_family = _selected_alpha_family(root, CFG)
     part2a = _find_part2a_for_family(root, expected_alpha_family, CFG)
     part3 = _find_first_existing(root, CFG.part3_candidates, "Part 3")
@@ -490,10 +519,30 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     part10 = _find_first_existing(root, CFG.part10_candidates, "Part 10")
 
     print(f"ROOT: {root}")
-    ordered_scripts = [("PART0", part0), ("PART6", part6), ("PART1", part1), ("PART2", part2), ("PART2A", part2a), ("PART7", part7), ("PART8", part8), ("PART3", part3), ("PART9", part9), ("PART10", part10)]
+    # Core pipeline — all required
+    ordered_scripts = [
+        ("PART0",  part0),
+        ("PART6",  part6),
+        ("PART1",  part1),
+        ("PART2",  part2),
+        ("PART2A", part2a),
+        ("PART7",  part7),
+        ("PART8",  part8),
+        ("PART3",  part3),
+        ("PART9",  part9),
+        ("PART10", part10),
+    ]
     for label, script in ordered_scripts:
         print(f"{label}: {script} | exists = {script.exists()}")
         _validate_python_syntax(script)
+
+    # Optional experimental sleeves — syntax-checked only if file exists
+    for label, path in [("PART2B", part2b_path), ("PART2C", part2c_path)]:
+        if path.exists():
+            print(f"{label}: {path} | exists = True (optional sleeve)")
+            _validate_python_syntax(path)
+        else:
+            print(f"{label}: {path} | exists = False (optional, not required)")
     _reject_notebook_export(part3, expected_part="part3")
     _inspect_part3_static_summary_contract(part3, CFG)
     print("[OK] All standalone Python files passed syntax + standalone checks")
@@ -508,19 +557,49 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     }
 
     ordered = [
-        ("PART 0", part0),
-        ("PART 6", part6),
-        ("PART 1", part1),
-        ("PART 2", part2),
+        ("PART 0",  part0),
+        ("PART 6",  part6),
+        ("PART 1",  part1),
+        ("PART 2",  part2),
+    ]
+
+    # Insert optional experimental sleeves between PART2 and PART2A.
+    # Both are non-blocking: a non-zero exit code logs a warning and continues.
+    optional_sleeves = [
+        ("PART 2B", part2b_path),   # XGBoost ensemble uncertainty (step 5)
+        ("PART 2C", part2c_path),   # BNN sleeve (step 6, only after 2B passes)
+    ]
+
+    ordered_tail = [
         ("PART 2A", part2a),
-        ("PART 7", part7),
-        ("PART 8", part8),
-        ("PART 3", part3),
-        ("PART 9", part9),
+        ("PART 7",  part7),
+        ("PART 8",  part8),
+        ("PART 3",  part3),
+        ("PART 9",  part9),
         ("PART 10", part10),
     ]
 
     for label, script in ordered:
+        if label in {"PART 2A", "PART 3"}:
+            removed = _cleanup_conflicting_session_artifacts(expected_alpha_family)
+            if removed:
+                print(f"[Cleanup before {label}] Removed conflicting session artifact trees: {removed}")
+        proc = _run_subprocess(script, root, extra_env=common_env)
+        _print_proc(label, proc)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{label} failed with exit code {proc.returncode}")
+
+    # Run optional sleeves — never raise, always continue
+    for label, path in optional_sleeves:
+        if not path.exists():
+            print(f"[{label}] not found — skipping (optional experimental sleeve)")
+            continue
+        proc = _run_subprocess(path, root, extra_env=common_env)
+        _print_proc(label, proc)
+        if proc.returncode != 0:
+            print(f"[WARN] {label} exited {proc.returncode} — continuing (experimental, non-blocking)")
+
+    for label, script in ordered_tail:
         if label in {"PART 2A", "PART 3"}:
             removed = _cleanup_conflicting_session_artifacts(expected_alpha_family)
             if removed:
@@ -540,13 +619,36 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     )
 
     predlog_path = _validate_persistent_predlog(root, part3_summary)
-    predlog_rows, predlog_realized_rows = _predlog_stats(predlog_path)
+    predlog_rows, predlog_realized_rows, predlog_schema = _predlog_stats(predlog_path)
+    rows_realized_fused_summary = int(part3_summary.get("rows_realized_fused", -1))
 
     print("\n=== PART 5 VALIDATION ===")
     print(f"Source health: {source_health}")
     print(f"Prediction log path: {predlog_path}")
     print(f"Prediction log rows: {predlog_rows}")
     print(f"Prediction log realized rows: {predlog_realized_rows}")
+    # Schema health checks — warn only, do not raise; migration script adds these columns.
+    if not predlog_schema["has_deployment_mode"]:
+        print("[WARN] Prediction log missing 'deployment_mode' column — run migrate_prediction_log.py")
+    else:
+        print("[OK] Prediction log has 'deployment_mode' column")
+    if not predlog_schema["has_horizon_legacy"]:
+        print("[WARN] Prediction log missing 'horizon_legacy' column — run migrate_prediction_log.py")
+    else:
+        n_leg = predlog_schema["n_legacy_rows"]
+        if n_leg > 0:
+            print(f"[OK] Prediction log has 'horizon_legacy' column ({n_leg} legacy rows excluded from realized count)")
+        else:
+            print("[OK] Prediction log has 'horizon_legacy' column (0 legacy rows)")
+    # Cross-check: part3_summary rows_realized_fused vs predlog realized count
+    if rows_realized_fused_summary >= 0 and rows_realized_fused_summary != predlog_realized_rows:
+        # This is expected when rows_realized_fused was computed by the old proxy
+        # formula (len(tape)-2). After the Part 3 fix it should match.
+        print(
+            f"[WARN] rows_realized_fused mismatch: part3_summary={rows_realized_fused_summary}, "
+            f"predlog_realized={predlog_realized_rows}. "
+            f"Expected to align after Part 3 fix is deployed."
+        )
     print(f"Part 2 status: publish_mode={part2_publish_mode} | final_pass={part2_final_pass}")
     print(f"Part 3 status: publish_mode={part3_publish_mode} | final_pass={part3_final_pass} | latest_alpha_state={latest_alpha_state} | alpha_contract={alpha_contract}")
     print("[OK] Daily canonical pipeline completed successfully")
@@ -577,6 +679,5 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
