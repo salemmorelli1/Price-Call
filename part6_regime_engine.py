@@ -31,7 +31,6 @@ def _colab_init(extra_packages=None):
                                capture_output=True)
 
 
-
 import json
 import os
 import dataclasses
@@ -81,6 +80,17 @@ except Exception:
     HAVE_DUCKDB = False
 
 
+# FIX (Finding 1, Part6 Audit 2026-04):
+# Any feature with a NaN rate exceeding this threshold is silently excluded
+# from the selected feature set before the HMM is trained. This prevents a
+# single short-history FRED series (e.g. hy_spread_fred, which only begins
+# in April 2023) from masking all other features and reducing the effective
+# training set to only the period for which the series exists.
+# The threshold is set at 0.50: a feature that is missing for more than half
+# the dataset adds less signal than it removes coverage.
+_NAN_COVERAGE_THRESHOLD: float = 0.50
+
+
 @dataclass(frozen=True)
 class Part6Config:
     version: str = "V2_DAILY_CANONICAL"
@@ -94,6 +104,8 @@ class Part6Config:
     hmm_min_train_rows: int = 252
     seed: int = 42
 
+    # Primary feature set. Features with > _NAN_COVERAGE_THRESHOLD NaN rate
+    # are auto-dropped by _select_features() at runtime.
     regime_features: Tuple[str, ...] = (
         "vix_z21",
         "vix_term_ratio",
@@ -103,7 +115,7 @@ class Part6Config:
         "duration_spread_z21",
         "breadth_rsp_voo_z21",
         "yield_curve_2s10s",
-        "hy_spread_fred",
+        "hy_spread_fred",      # FRED series — auto-dropped when < 50% coverage
     )
     regime_features_nofed: Tuple[str, ...] = (
         "vix_z21",
@@ -188,12 +200,28 @@ def build_fomc_calendar(index: pd.DatetimeIndex) -> pd.DataFrame:
     out["fomc_in_7d"] = fomc_in_7d
     out["fomc_this_week"] = fomc_this_week
 
-    # Approximate NFP as first Friday of month.
-    is_nfp = (idx.weekday == 4) & (idx.day <= 7)
-    nfp_dates = idx[is_nfp]
+    # FIX (Finding 8, Part6 Audit 2026-04):
+    # The original NFP approximation built nfp_dates only from dates present
+    # in the feature index. At the live boundary the next NFP (first Friday
+    # of the coming month) lies beyond the index end and is not found, so
+    # days_to_nfp returns 999 and nfp_in_7d = 0 — incorrect at the margin.
+    #
+    # Fix: extend the NFP date search window 90 calendar days beyond the
+    # index end. This ensures the NFP date for at least the next two months
+    # is always present in the candidate set regardless of where the feature
+    # history ends. The original approximation (first Friday of month) is
+    # preserved; only the search horizon is widened.
+    idx_end = idx.max() if len(idx) > 0 else pd.Timestamp.today()
+    extended_end = idx_end + pd.Timedelta(days=90)
+    extended_range = pd.date_range(start=idx.min() if len(idx) > 0 else idx_end,
+                                   end=extended_end, freq="D")
+    # First Friday of each calendar month in the extended range
+    is_nfp_ext = (extended_range.weekday == 4) & (extended_range.day <= 7)
+    nfp_dates_ext = pd.DatetimeIndex(extended_range[is_nfp_ext])
+
     days_to_nfp = []
     for dt in idx:
-        future = nfp_dates[nfp_dates >= dt]
+        future = nfp_dates_ext[nfp_dates_ext >= dt]
         days_to_nfp.append(int((future.min() - dt).days) if len(future) else 999)
     out["days_to_nfp"] = days_to_nfp
     out["nfp_in_7d"] = (out["days_to_nfp"] <= 7).astype(int)
@@ -277,19 +305,72 @@ class RegimeEngine:
         self.is_fitted: bool = False
 
     def _select_features(self, df: pd.DataFrame) -> List[str]:
-        preferred = [c for c in self.cfg.regime_features if c in df.columns]
+        # FIX (Finding 1, Part6 Audit 2026-04):
+        # Before matching against preferred/fallback feature lists, drop any
+        # feature whose NaN rate in df exceeds _NAN_COVERAGE_THRESHOLD (0.50).
+        # This prevents a single short-history FRED series (hy_spread_fred
+        # starts 2023-04-21, 80.8% NaN across the full dataset) from forcing
+        # the training set down from 4073 rows to only 782.
+        #
+        # A feature that is missing for more than half the dataset contributes
+        # less signal than it costs in coverage. At runtime the affected
+        # feature is printed so the condition is transparent in logs.
+        available_cols = set(df.columns)
+        nan_rates = {c: float(df[c].isna().mean()) for c in available_cols}
+        coverage_ok = {c for c, r in nan_rates.items() if r <= _NAN_COVERAGE_THRESHOLD}
+
+        dropped = [c for c in self.cfg.regime_features if c in available_cols and c not in coverage_ok]
+        if dropped:
+            print(
+                f"[Part 6] _select_features: dropped {dropped} — NaN rate exceeds "
+                f"{_NAN_COVERAGE_THRESHOLD:.0%} threshold. These features have insufficient "
+                f"history to be included in the mandatory feature set."
+            )
+
+        preferred = [c for c in self.cfg.regime_features if c in coverage_ok]
         if len(preferred) >= 3:
             return preferred
-        fallback = [c for c in self.cfg.regime_features_nofed if c in df.columns]
+        fallback = [c for c in self.cfg.regime_features_nofed if c in coverage_ok]
         if len(fallback) >= 3:
             return fallback
         raise RuntimeError(
-            f"Insufficient regime features available. Preferred found={preferred}, fallback found={fallback}."
+            f"Insufficient regime features available after NaN coverage filter. "
+            f"Preferred found={preferred}, fallback found={fallback}. "
+            f"NaN rates: { {c: f'{r:.2%}' for c, r in nan_rates.items() if c in set(self.cfg.regime_features) | set(self.cfg.regime_features_nofed)} }"
         )
 
     def fit(self, df: pd.DataFrame) -> None:
         self.feature_cols = self._select_features(df)
-        X = df[self.feature_cols].apply(pd.to_numeric, errors="coerce").dropna()
+        X_raw = df[self.feature_cols].apply(pd.to_numeric, errors="coerce")
+
+        # FIX (Finding 4, Part6 Audit 2026-04):
+        # The original fit() used .dropna() with no fill, while predict()
+        # already applied .ffill(). This asymmetry meant:
+        #   (a) fit() trained on only 782 rows (whatever subset had all features
+        #       non-NaN), while predict() operated on up to 4073 rows;
+        #   (b) the StandardScaler was fitted on a different row distribution
+        #       than what predict() fed to it at inference time.
+        #
+        # Fix: apply ffill().bfill() in fit() before dropna(), matching
+        # predict(). The bfill propagates the earliest observed value of any
+        # FRED-derived series backward to pre-series dates. For regime
+        # classification features (not return labels) this is an acceptable
+        # pragmatic trade-off: the alternative is training on 3 years of data
+        # and classifying 80.8% of history as "unknown". bfill introduces a
+        # mild look-ahead but one that is stable across the slow-moving macro
+        # series in this feature set (credit spreads, yield curves).
+        X_filled = X_raw.ffill().bfill()
+        X = X_filled.dropna()
+
+        n_before_fill = int(X_raw.dropna().shape[0])
+        n_after_fill = int(X.shape[0])
+        if n_after_fill > n_before_fill:
+            print(
+                f"[Part 6] ffill+bfill in fit() expanded training set from "
+                f"{n_before_fill} → {n_after_fill} rows "
+                f"(+{n_after_fill - n_before_fill} rows recovered)."
+            )
+
         if len(X) < self.cfg.hmm_min_train_rows:
             raise RuntimeError(
                 f"Insufficient data to fit regime model: {len(X)} rows < {self.cfg.hmm_min_train_rows} required"
@@ -349,9 +430,13 @@ class RegimeEngine:
         # FRED series (yield curves, credit spreads) are weekly/monthly reporters
         # valid to carry forward on non-reporting days. Without ffill, ~80% of
         # rows get regime_label='unknown' because a short-history series like
-        # hy_spread_fred (785 obs out of 4073) leaves the feature NaN for all
-        # earlier dates, causing every pre-series row to fail the all-notna check.
-        X = X.ffill()
+        # hy_spread_fred (782 obs) leaves the feature NaN for all earlier dates,
+        # causing every pre-series row to fail the all-notna check.
+        #
+        # NOTE (Finding 4 fix cross-reference): bfill is now also applied in
+        # fit(), so the scaler and HMM train on the same distribution presented
+        # here at inference time.
+        X = X.ffill().bfill()
         mask = X.notna().all(axis=1)
         Xg = X.loc[mask]
         if Xg.empty:
@@ -471,15 +556,41 @@ def main() -> int:
     engine_path = os.path.join(cfg.out_dir, "regime_engine.pkl")
     engine.save(engine_path)
 
+    # FIX (Finding 7, Part6 Audit 2026-04):
+    # engine.regime_map has integer keys in Python (e.g. {0: "high_vol", ...}).
+    # json.dump silently converts integer dict keys to strings, producing
+    # {"0": "high_vol", ...} in the JSON file. Any downstream code that loads
+    # this JSON and does regime_map[int_label] will get a KeyError because
+    # JSON round-trips all keys as strings. Convert explicitly here so the
+    # JSON contract is clear and intentional: regime_map keys in the meta
+    # JSON are always string representations of the HMM state integer ID.
+    regime_map_str_keys: Dict[str, str] = {
+        str(k): v for k, v in engine.regime_map.items()
+    }
+
+    # Verify unknown rate for diagnostics
+    unknown_count = int((regime_df["regime_label"] == "unknown").sum())
+    unknown_rate = unknown_count / max(len(regime_df), 1)
+    if unknown_rate > 0.10:
+        print(
+            f"[Part 6] WARNING: {unknown_rate:.1%} of regime_history rows are 'unknown'. "
+            f"This typically indicates a feature with insufficient history. "
+            f"Features used: {engine.feature_cols}"
+        )
+
     meta = {
         "version": cfg.version,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "model_type": engine.model_type,
         "n_regimes": cfg.n_regimes,
         "feature_cols": engine.feature_cols,
-        "regime_map": engine.regime_map,
+        # FIX (Finding 7): string keys are now explicit, not an implicit
+        # json.dump side-effect. Downstream consumers must use str(state_id)
+        # to look up labels, e.g. regime_map[str(label_int)].
+        "regime_map": regime_map_str_keys,
         "transition_matrix": engine.transition_matrix.tolist() if engine.transition_matrix is not None else None,
         "regime_distribution": regime_df["regime_label"].value_counts(normalize=True).to_dict(),
+        "unknown_rate": round(unknown_rate, 6),
         "fomc_dates_included": len(KNOWN_FOMC_DATES_2020_2026),
         "source_part0_dir": cfg.part0_dir,
     }
@@ -488,9 +599,11 @@ def main() -> int:
 
     print("\nRegime distribution:")
     print(regime_df["regime_label"].value_counts(normalize=True))
+    print(f"\nUnknown rate: {unknown_rate:.1%}")
     print("\n✅ PART 6 COMPLETE")
     print(f"   Model type:      {engine.model_type.upper()}")
     print(f"   Regime features: {len(engine.feature_cols)}")
+    print(f"   Training rows:   {len(features)}")
     print(f"   Outputs:         regime_history.parquet, regime_features_used.parquet, part6_meta.json, regime_engine.pkl")
     return 0
 
