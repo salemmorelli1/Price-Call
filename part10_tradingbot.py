@@ -329,7 +329,38 @@ class SignalLog:
             with open(path, "w", newline="") as f:
                 csv.DictWriter(f, fieldnames=self.COLUMNS).writeheader()
 
+    def _last_date(self) -> Optional[str]:
+        """Return the date string of the most-recent signal log entry, or None."""
+        if not os.path.exists(self.path):
+            return None
+        try:
+            df = pd.read_csv(self.path)
+            if df.empty or "date" not in df.columns:
+                return None
+            last = df["date"].dropna().iloc[-1] if not df["date"].dropna().empty else None
+            return str(last) if last is not None else None
+        except Exception:
+            return None
+
     def append(self, record: Dict[str, Any]) -> None:
+        # FIX (Finding #17, 2026-04): idempotency guard.
+        # The signal log is append-only with no prior deduplication check.
+        # When the pipeline runs twice on the same calendar day (e.g. a manual
+        # workflow_dispatch after the scheduled run, or a DST-transition double-fire),
+        # two entries for the same date are written. If a trade had been executed,
+        # the trade log would similarly double-count it and downstream analytics
+        # (P&L, win-rate, Sharpe) would be corrupted.
+        # Guard: if the last logged entry already has today's date, skip this append.
+        # Re-runs are still visible in pipeline logs (stdout); only the log file is
+        # protected from duplication.
+        new_date = str(record.get("date", ""))
+        last_date = self._last_date()
+        if last_date is not None and new_date and new_date == last_date:
+            print(
+                f"[SignalLog] Skipping duplicate entry for date={new_date} "
+                "(pipeline already ran today — idempotency guard)."
+            )
+            return
         with open(self.path, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=self.COLUMNS, extrasaction="ignore").writerow(record)
 
@@ -728,6 +759,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 
