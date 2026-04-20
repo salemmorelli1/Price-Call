@@ -16,6 +16,8 @@ concurrency:
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 30
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -62,3 +64,4 @@ jobs:
             --no-edit || true
 
           git push origin HEAD:"${GITHUB_REF_NAME}"
+
