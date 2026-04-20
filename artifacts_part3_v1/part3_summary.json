@@ -12,7 +12,7 @@
   "final_pass": 0,
   "latest_alpha_state": "LIVE_FUSED",
   "latest_alpha_state_display": "LIVE_FUSED",
-  "realized_dates": 344,
+  "realized_dates": 339,
   "budget_mult": 1.0,
   "drift_rate": 0.0,
   "quality_ok": 1,
@@ -44,13 +44,12 @@
   "strict_drive_only": 1,
   "platt_scaling_active": true,
   "current_regime": "risk_on",
-  "p_final_cal_raw": 0.2012231005441982,
-  "p_regime_recal": 0.19232518103467858,
+  "p_final_cal_raw": 0.1999347529857048,
+  "p_regime_recal": 0.1946747511105882,
   "platt_regimes_fit": [
     "calm",
     "crisis",
     "high_vol",
-    "risk_on",
-    "unknown"
+    "risk_on"
   ]
 }
