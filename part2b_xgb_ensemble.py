@@ -595,7 +595,7 @@ def main() -> int:
         "p_xgb_ens_std":      p_all_std,
         "xgb_overlay_on":     (p_all_std > epist_threshold).astype(int),
         "y_true":             y.values,
-        "in_holdout":         holdout_mask.values.astype(int),
+        "in_holdout":         holdout_mask.astype(int),
     })
     tape_out_path = Path(out_dir) / "part2b_xgb_tape.csv"
     tape_out.to_csv(tape_out_path, index=False)
