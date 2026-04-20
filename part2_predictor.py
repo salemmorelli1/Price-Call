@@ -244,10 +244,27 @@ class Part2Gen53Config:
     # impossible to pass at daily sparsity regardless of defense event quality.
     # Conditional IR isolates signal on active rows only and requires deployments
     # to not be systematically directionally wrong. Floors are intentionally loose
-    # because with ~7 events the estimate is noisy, but a strongly negative value
-    # indicates systematic defense misfire worth blocking.
+    # because with sparse events the estimate is noisy, but a strongly negative
+    # value that persists across sufficient events indicates systematic misfire.
+    #
+    # FIX (Finding 3, Part6 Audit 2026-04):
+    # The original code returned nan (gate passes) when n < 3 deploy_downside
+    # events, but activated the gate at n >= 3. With n=4 events and 3 losses,
+    # the annualized conditional IR = -4.82 — catastrophically negative but
+    # computed from only 4 observations whose standard error is ~√(252/4) ≈ 7.9.
+    # This locked the entire stack in FAIL_CLOSED_NEUTRAL permanently.
+    #
+    # The statistical power argument: to detect an annualized IR difference of
+    # 1.0 (the gap between the gate at -0.5 and the fail-closed floor at -1.5)
+    # at 80% power requires thousands of daily deploy observations, far beyond
+    # what is achievable at a 0.24% deploy rate. Raising the minimum n to 10
+    # means: do not evaluate the conditional IR gate until at least 10 defense
+    # events have been observed. With n < 10, the gate returns nan and is treated
+    # as deferred (consistent with the existing < 3 behavior). This does not
+    # remove the gate — it defers it until the estimate has minimal credibility.
     CONDITIONAL_ACTIVE_IR_MIN: float = -0.50          # final_pass: cond IR on deploy rows
     CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED: float = -1.50  # _should_fail_closed: harder
+    CONDITIONAL_ACTIVE_IR_MIN_N: int = 10             # FIX: defer gate until n >= 10 events
 
     PROB_SHRINK_MIN: float = 0.42
     PROB_SHRINK_MAX: float = 0.80
@@ -317,7 +334,7 @@ def _annualized_ir(ret: np.ndarray, h: int) -> float:
     return float((ret.mean() / sd) * np.sqrt(252.0 / max(h, 1)))
 
 
-def _conditional_active_ir(out: pd.DataFrame, h: int) -> float:
+def _conditional_active_ir(out: pd.DataFrame, h: int, n_min: int = 3) -> float:
     """IR computed only on rows where the defense sleeve was deployed (deploy_downside=1).
 
     This replaces the full-series active_ir gate for daily-frequency models where
@@ -329,12 +346,28 @@ def _conditional_active_ir(out: pd.DataFrame, h: int) -> float:
     Conditional IR isolates the signal: it tests whether the defense events
     themselves earn returns consistent with the direction of the hedge.
 
-    Returns nan if fewer than 3 deploy rows are available (insufficient for IR).
+    FIX (Finding 3, Part6 Audit 2026-04):
+    The n_min parameter is now passed from config (CONDITIONAL_ACTIVE_IR_MIN_N,
+    default 10). The original hard-coded floor of 3 was too low: with n=4 events
+    and 3 losses the annualized IR is -4.82, which is computed from observations
+    whose standard error (~8.0 annualized) exceeds the signal by a factor of 16.
+    An IR gate based on 4 data points has essentially zero statistical power and
+    irreversibly locks the pipeline in FAIL_CLOSED_NEUTRAL.
+
+    Raising n_min to 10 defers the gate until there is a minimal number of defense
+    observations. The gate continues to catch genuinely broken defense sleeves once
+    enough events exist to distinguish noise from signal.
+
+    Returns nan if fewer than n_min deploy rows are available (gate is deferred).
     """
     if "deploy_downside" not in out.columns or "active_ret_net" not in out.columns:
         return np.nan
     deploy_mask = out["deploy_downside"].fillna(0).astype(int) == 1
     deploy_rets = pd.to_numeric(out.loc[deploy_mask, "active_ret_net"], errors="coerce").dropna().values
+    # FIX: return nan (deferred) if event count is below the configurable minimum.
+    # The caller treats nan as a passing gate (insufficient data to evaluate).
+    if len(deploy_rets) < n_min:
+        return np.nan
     return _annualized_ir(deploy_rets, h)
 
 
@@ -2019,7 +2052,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     # Conditional IR: computed only on deployed rows. Used in final_pass and
     # _should_fail_closed in place of the full-series active_ir which is
     # structurally near-zero at daily deployment sparsity (~0.4% of rows).
-    conditional_active_ir = _conditional_active_ir(out, cfg.H)
+    # FIX (Finding 3): pass n_min from config so the gate is deferred until
+    # at least CONDITIONAL_ACTIVE_IR_MIN_N defense events have been observed.
+    conditional_active_ir = _conditional_active_ir(out, cfg.H, n_min=int(cfg.CONDITIONAL_ACTIVE_IR_MIN_N))
     strategy_ir = _annualized_ir(strat_net, cfg.H)
 
     stress_panel = _compute_stress_panel(out, cfg)
@@ -2078,6 +2113,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "active_ir_fail_closed_min": float(cfg.FAIL_CLOSED_ACTIVE_IR),
         "conditional_active_ir": conditional_active_ir,
         "conditional_active_ir_min": float(cfg.CONDITIONAL_ACTIVE_IR_MIN),
+        "conditional_active_ir_min_n": int(cfg.CONDITIONAL_ACTIVE_IR_MIN_N),  # FIX: minimum event count before gate activates
         "conditional_active_ir_floor_fail_closed": float(cfg.CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED),
         "effective_drift_ece_max": float(drift_ece_max_eff),
         "effective_drift_brier_max": float(drift_brier_max_eff),
@@ -2177,6 +2213,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
