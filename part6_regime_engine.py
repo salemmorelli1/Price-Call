@@ -236,30 +236,32 @@ def _load_part0_features(cfg: Part6Config) -> pd.DataFrame:
 
 
 def _label_regimes_by_vol(cluster_labels: np.ndarray, feature_df: pd.DataFrame, vol_col: str = "vix_z21") -> Dict[int, str]:
-    """Assign regime names ordered by ascending VIX z-score mean.
+    """Assign semantic regime labels by ascending volatility order.
 
-    4-regime semantic map (from calmest to most stressed):
-      calm     — bottom quartile of VIX: quiet bull, very low vol
-      risk_on  — second quartile: normal expansionary environment
-      high_vol — third quartile: elevated vol, policy uncertainty, moderate stress
-      crisis   — top quartile: genuine tail events, crash episodes
+    For the corrected daily model we use four regimes:
+      lowest vol   -> calm
+      low-mid vol  -> risk_on
+      high-mid vol -> high_vol
+      highest vol  -> crisis
 
-    With 4 regimes, each occupies ~25% of history, keeping "crisis" semantically
-    meaningful (vs the 3-regime version where the top-VIX tercile ≈ 33% of all
-    days was labeled crisis, including normal rate-hiking periods).
+    This avoids the old 3-state setup where the top-VIX tercile was labeled
+    "crisis", which made crisis structurally too common and forced Part 7 into
+    defensive posture too often.
     """
     if vol_col not in feature_df.columns:
         return {0: "calm", 1: "risk_on", 2: "high_vol", 3: "crisis"}
-    means = {}
+    means: Dict[int, float] = {}
     for k in np.unique(cluster_labels):
         mask = cluster_labels == k
         means[int(k)] = float(np.nanmean(feature_df.loc[mask, vol_col].values))
     ordered = sorted(means.keys(), key=lambda k: means[k])
-    names = {}
-    regime_name_order = ["calm", "risk_on", "high_vol", "crisis"]
-    for i, regime_id in enumerate(ordered):
-        if i < len(regime_name_order):
-            names[regime_id] = regime_name_order[i]
+    names: Dict[int, str] = {}
+    labels = ["calm", "risk_on", "high_vol", "crisis"]
+    for i, cid in enumerate(ordered[: len(labels)]):
+        names[int(cid)] = labels[i]
+    # Safety fallback for unexpected extra components.
+    for cid in ordered[len(labels):]:
+        names[int(cid)] = f"regime_{int(cid)}"
     return names
 
 
@@ -343,6 +345,14 @@ class RegimeEngine:
         out.index.name = "Date"
 
         X = df[self.feature_cols].apply(pd.to_numeric, errors="coerce")
+        # Forward-fill FRED-derived macro features before the notna filter.
+        # FRED series (yield curves, credit spreads) are weekly or monthly
+        # reporters that are valid to carry forward on non-reporting days.
+        # Without ffill, ~80% of rows get regime_label='unknown' because a
+        # single short-history series (e.g. hy_spread_fred, 785 obs out of
+        # 4073) leaves the feature NaN for all earlier dates, causing every
+        # row that pre-dates that series to fail the all-notna check.
+        X = X.ffill()
         mask = X.notna().all(axis=1)
         Xg = X.loc[mask]
         if Xg.empty:
