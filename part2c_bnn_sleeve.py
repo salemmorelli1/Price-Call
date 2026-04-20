@@ -138,16 +138,15 @@ CFG = Part2CConfig()
 
 # ============================================================
 # PyTorch model (preferred) — only defined when torch is available.
-# When HAVE_TORCH is False the sklearn fallback is used instead.
-# Defining the class unconditionally at module level would cause a
-# NameError on 'nn' at import time when torch is absent.
+# Defining the class unconditionally causes NameError on 'nn' at
+# import time when torch is absent.
 # ============================================================
 
 if HAVE_TORCH:
     class _BayesianMLP(nn.Module):
         """
         Small 2-hidden-layer MLP with MC Dropout.
-
+    
         Keeping dropout ON at inference time (model.train()) gives us
         approximate Bayesian inference via variational dropout.  Sampling
         N forward passes produces a distribution over p(y=1 | x, D).
@@ -171,12 +170,13 @@ if HAVE_TORCH:
                 if isinstance(layer, nn.Linear):
                     nn.init.normal_(layer.weight, mean=0.0, std=0.1)
                     nn.init.zeros_(layer.bias)
-
+    
         def forward(self, x: "torch.Tensor") -> "torch.Tensor":
             return self.net(x).squeeze(-1)
+    
+    
 else:
     _BayesianMLP = None  # type: ignore[assignment,misc]
-
 
 def _train_torch_model(
     X_train: np.ndarray,
@@ -363,17 +363,25 @@ def walk_forward_eval(
     X: pd.DataFrame,
     y: pd.Series,
     cfg: Part2CConfig,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, np.ndarray]:
     """
     Expanding-window walk-forward evaluation.
-    Returns a DataFrame with one row per fold containing evaluation metrics.
-    No fold ever uses future data during training.
+
+    Returns
+    -------
+    fold_df : pd.DataFrame
+        One row per fold with aggregate evaluation metrics.
+    all_row_epist : np.ndarray
+        Concatenated per-row epistemic std values across all folds.
+        Used to compute the production overlay threshold from the true
+        row-level distribution — not from fold-level averages.
     """
     dates = X.index
     n = len(X)
     scaler_global = StandardScaler()
 
     results = []
+    all_row_epist: List[np.ndarray] = []   # collect per-row epistemic stds
     fold_starts = range(
         cfg.walk_forward_min_train,
         n - cfg.walk_forward_step,
@@ -409,6 +417,8 @@ def walk_forward_eval(
             p_mean, p_epist, p_aleat = _predict_sklearn(models, X_ev)
 
         base_rate = float(y_tr.mean())
+        # Collect per-row epistemic stds for threshold computation
+        all_row_epist.append(p_epist)
         row = {
             "fold":              i,
             "train_end_date":    str(dates[train_end - 1].date()),
@@ -432,7 +442,8 @@ def walk_forward_eval(
             f"ECE={row['ece']:.4f} | utility={row['decision_utility']:.4f}"
         )
 
-    return pd.DataFrame(results)
+    row_epist_arr = np.concatenate(all_row_epist) if all_row_epist else np.array([])
+    return pd.DataFrame(results), row_epist_arr
 
 
 # ============================================================
@@ -610,7 +621,7 @@ def main() -> int:
 
     # ── Walk-forward evaluation ────────────────────────────────────────────
     print("\nRunning walk-forward evaluation...")
-    wf_df = walk_forward_eval(X, y, cfg)
+    wf_df, wf_row_epist = walk_forward_eval(X, y, cfg)
 
     if wf_df.empty:
         print("[Part 2C] No walk-forward folds completed.")
@@ -630,11 +641,16 @@ def main() -> int:
     print_comparison(wf_df, p2_summary)
 
     # ── Set epistemic threshold from walk-forward distribution ────────────
-    # The top-quartile threshold for the overlay gate is computed from the
-    # walk-forward evaluation data rather than being fixed heuristically.
-    epist_threshold = float(wf_df["mean_epistemic_std"].quantile(0.75)) \
-        if len(wf_df) >= 4 else 0.05
-    print(f"Epistemic uncertainty overlay threshold (75th pct): {epist_threshold:.5f}")
+    # Compute overlay threshold from the row-level walk-forward distribution.
+    # Uses concatenated per-row epistemic stds — not fold-level averages.
+    # Mirrors the Part 2B pattern exactly.
+    if len(wf_row_epist) > 0:
+        epist_threshold = float(np.percentile(wf_row_epist, 75))
+        n_wf_eval_rows  = int(len(wf_row_epist))
+    else:
+        epist_threshold = 0.05
+        n_wf_eval_rows  = 0
+    print(f"Epistemic overlay threshold (75th pct, row-level, n={n_wf_eval_rows}): {epist_threshold:.5f}")
 
     # ── Fit full model on all available data ──────────────────────────────
     print("\nFitting full ensemble on complete dataset for live inference...")
@@ -698,7 +714,7 @@ def main() -> int:
         "p_bnn_total_std":   np.sqrt(p_all_epist**2 + p_all_aleat**2),
         "bnn_overlay_on":    (p_all_epist > epist_threshold).astype(int),
         "y_true":            y_all,
-        "in_holdout":        holdout_mask.values.astype(int),
+        "in_holdout":        holdout_mask.astype(int),
     })
     tape_path = Path(out_dir) / "part2c_bnn_tape.csv"
     tape.to_csv(tape_path, index=False)
@@ -727,6 +743,8 @@ def main() -> int:
         "walkforward_mean_ece": float(wf_df["ece"].mean()),
         "walkforward_mean_utility": float(wf_df["decision_utility"].mean()),
         "epist_overlay_threshold_75pct": float(epist_threshold),
+        "n_walkforward_eval_rows": int(n_wf_eval_rows),
+        "row_level_mean_epist": float(np.mean(wf_row_epist)) if len(wf_row_epist) > 0 else None,
         "live_p_bnn_mean": live_result["p_bnn_mean"],
         "live_p_bnn_epistemic": live_result["p_bnn_epistemic"],
         "live_bnn_overlay_on": live_result["bnn_overlay_on"],
