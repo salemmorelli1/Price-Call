@@ -410,14 +410,28 @@ def build_alpha_positions(
     is_live_series = (
         pd.to_numeric(x.get("is_live"), errors="coerce").fillna(0).astype(int) > 0
     )
-    overlay_hard_veto = (
-        (
-            (dist_width_caution >= CFG.overlay_hard_veto_width)
-            & (uncertainty_penalty >= CFG.overlay_hard_veto_uncertainty)
-            & (dist_overlay_on >= 1.0)
-        )
-        | (publish_fail_closed & is_live_series)   # veto only the live row when fail-closed
+    # FIX (Finding 6, Part6 Audit 2026-04):
+    # The original overlay_hard_veto boolean is True for TWO structurally
+    # different conditions:
+    #   (a) genuine distributional veto: dist_width_caution >= 0.995 AND
+    #       uncertainty_penalty >= 0.995 AND dist_overlay_on >= 1.0
+    #   (b) fail-closed live-row veto: publish_fail_closed AND is_live
+    #
+    # Both conditions set eligibility_reason = "overlay_hard_veto", making it
+    # impossible to distinguish a genuine distributional veto from a governance
+    # lockout in the artifacts. The live row on 2026-04-20 was vetoed via (b)
+    # (dist_width_caution=0.127, uncertainty_penalty=0.419, both far below 0.995)
+    # but reported "overlay_hard_veto" — misleading in any audit trail.
+    #
+    # Fix: decompose into two named boolean series. The combined mask is unchanged;
+    # only the reason string assignment is refined.
+    overlay_dist_veto = (
+        (dist_width_caution >= CFG.overlay_hard_veto_width)
+        & (uncertainty_penalty >= CFG.overlay_hard_veto_uncertainty)
+        & (dist_overlay_on >= 1.0)
     )
+    overlay_failclosed_veto = (publish_fail_closed & is_live_series)
+    overlay_hard_veto = overlay_dist_veto | overlay_failclosed_veto
 
     veto_off = ~(high_risk | dislocated | deploy_downside | overlay_hard_veto)
     eligible = score_ready & agreement_ok & veto_off & not_stale
@@ -472,7 +486,16 @@ def build_alpha_positions(
         if not not_stale:
             reasons.append("stale_tape")
         elif bool(overlay_hard_veto.iloc[i]):
-            reasons.append("overlay_hard_veto")
+            # FIX (Finding 6, Part6 Audit 2026-04): distinguish the two veto
+            # sub-conditions so the reason string is unambiguous in audit trails.
+            # "fail_closed_live_veto" = governance lockout on the live row.
+            # "overlay_hard_veto"    = genuine distributional uncertainty veto
+            #                          (dist_width_caution >= 0.995 AND
+            #                           uncertainty_penalty >= 0.995).
+            if bool(overlay_failclosed_veto.iloc[i]):
+                reasons.append("fail_closed_live_veto")
+            else:
+                reasons.append("overlay_hard_veto")
         elif bool(high_risk.iloc[i]):
             reasons.append("high_risk_veto")
         elif bool(dislocated.iloc[i]):
@@ -641,6 +664,11 @@ def build_alpha_positions(
         "mean_dist_width_caution": round(float(positions_df["dist_width_caution_g53"].mean()), 6),
         "mean_uncertainty_penalty": round(float(positions_df["uncertainty_penalty_g5"].mean()), 6),
         "overlay_hard_veto_rate": round(float(overlay_hard_veto.mean()), 6),
+        # FIX (Finding 6, Part6 Audit 2026-04): decomposed rates for audit transparency.
+        # overlay_dist_veto_rate    = genuine distributional uncertainty veto.
+        # overlay_failclosed_rate   = fail-closed live-row lockout (governance).
+        "overlay_dist_veto_rate": round(float(overlay_dist_veto.mean()), 6),
+        "overlay_failclosed_rate": round(float(overlay_failclosed_veto.mean()), 6),
         "high_risk_veto_rate": round(float(high_risk.mean()), 6),
         "deploy_downside_veto_rate": round(float(deploy_downside.mean()), 6),
         "latest_is_live": int(latest["is_live"]),
@@ -796,6 +824,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
