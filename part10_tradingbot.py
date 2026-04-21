@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @title Part 10 — Daily Trading Bot ($1,000 Paper Portfolio)
+#
+# AUDIT CHANGELOG (Quant-Guild Part 8 session, 2026-04)
+# ──────────────────────────────────────────────────────
+# Finding C (MEDIUM): compute_performance() annualized Sharpe using sqrt(252)
+#   on between-trade returns, not between-day returns.  At ~1.6 trades/year the
+#   interval between rows in the trade log is weeks to months.  Applying sqrt(252)
+#   assumed each return represented one trading day, overstating Sharpe by
+#   sqrt(252 / trades_per_year) — a factor of ~4.6× at 12 trades/year.
+#   Fix: compute each trade period's annualized return using actual elapsed
+#   calendar days (decision_date diff), then take mean/std across those values.
+#   Sharpe is now NaN when fewer than 2 valid intervals exist, rather than
+#   a numerically inflated finite value.
+# ──────────────────────────────────────────────────────
 from __future__ import annotations
 
 import csv
@@ -580,7 +593,7 @@ def fetch_prices(tickers: List[str], use_prior_day: bool = True) -> Dict[str, fl
 
 def compute_performance(trade_log_df: pd.DataFrame, cfg: BotConfig) -> Dict[str, Any]:
     if trade_log_df.empty or "nav_after" not in trade_log_df.columns:
-        return {"error": "No trades recorded yet"}
+        return {"error": "No trades recorded yet", "as_of_date": date.today().isoformat()}
 
     df = trade_log_df.dropna(subset=["nav_after"]).copy().sort_values("decision_date")
     nav_series = pd.to_numeric(df["nav_after"], errors="coerce").dropna().values
@@ -588,26 +601,53 @@ def compute_performance(trade_log_df: pd.DataFrame, cfg: BotConfig) -> Dict[str,
         return {"error": "No valid NAV observations"}
 
     total_return = (nav_series[-1] - cfg.starting_capital) / cfg.starting_capital
-    daily_returns = np.diff(nav_series) / nav_series[:-1] if len(nav_series) >= 2 else np.array([])
-    if len(daily_returns) < 2:
+    between_trade_returns = np.diff(nav_series) / nav_series[:-1] if len(nav_series) >= 2 else np.array([])
+    if len(between_trade_returns) < 2:
         return {"total_return_pct": round(total_return * 100, 3), "n_trades": len(df)}
 
-    mean_ret = float(np.mean(daily_returns))
-    std_ret = float(np.std(daily_returns, ddof=1))
-    sharpe = (mean_ret / (std_ret + 1e-10)) * np.sqrt(252.0) if std_ret > 0 else np.nan
+    # FIX (Finding C, Audit 2026-04): the original code applied sqrt(252) to
+    # between-trade returns as if each represented one trading day.  At ~1.6
+    # trades/year the actual interval is weeks to months; sqrt(252) overstates
+    # the annualized Sharpe ratio by sqrt(252 / trades_per_year).
+    #
+    # Correct approach: convert each between-trade return to an annualized return
+    # using the actual elapsed calendar days, then compute mean/std across those
+    # annualized values.  This is equivalent to time-weighting each observation.
+    dates = pd.to_datetime(df["decision_date"], errors="coerce").dropna()
+    intervals_days = dates.diff().dt.days.dropna().values.astype(float)
+    n_pairs = min(len(between_trade_returns), len(intervals_days))
+    valid = (
+        (intervals_days[:n_pairs] > 0)
+        & np.isfinite(between_trade_returns[:n_pairs])
+    )
+    if valid.sum() >= 2:
+        ann_returns = (
+            between_trade_returns[:n_pairs][valid]
+            * (252.0 / intervals_days[:n_pairs][valid])
+        )
+        mean_ann = float(np.mean(ann_returns))
+        std_ann = float(np.std(ann_returns, ddof=1))
+        sharpe = mean_ann / (std_ann + 1e-10) if std_ann > 0 else np.nan
+    else:
+        # Fewer than 2 valid intervals: cannot estimate annualized Sharpe reliably.
+        sharpe = np.nan
 
     running_max = np.maximum.accumulate(nav_series)
     drawdowns = (nav_series - running_max) / running_max
     max_dd = float(drawdowns.min())
-    win_rate = float((daily_returns > 0).mean())
+    win_rate = float((between_trade_returns > 0).mean())
 
-    total_tc = float(pd.to_numeric(df.get("tc_dollars", pd.Series(dtype=float)), errors="coerce").fillna(0.0).sum())
+    total_tc = float(
+        pd.to_numeric(
+            df.get("tc_dollars", pd.Series(dtype=float)), errors="coerce"
+        ).fillna(0.0).sum()
+    )
     tc_drag_bps = float(total_tc / cfg.starting_capital * 10_000.0)
 
     return {
         "n_trades": len(df),
         "total_return_pct": round(total_return * 100.0, 4),
-        "sharpe_ratio": round(sharpe, 4),
+        "sharpe_ratio": round(sharpe, 4) if np.isfinite(sharpe) else None,
         "max_drawdown_pct": round(max_dd * 100.0, 4),
         "win_rate_pct": round(win_rate * 100.0, 2),
         "total_tc_dollars": round(total_tc, 4),
@@ -615,7 +655,9 @@ def compute_performance(trade_log_df: pd.DataFrame, cfg: BotConfig) -> Dict[str,
         "current_nav": round(float(nav_series[-1]), 4),
         "peak_nav": round(float(np.max(nav_series)), 4),
         "stop_loss_floor": cfg.stop_loss_floor,
-        "is_stopped": bool(df.get("is_stopped", pd.Series(dtype=bool)).fillna(False).any()),
+        "is_stopped": bool(
+            df.get("is_stopped", pd.Series(dtype=bool)).fillna(False).any()
+        ),
     }
 
 
@@ -791,7 +833,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
 
 
 
