@@ -1,0 +1,8 @@
+{
+  "generated_at": "2026-04-21T14:33:54.136727+00:00",
+  "total_predictions": 1,
+  "n_live_realized": 0,
+  "status": "IMMATURE",
+  "schema_mode_col": "deployment_mode",
+  "message": "Only 0 realized predictions available. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months."
+}
