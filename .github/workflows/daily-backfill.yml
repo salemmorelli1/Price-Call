@@ -2,7 +2,20 @@ name: Daily Backfill Realized
 
 on:
   schedule:
-    - cron: "0 20 * * 1-5"   # 4:00 PM ET (after market close, allows settled prices)
+    # FIX (Reviewer finding, Audit 2026-04-21):
+    # A single cron at UTC 20:00 is 4:00 PM EDT (summer, UTC-4) but only
+    # 3:00 PM EST (winter, UTC-5) — before U.S. market close. Settled closing
+    # prices are not yet available at 3 PM, so any realized prices backfilled
+    # then would be intraday values, not official closes.
+    #
+    # Fix: two crons mirror the Tuesday production pipeline pattern.
+    #   20:00 UTC fires at 4:00 PM EDT in summer  (UTC-4, Mar–Nov)
+    #   21:00 UTC fires at 4:00 PM EST in winter  (UTC-5, Nov–Mar)
+    # Both fire on every weekday, so the backfill always runs at 4:00 PM ET
+    # regardless of DST. The backfill script is idempotent — re-running on
+    # an already-backfilled day costs a few seconds and writes nothing new.
+    - cron: "0 20 * * 1-5"   # 4:00 PM EDT (UTC-4, summer)
+    - cron: "0 21 * * 1-5"   # 4:00 PM EST (UTC-5, winter)
   workflow_dispatch:
 
 # ── Same concurrency group as the production pipeline ────────────────────
@@ -38,6 +51,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # ── Restore accumulating artifacts from remote ─────────────────────
+      # FIX (Finding C, Audit 2026-04-21): same fix as tuesday-pipeline.yml.
+      # Fetch the current prediction_log from origin before backfill runs so
+      # realized prices are appended to the full history, not written over it.
+      - name: Restore accumulating artifacts from remote
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --quiet || true
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part3/prediction_log.csv \
+            2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part9/live_attribution_report.json \
+            2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
 
       - name: Run backfill
         run: python backfill_realized.py
