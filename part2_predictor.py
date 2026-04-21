@@ -141,7 +141,17 @@ class Part2Gen53Config:
     # Governance policy choice: range [0.12, 0.25] is defensible; 0.15 is
     # the midpoint targeting p50 penalty ≈ 0.50.
     DIST_CONF_WIDTH_SCALE: float = 0.15   # was 0.06
-    TAIL_EVENT_THRESHOLD: float = float(-0.015 / np.sqrt(7.0))
+    # FIX (Finding 23/26, Audit 2026-04-21):
+    # The prior value was -0.015 / sqrt(7) = -0.00567, which is the H=7 weekly
+    # threshold scaled DOWN to H=1 using the wrong direction of the sqrt-time rule.
+    # For a daily (H=1) model the correct base threshold is -0.015 (the annualised
+    # concept threshold applied to a single trading day). The classification model
+    # is already trained on Part 1's rolling-20th-percentile labels, which naturally
+    # produce a ~20% base rate.  This fixed threshold is only used by the
+    # distributional prediction layer (quantile regression) for P(spread < threshold)
+    # and by the summary JSON / prediction_log tail_threshold field consumed by Part 9
+    # for live label reconstruction. Both must match a daily definition.
+    TAIL_EVENT_THRESHOLD: float = -0.015  # H=1 daily threshold (was -0.015/sqrt(7))
     OVERLAY_TRUST_MIN: float = 0.60
     OVERLAY_WIDTH_TRIGGER: float = 0.075
     OVERLAY_PENALTY_TRIGGER: float = 0.38
@@ -1781,6 +1791,19 @@ def _gamma_to_uncertainty(gamma_val: float) -> float:
 
 
 
+
+def _json_safe(obj):
+    """Convert NaN/Inf to None so json.dump always produces valid JSON (RFC 8259).
+    NaN is not a valid JSON literal; Python's default json encoder emits it anyway
+    (allow_nan=True) but strict parsers (JavaScript JSON.parse, many REST clients)
+    will reject the file.
+    """
+    import math
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
+
+
 def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     _ensure_dir(cfg.PRED_DIR)
     part1_meta = _load_part1_meta(cfg)
@@ -2259,7 +2282,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     if cfg.WRITE_HASHED_SUMMARY:
         summary["output_hashes"]["summary_payload_sha256"] = _sha256_text(json.dumps(summary, sort_keys=True, default=str))
     with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(summary, f, indent=2, default=_json_safe)
 
     # diagnostics json
     diag = {
@@ -2283,7 +2306,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     }
     diag_path = os.path.join(cfg.PRED_DIR, cfg.DIAG_FILE)
     with open(diag_path, "w", encoding="utf-8") as f:
-        json.dump(diag, f, indent=2)
+        json.dump(diag, f, indent=2, default=_json_safe)
 
     # ablation csv
     ablation = pd.DataFrame([
@@ -2310,13 +2333,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
 
 
 
