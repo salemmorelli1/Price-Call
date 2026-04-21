@@ -217,10 +217,16 @@ class PreTradeAnalyzer:
 
         close_path = os.path.join(self.cfg.part0_dir, "close_prices.parquet")
         volume_path = os.path.join(self.cfg.part0_dir, "volume_data.parquet")
-        if not os.path.exists(volume_path):
-            volume_path = os.path.join(self.cfg.part0_dir, "volume.parquet")
+        # FIX (Finding 32, Audit 2026-04-21): remove dead 'volume.parquet' fallback.
+        # Part 0 always writes volume_data.parquet; the old fallback silently
+        # degraded to static parameters without any warning.
+        if not os.path.exists(close_path):
+            self._dynamic_params_cache = {}
+            return self._dynamic_params_cache
 
-        if not os.path.exists(close_path) or not os.path.exists(volume_path):
+        if not os.path.exists(volume_path):
+            print(f"[Part 8] WARNING: volume_data.parquet not found at {volume_path}. "
+                  "Using static asset parameters. Run Part 0 to enable dynamic params.")
             self._dynamic_params_cache = {}
             return self._dynamic_params_cache
 
@@ -300,9 +306,6 @@ class PreTradeAnalyzer:
         params = self._get_asset_params(ticker, use_dynamic_params=use_dynamic_params)
         adv_dollars = params["adv_shares"] * params["approx_price"]
         sigma_daily = params["daily_vol_pct"] / 100.0 * market_vol_scalar
-
-        if abs(trade_dollars) < 100:
-            return self._trivial_trade(ticker)
 
         pct_adv = abs(trade_dollars) / adv_dollars
 
@@ -425,10 +428,16 @@ class AlmgrenChrissScheduler:
 
         close_path = os.path.join(self.cfg.part0_dir, "close_prices.parquet")
         volume_path = os.path.join(self.cfg.part0_dir, "volume_data.parquet")
-        if not os.path.exists(volume_path):
-            volume_path = os.path.join(self.cfg.part0_dir, "volume.parquet")
+        # FIX (Finding 32, Audit 2026-04-21): remove dead 'volume.parquet' fallback.
+        # Part 0 always writes volume_data.parquet; the old fallback silently
+        # degraded to static parameters without any warning.
+        if not os.path.exists(close_path):
+            self._dynamic_params_cache = {}
+            return self._dynamic_params_cache
 
-        if not os.path.exists(close_path) or not os.path.exists(volume_path):
+        if not os.path.exists(volume_path):
+            print(f"[Part 8] WARNING: volume_data.parquet not found at {volume_path}. "
+                  "Using static asset parameters. Run Part 0 to enable dynamic params.")
             self._dynamic_params_cache = {}
             return self._dynamic_params_cache
 
@@ -679,10 +688,16 @@ class PostTradeAnalyzer:
 
         close_path = os.path.join(self.cfg.part0_dir, "close_prices.parquet")
         volume_path = os.path.join(self.cfg.part0_dir, "volume_data.parquet")
-        if not os.path.exists(volume_path):
-            volume_path = os.path.join(self.cfg.part0_dir, "volume.parquet")
+        # FIX (Finding 32, Audit 2026-04-21): remove dead 'volume.parquet' fallback.
+        # Part 0 always writes volume_data.parquet; the old fallback silently
+        # degraded to static parameters without any warning.
+        if not os.path.exists(close_path):
+            self._dynamic_params_cache = {}
+            return self._dynamic_params_cache
 
-        if not os.path.exists(close_path) or not os.path.exists(volume_path):
+        if not os.path.exists(volume_path):
+            print(f"[Part 8] WARNING: volume_data.parquet not found at {volume_path}. "
+                  "Using static asset parameters. Run Part 0 to enable dynamic params.")
             self._dynamic_params_cache = {}
             return self._dynamic_params_cache
 
@@ -948,6 +963,37 @@ def compute_annual_cost_drag(
 
 
 def load_part7_instructions(cfg: Part8Config = CFG) -> Dict:
+    # FIX (Finding 11, Audit 2026-04-21):
+    # Part 3 writes v1_fusion_allocations.csv with the alpha sleeve already
+    # carved out. Use that as the primary source so Part 8 execution instructions
+    # reflect the actual sleeve breakdown (alpha VOO + core VOO + IEF), not the
+    # aggregated Part 7 target. Fall back to Part 7 outputs if Part 3 hasn't run.
+    part3_dir = os.path.join(os.path.dirname(cfg.part7_dir.rstrip("/\\")), "artifacts_part3_v1")
+    fusion_alloc_path = os.path.join(part3_dir, "v1_fusion_allocations.csv")
+    if os.path.exists(fusion_alloc_path):
+        try:
+            df = pd.read_csv(fusion_alloc_path)
+            if "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+                df = df.dropna(subset=["Date"]).sort_values("Date")
+            if not df.empty:
+                # Pivot the sleeve weights into the format downstream expects
+                latest_date = df["Date"].max()
+                latest = df[df["Date"] == latest_date].copy()
+                voo_total = float(latest[latest["sleeve"] == "VOO"]["weight"].sum())
+                ief_total = float(latest[latest["sleeve"] == "IEF"]["weight"].sum())
+                alpha_voo = float(latest[(latest["sleeve"] == "VOO") & (latest["is_alpha"] == 1)]["weight"].sum())
+                return {
+                    "Date": str(latest_date),
+                    "w_target_voo": voo_total,
+                    "w_target_ief": ief_total,
+                    "w_alpha_voo": alpha_voo,
+                    "source": "v1_fusion_allocations",
+                }
+        except Exception as e:
+            print(f"[Part 8] Warning: could not load fusion allocations: {e}")
+
+    # Fallback: Part 7 current target weights
     weights_path = os.path.join(cfg.part7_dir, "portfolio_weights_tape.csv")
     current_path = os.path.join(cfg.part7_dir, "current_target_weights.json")
     if os.path.exists(current_path):
