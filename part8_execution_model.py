@@ -62,6 +62,9 @@ class Part8Config:
     part7_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part7"
     part0_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part0"
     out_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part8"
+    # FIX (Finding E, Audit 2026-04-21): direct path to Part 2 consensus tape;
+    # replaces fragile os.path.dirname(cfg.part7_dir) reconstruction.
+    part2_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part2_g532/predictions"
 
     # === Asset-level execution parameters ===
     # VOO: ~$530/share, ~5M shares/day ADV, ~$2.6B ADV
@@ -662,6 +665,13 @@ class PostTradeAnalyzer:
     def __init__(self, cfg: Part8Config = CFG):
         self.cfg = cfg
         self._dynamic_params_cache: Optional[Dict[str, Dict[str, float]]] = None
+        # FIX (Reviewer finding, Audit 2026-04-21):
+        # self.post_trade_log_path was previously placed after `return params`
+        # inside _get_asset_params(), making it unreachable dead code. Both
+        # record_trade() and generate_report() reference self.post_trade_log_path,
+        # so any call to either method would raise AttributeError. Moved here
+        # where it belongs — executed once at construction time.
+        self.post_trade_log_path = os.path.join(cfg.out_dir, "post_trade_log.csv")
 
     def _load_dynamic_params_from_part0(self) -> Dict[str, Dict[str, float]]:
         if self._dynamic_params_cache is not None:
@@ -721,7 +731,6 @@ class PostTradeAnalyzer:
                 if np.isfinite(v) and v > 0:
                     params[k] = float(v)
         return params
-        self.post_trade_log_path = os.path.join(cfg.out_dir, "post_trade_log.csv")
 
     def record_trade(
         self,
@@ -973,6 +982,7 @@ def main() -> int:
     cfg = dataclasses.replace(cfg, part7_dir=_abs_path(cfg.part7_dir))
     cfg = dataclasses.replace(cfg, part0_dir=_abs_path(cfg.part0_dir))
     cfg = dataclasses.replace(cfg, out_dir=_abs_path(cfg.out_dir))
+    cfg = dataclasses.replace(cfg, part2_dir=_abs_path(cfg.part2_dir))  # FIX Finding E
     os.makedirs(cfg.out_dir, exist_ok=True)
 
     print("=" * 70)
@@ -1009,11 +1019,16 @@ def main() -> int:
         vix_level=16.5,
     )
 
-    tape_path = os.path.join(os.path.dirname(cfg.part7_dir), "part2_g532", "predictions", "g532_final_consensus_tape.csv")
+    # FIX (Finding E, Audit 2026-04-21): use cfg.part2_dir directly.
+    # The prior path via os.path.dirname(cfg.part7_dir) was fragile and
+    # resolved incorrectly on the CI runner, leaving annual_drag_summary empty.
+    tape_path = os.path.join(cfg.part2_dir, "g532_final_consensus_tape.csv")
     annual_drag = {}
     if os.path.exists(tape_path):
         tape = pd.read_csv(tape_path)
         annual_drag = compute_annual_cost_drag(tape, cfg, portfolio_dollars=1000.0)
+    else:
+        print(f"[Part 8] WARNING: Consensus tape not found at {tape_path} — annual_drag_summary will be empty.")
 
     record = generate_part3_record(cfg, instructions, annual_drag)
     record.update({
