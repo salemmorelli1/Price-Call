@@ -209,7 +209,6 @@ def check_part2c(r: Results, root: Path):
           thr_ok, f"got {epist_thr}")
 
     epist_live = _fv(p2c, "live_p_bnn_epistemic")
-    total_live = _fv(p2c, "live_p_bnn_total_std")  # check via tape; summary may not carry this
     try:
         ep = float(epist_live)
         # reviewer criterion: epistemic <= total_std (total = sqrt(epist² + aleat²) >= epist)
@@ -288,14 +287,12 @@ def check_part8(r: Results, root: Path):
 
 
 def check_prediction_log(r: Results, root: Path,
-                         n_before: Optional[int] = None,
-                         n_before_date: Optional[str] = None):
+                         n_before: Optional[int] = None):
     """
     Finding C — prediction log accumulates across runs.
     n_before: row count from the PREVIOUS run's artifact.
-    n_before_date: ISO date string of the most recent row in the PREVIOUS artifact.
-    If either is provided, the strict reviewer criterion N_after >= N_before + 1 is checked.
-    If neither is provided, falls back to checking row count >= 2.
+    If provided, the strict reviewer criterion N_after >= N_before + 1 is checked.
+    If omitted, falls back to checking row count >= 2.
     """
     pl_path = root / "artifacts_part3" / "prediction_log.csv"
     pl = _load_csv(pl_path)
