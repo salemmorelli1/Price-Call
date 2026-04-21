@@ -1,6 +1,3 @@
-
-
-
 # @title Part 5
 from __future__ import annotations
 import sys as _sys
@@ -597,11 +594,44 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
         if proc.returncode != 0:
             raise RuntimeError(f"{label} failed with exit code {proc.returncode}")
 
-    # Run optional sleeves — never raise, always continue
+    # Run optional sleeves — never raise, always continue.
+    # FIX (Finding 17, Audit 2026-04-21): Before running Part 2C, check that
+    # Part 2B's gate_validation_passed and bnn_sleeve_recommended are True.
+    # Without this guard, Part 2C runs even when the XGBoost ensemble has not
+    # validated that uncertainty-aware gating is real in this system, wasting
+    # compute and potentially writing misleading BNN artifacts.
     for label, path in optional_sleeves:
         if not path.exists():
             print(f"[{label}] not found — skipping (optional experimental sleeve)")
             continue
+
+        # Gate check for Part 2C specifically
+        if label == "PART 2C":
+            p2b_summary_path = root / "artifacts_part2b_xgb" / "predictions" / "part2b_xgb_summary.json"
+            if p2b_summary_path.exists():
+                try:
+                    import json as _json
+                    with open(p2b_summary_path) as _f:
+                        _p2b = _json.load(_f)
+                    _gate_ok = bool(_p2b.get("gate_validation_passed", False))
+                    _bnn_rec = bool(_p2b.get("bnn_sleeve_recommended", False))
+                    if not (_gate_ok and _bnn_rec):
+                        print(
+                            f"[{label}] SKIPPED — Part 2B gate not cleared "
+                            f"(gate_validation_passed={_gate_ok}, "
+                            f"bnn_sleeve_recommended={_bnn_rec}). "
+                            f"Part 2C should only run after Part 2B confirms "
+                            f"uncertainty-aware gating is valid."
+                        )
+                        continue
+                    print(f"[{label}] Part 2B gate cleared (bnn_sleeve_recommended=True) — proceeding.")
+                except Exception as _e:
+                    print(f"[{label}] Could not read Part 2B summary ({_e}) — skipping Part 2C to be safe.")
+                    continue
+            else:
+                print(f"[{label}] Part 2B summary not found at {p2b_summary_path} — skipping Part 2C.")
+                continue
+
         proc = _run_subprocess(path, root, extra_env=common_env)
         _print_proc(label, proc)
         if proc.returncode != 0:
@@ -687,6 +717,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
