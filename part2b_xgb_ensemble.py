@@ -238,8 +238,17 @@ def _decision_utility(
     y_true: np.ndarray,
     p_pred: np.ndarray,
     base_rate: float,
-    threshold: float = 0.25,
+    threshold: Optional[float] = None,
 ) -> float:
+    # FIX (Finding 27, Audit 2026-04-21):
+    # The prior threshold=0.25 was hardcoded regardless of base_rate (~0.211).
+    # Acting when p > 0.25 measures a conservative suboptimal rule rather than
+    # the natural decision boundary. Default to base_rate so "acting" means
+    # "any prediction that exceeds the unconditional frequency of tail events."
+    # 7/14 Part 2C folds returned NaN utility because BNN probabilities rarely
+    # exceed 0.25; using base_rate as default eliminates those spurious NaN values.
+    if threshold is None:
+        threshold = float(base_rate)
     acted = p_pred > threshold
     if acted.sum() == 0:
         return float("nan")
