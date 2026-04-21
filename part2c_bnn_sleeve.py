@@ -354,7 +354,7 @@ def _decision_utility(
     y_true: np.ndarray,
     p_pred: np.ndarray,
     base_rate: float,
-    threshold: float = 0.25,
+    threshold: Optional[float] = None,
     win_scale: float = 1.0,
     loss_scale: float = 1.0,
 ) -> float:
@@ -365,7 +365,17 @@ def _decision_utility(
         +win_scale  if y_true == 1 (tail event occurred, defense was right)
         -loss_scale if y_true == 0 (no tail, defense was opportunity cost)
     Normalised by number of decisions made.
+
+    FIX (Finding 27, Audit 2026-04-21):
+    The prior threshold=0.25 was hardcoded regardless of base_rate (~0.211).
+    Acting when p > 0.25 measures a conservative suboptimal rule, not the natural
+    decision boundary. Default to base_rate so "acting" = "prediction exceeds the
+    unconditional frequency of tail events." This eliminates the NaN utility values
+    that appeared in 7/14 BNN walkforward folds when BNN probabilities rarely
+    exceeded 0.25.
     """
+    if threshold is None:
+        threshold = float(base_rate)
     acted = p_pred > threshold
     if acted.sum() == 0:
         return float("nan")
