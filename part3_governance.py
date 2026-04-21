@@ -766,7 +766,19 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "p_final_cal": _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None)),
         "base_rate": _safe_float(_row_value(defense_row, ["T", "base_rate", "b"], None)),
         "raw_val_auc": _safe_float(_row_value(defense_row, ["raw_val_auc"], _json_value(part2_summary, ["raw_val_auc_median"], None))),
-        "tail_threshold": _safe_float(_json_value(part2_summary, ["tail_event_threshold"], None)),
+        # FIX (Finding 14 / Finding 26, Audit 2026-04-21):
+        # Write the live row's actual dynamic threshold (from Part 1's rolling-quantile
+        # label) rather than the fixed summary JSON value (-0.00567, H=7 formula).
+        # Part 9 uses this value to reconstruct the live binary label for realized rows.
+        # The classification model was trained on the rolling-quantile label; Part 9
+        # must evaluate it against the same definition.
+        # Priority: tail_threshold_dynamic from the defense_row (if present) →
+        # signal_q_threshold (rolling quantile threshold in the consensus tape) →
+        # fallback to summary JSON tail_event_threshold.
+        "tail_threshold": _safe_float(
+            _row_value(defense_row, ["tail_threshold_dynamic", "signal_q_threshold"], None)
+            or _json_value(part2_summary, ["tail_event_threshold"], None)
+        ),
         # publish_mode: raw governance value, consistent with part3_summary.json.
         # deployment_mode: user-facing operational label (DEFENSE_ONLY when fail-closed).
         # Separating these eliminates the prior cross-file field-name collision.
@@ -1149,7 +1161,15 @@ def main(cfg: Part3Config = CFG) -> None:
         "final_pass": int(final_pass),
         "latest_alpha_state": alpha_status["latest_state"],
         "latest_alpha_state_display": alpha_status["display_state"],
-        "realized_dates": alpha_status["realized_dates"],
+        # FIX (Finding 12, Audit 2026-04-21):
+        # "realized_dates" is ambiguous: it sounds like live prediction-log rows with
+        # realized prices, but actually counts historical tape rows where the backtest
+        # labels are revealed (2020-2026). Operators reading this field incorrectly
+        # concluded 381 live predictions had been evaluated. Renamed to make the
+        # distinction unambiguous. prediction_log_realized_rows is the live count.
+        "alpha_tape_historical_realized_dates": alpha_status["realized_dates"],
+        "realized_dates": alpha_status["realized_dates"],  # kept for backward-compat; deprecated
+        "realized_dates_note": "Backtest tape rows only — NOT live realized predictions. See prediction_log_realized_rows for live count.",
         "budget_mult": alpha_status["budget_mult"],
         "drift_rate": alpha_status["drift_rate"],
         "quality_ok": alpha_status["quality_ok"],
@@ -1242,7 +1262,6 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
-
 
 
 
