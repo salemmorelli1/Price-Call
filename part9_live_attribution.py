@@ -13,6 +13,24 @@
 #   4. Factor attribution: how much of return is explained by beta, duration, etc.
 #   5. Model health diagnostics: feature drift, concept drift, calibration
 #   6. Stopping rules: when to suspend live trading
+#
+# AUDIT CHANGELOG (Quant-Guild Part 8 session, 2026-04)
+# ──────────────────────────────────────────────────────
+# Finding A (CRITICAL): estimated_annual_edge_bps overstated ~370×.
+#   The previous formula computed the raw signed spread return as if the entire
+#   portfolio were deployed long-short.  The actual active weight is ~0.04%
+#   (dead-banded most days), so the true weight-scaled edge is ~3.2 bps/yr, not
+#   1,180 bps/yr.  Fix: source estimated_annual_edge_bps from Part 2 summary
+#   active_ret_net_mean (already weight-scaled); fall back to spread-based
+#   formula only if Part 2 summary is absent, and flag it as unscaled.
+#
+# Finding B (IMPORTANT): tail_threshold applied as single scalar across all rows.
+#   Part 1 uses a rolling 63-day 20th-percentile quantile as the label threshold,
+#   not a fixed -0.015.  Each prediction_log row already carries the correct
+#   per-row dynamic threshold in the 'tail_threshold' column written by Part 3.
+#   The previous code extracted only the last value (iloc[-1]) and applied it
+#   uniformly.  Fix: apply thr_series element-wise; fall back to -0.015 only for
+#   pre-schema rows that lack the column.
 # =============================================================================
 from __future__ import annotations
 
@@ -542,12 +560,20 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     live_stats = {}
     req_cols = {"p_final_cal", "px_voo_t", "px_ief_t", voo_real_col, ief_real_col}
     if req_cols.issubset(set(realized.columns)):
-        tail_series = pd.to_numeric(realized.get("tail_threshold", pd.Series([float(-0.015)] * len(realized))), errors="coerce").dropna()
-        # FIX (Finding 6, Audit 2026-04-21): fallback was -0.015/sqrt(7) = -0.00567 (H=7 formula).
-        # The daily H=1 correct threshold is -0.015. This fallback only fires when
-        # prediction_log.tail_threshold is absent (pre-schema rows); new rows carry the
-        # correct value written by Part 3 from Part 2's summary.
-        tail_threshold = float(tail_series.iloc[-1]) if len(tail_series) else float(-0.015)
+        # FIX (Finding B, Audit 2026-04): Part 1 uses a rolling 63-day 20th-percentile
+        # quantile as the tail label threshold, not a fixed value.  Each prediction_log
+        # row carries the dynamic threshold that was active when Part 1 built the label
+        # for that date (stored in the 'tail_threshold' column written by Part 3).
+        # The previous code extracted tail_series.iloc[-1] (the most-recent value only)
+        # and applied that single scalar to ALL live rows.  For early rows in the log
+        # the rolling quantile will have been different, producing inconsistent y_live
+        # labels.  Fix: apply tail_threshold per-row from the column; fall back to
+        # -0.015 only for pre-schema rows that lack the column.
+        if "tail_threshold" in realized.columns:
+            thr_series = pd.to_numeric(realized["tail_threshold"], errors="coerce").fillna(-0.015)
+        else:
+            thr_series = pd.Series([-0.015] * len(realized), index=realized.index)
+
         br_series = pd.to_numeric(realized.get("base_rate", pd.Series([0.20] * len(realized))), errors="coerce").dropna()
         base_rate = float(br_series.iloc[-1]) if len(br_series) else 0.20
         pred_p_raw = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
@@ -570,16 +596,44 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         ) - (
             pd.to_numeric(realized[ief_real_col], errors="coerce").values / pd.to_numeric(realized["px_ief_t"], errors="coerce").values - 1.0
         )
-        y_live = (spread_real < tail_threshold).astype(float)
+        # FIX (Finding B): per-row threshold applied element-wise
+        y_live = (spread_real < thr_series.values).astype(float)
         m = np.isfinite(pred_p) & np.isfinite(y_live)
         if m.sum() >= 2:
             live_stats = t_stat_sign_accuracy(y_live[m], pred_p[m], base_rate)
-            live_stats["tail_threshold"] = tail_threshold
+            # Report the median threshold across live rows for transparency
+            live_stats["tail_threshold"] = float(np.median(thr_series.values))
             live_stats["base_rate"] = base_rate
             active_rets = -spread_real[m] * np.sign(pred_p[m] - base_rate)
             if len(active_rets) >= 2:
                 live_stats["mean_active_return"] = float(np.mean(active_rets))
-                live_stats["estimated_annual_edge_bps"] = float(np.mean(active_rets) * 252 * 10000.0)
+                # FIX (Finding A, Audit 2026-04): the raw spread return used here overstates
+                # estimated_annual_edge_bps by ~370× because it ignores the active weight
+                # (~0.04% average when the dead-band is active).  The weight-scaled active
+                # return is already computed correctly in Part 2 and stored in
+                # part2_g532_summary.json as active_ret_net_mean.  Use that value as the
+                # primary source; fall back to the (overstated) spread-based formula only
+                # if the Part 2 summary is unavailable, and flag it as unscaled.
+                p2_summary_path = cfg.part2_tape_path.replace(
+                    "g532_final_consensus_tape.csv", "part2_g532_summary.json"
+                )
+                _edge_set = False
+                if os.path.exists(p2_summary_path):
+                    try:
+                        _p2s = json.load(open(p2_summary_path))
+                        _arm = float(_p2s.get("active_ret_net_mean", np.nan))
+                        if np.isfinite(_arm):
+                            live_stats["estimated_annual_edge_bps"] = float(_arm * 252 * 10000.0)
+                            live_stats["estimated_annual_edge_source"] = "part2_active_ret_net_mean"
+                            _edge_set = True
+                    except Exception:
+                        pass
+                if not _edge_set:
+                    # Fallback: spread-based; warn that it is not weight-scaled.
+                    live_stats["estimated_annual_edge_bps"] = float(
+                        np.mean(active_rets) * 252 * 10000.0
+                    )
+                    live_stats["estimated_annual_edge_source"] = "spread_return_unscaled_fallback"
             report["classification_stats_live"] = live_stats
             report["calibration_live"] = {
                 "ece": ece_score(y_live[m], pred_p[m]),
@@ -655,5 +709,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
 
