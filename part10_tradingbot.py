@@ -403,47 +403,79 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
         "source": "default",
     }
 
+    # FIX (Finding 15, Audit 2026-04-21):
+    # The prior code tried part2_g532_summary.json first. That file is a model-level
+    # aggregate and contains neither p_final_cal nor base_rate at the live-row level.
+    # Both fields fell through to cfg.base_rate_default (0.19), making edge=0.0 on
+    # every run and corrupting the signal_log.csv diagnostic trail.
+    #
+    # Priority order:
+    #   1. current_target_weights.json (Part 7 output) — carries p_tail_base,
+    #      base_rate, edge, publish_mode, final_pass from the live run.
+    #   2. Part 2 consensus tape last row — has p_final_cal and T (base_rate).
+    #   3. Part 2 summary JSON — model-level aggregate; used only for AUC.
+    ctw_path = cfg.part7_current_target_path
+    if os.path.exists(ctw_path):
+        try:
+            ctw = _read_json(ctw_path)
+            p_tail_raw = _safe_float(ctw.get("p_tail_base"), np.nan)
+            base_rate_raw = _safe_float(ctw.get("base_rate"), np.nan)
+            if np.isfinite(p_tail_raw) and np.isfinite(base_rate_raw):
+                signal.update({
+                    "p_tail":       float(p_tail_raw),
+                    "base_rate":    float(base_rate_raw),
+                    "publish_mode": str(ctw.get("publish_mode", "UNKNOWN")),
+                    "final_pass":   bool(ctw.get("final_pass", False)),
+                    "raw_val_auc":  _safe_float(ctw.get("raw_val_auc"), np.nan),
+                    "source": "part7_current_target_weights",
+                })
+                print(
+                    f"[Bot] Signal from current_target_weights: p_tail={signal['p_tail']:.4f}, "
+                    f"base_rate={signal['base_rate']:.4f}, edge={signal['base_rate']-signal['p_tail']:+.4f}, "
+                    f"mode={signal['publish_mode']}"
+                )
+                return signal
+        except Exception as e:
+            print(f"[Bot] Warning: could not read current_target_weights ({e})")
+
+    # Fallback 2: Part 2 tape last row (has p_final_cal and T)
+    row = _latest_row_from_csv(cfg.part2_tape_path)
+    if row is not None:
+        p_tail_row = _safe_float(row.get("p_final_cal", cfg.base_rate_default), cfg.base_rate_default)
+        base_rate_row = _safe_float(row.get("T", row.get("base_rate", cfg.base_rate_default)), cfg.base_rate_default)
+        if np.isfinite(p_tail_row) and np.isfinite(base_rate_row):
+            signal.update({
+                "p_tail":        p_tail_row,
+                "base_rate":     base_rate_row,
+                "publish_mode":  str(row.get("publish_mode", "UNKNOWN")),
+                "final_pass":    bool(row.get("final_pass", False)),
+                "raw_val_auc":   _safe_float(row.get("raw_val_auc"), np.nan),
+                "px_voo_t":      _safe_float(row.get("px_voo_t"), np.nan),
+                "px_ief_t":      _safe_float(row.get("px_ief_t"), np.nan),
+                "px_voo_call_1d": _safe_float(row.get("px_voo_call_1d", row.get("px_voo_call_7d")), np.nan),
+                "px_ief_call_1d": _safe_float(row.get("px_ief_call_1d", row.get("px_ief_call_7d")), np.nan),
+                "source": "part2_tape_last_row",
+            })
+            print(f"[Bot] Signal from Part 2 tape: p_tail={signal['p_tail']:.4f}, "
+                  f"base_rate={signal['base_rate']:.4f}, edge={signal['base_rate']-signal['p_tail']:+.4f}")
+            return signal
+
+    # Fallback 3: Part 2 summary JSON (model-level only — no row-level probabilities)
     if os.path.exists(cfg.part2_summary_path):
         try:
             s = _read_json(cfg.part2_summary_path)
             signal.update({
-                "p_tail": _safe_float(s.get("p_final_cal", s.get("p_final_use", cfg.base_rate_default)), cfg.base_rate_default),
-                "base_rate": _safe_float(s.get("base_rate", s.get("T", cfg.base_rate_default)), cfg.base_rate_default),
+                "raw_val_auc":  _safe_float(s.get("raw_val_auc_median"), np.nan),
                 "publish_mode": str(s.get("publish_mode", "UNKNOWN")),
-                "final_pass": bool(s.get("final_pass", False)),
-                "raw_val_auc": _safe_float(s.get("raw_val_auc", s.get("raw_val_auc_median", np.nan))),
-                "px_voo_t": _safe_float(s.get("px_voo_t", np.nan)),
-                "px_ief_t": _safe_float(s.get("px_ief_t", np.nan)),
-                "px_voo_call_1d": _safe_float(s.get("px_voo_call_1d", s.get("px_voo_call_7d", np.nan))),
-                "px_ief_call_1d": _safe_float(s.get("px_ief_call_1d", s.get("px_ief_call_7d", np.nan))),
-                "source": "part2_summary",
+                "final_pass":   bool(s.get("final_pass", False)),
+                "source": "part2_summary_auc_only",
             })
-            print(
-                f"[Bot] Signal from Part 2 summary: p_tail={signal['p_tail']:.4f}, "
-                f"final_pass={signal['final_pass']}, mode={signal['publish_mode']}"
-            )
-            return signal
+            print("[Bot] Warning: Part 2 summary has no row-level probabilities. "
+                  "p_tail and base_rate using defaults — signal_log edge will be ~0.")
         except Exception as e:
             print(f"[Bot] Warning: could not read Part 2 summary ({e})")
 
-    row = _latest_row_from_csv(cfg.part2_tape_path)
-    if row is not None:
-        signal.update({
-            "p_tail": _safe_float(row.get("p_final_cal", cfg.base_rate_default), cfg.base_rate_default),
-            "base_rate": _safe_float(row.get("base_rate", row.get("T", cfg.base_rate_default)), cfg.base_rate_default),
-            "publish_mode": str(row.get("publish_mode", "UNKNOWN")),
-            "final_pass": bool(row.get("final_pass", False)),
-            "raw_val_auc": _safe_float(row.get("raw_val_auc", np.nan)),
-            "px_voo_t": _safe_float(row.get("px_voo_t", np.nan)),
-            "px_ief_t": _safe_float(row.get("px_ief_t", np.nan)),
-            "px_voo_call_1d": _safe_float(row.get("px_voo_call_1d", row.get("px_voo_call_7d", np.nan))),
-            "px_ief_call_1d": _safe_float(row.get("px_ief_call_1d", row.get("px_ief_call_7d", np.nan))),
-            "source": "part2_tape_last_row",
-        })
-        print(f"[Bot] Signal from Part 2 tape: p_tail={signal['p_tail']:.4f}")
-        return signal
-
-    print("[Bot] Warning: no Part 2 signal found — using defaults.")
+    print("[Bot] Warning: no reliable signal source found — using defaults.")
     return signal
 
 
@@ -759,8 +791,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
