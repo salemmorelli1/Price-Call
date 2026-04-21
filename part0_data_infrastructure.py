@@ -569,7 +569,17 @@ def compute_labels(close: pd.DataFrame, cfg: Part0Config) -> pd.DataFrame:
         labels[f"fwd_voo_{h}d"] = fwd_voo
         labels[f"fwd_ief_{h}d"] = fwd_ief
         labels[f"excess_ret_{h}d"] = excess
-        thr_h = float(-0.015 * np.sqrt(h / 7.0))
+        # FIX (Finding 26, Audit 2026-04-21):
+        # The prior formula -0.015 * sqrt(h/7) anchors the threshold to H=7 and
+        # scales DOWN. At H=1 this gives -0.00567 — the H=7 value divided by sqrt(7).
+        # The correct sqrt-time scaling rule (for independent increments) goes UP from
+        # a base daily value: thr(H) = thr(1) * sqrt(H).
+        # At H=1: -0.015 (base daily threshold)
+        # At H=7: -0.015 * sqrt(7) = -0.03969
+        # Note: Part 1 overrides these fixed labels with rolling-quantile labels for
+        # the training dataset. These fixed-threshold labels in y_labels_full.parquet
+        # and y_labels_revealed.parquet are used for analysis/cross-check only.
+        thr_h = float(-0.015 * np.sqrt(h))
         labels[f"y_tail_{h}d"] = np.where(np.isfinite(excess), (excess < thr_h).astype(float), np.nan)
         labels[f"excess_rank_{h}d"] = excess.rolling(252, min_periods=63).rank(pct=True)
 
