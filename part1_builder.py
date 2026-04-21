@@ -53,7 +53,13 @@ class Part1Config:
     start: str = "2010-01-01"
     end: str = date.today().strftime("%Y-%m-%d")
     horizon: int = 1                    # CHANGE: 7-day → 1-day weekday forecast
-    tail_threshold: float = float(-0.015 / np.sqrt(7.0))  # fallback fixed threshold (cold-start only)
+    # FIX (Finding 26, Audit 2026-04-21):
+    # Cold-start fallback threshold was -0.015/sqrt(7) = -0.00567 (H=7 formula scaled
+    # down).  For a daily H=1 model the correct base threshold is -0.015.
+    # This fallback only applies to the first rolling_quantile_min_periods=21 rows
+    # before sufficient history exists for the rolling quantile; its impact is minimal
+    # but should be consistent with the rest of the system.
+    tail_threshold: float = -0.015  # H=1 daily cold-start fallback (was -0.015/sqrt(7))
 
     # ── Rolling quantile label ─────────────────────────────────────────────
     # Replace the fixed tail_threshold with a backward-looking rolling quantile.
@@ -473,6 +479,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
