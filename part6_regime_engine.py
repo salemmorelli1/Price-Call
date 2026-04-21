@@ -51,26 +51,11 @@ warnings.filterwarnings("ignore")
 try:
     from hmmlearn import hmm
     HAVE_HMM = True
-except Exception:
-    # hmmlearn missing — attempt a silent pip install and retry once.
-    # This closes the environment-consistency gap where the interactive
-    # !pip install hmmlearn cell was not run before the automated pipeline
-    # (run_tuesday_prediction.py → part5_validator.py → part6) executes.
-    # Without this, Part 6 silently falls back to GMM, producing materially
-    # different regime distributions that shift Part 7's base weights.
-    try:
-        import subprocess as _subprocess
-        _subprocess.run(
-            [_sys.executable, "-m", "pip", "install", "hmmlearn", "-q"],
-            capture_output=True,
-            check=False,
-        )
-        from hmmlearn import hmm
-        HAVE_HMM = True
-    except Exception:
-        hmm = None
-        HAVE_HMM = False
-        print("[Part 6] hmmlearn unavailable after install attempt — falling back to GMM regime.")
+except ImportError:
+    hmm = None
+    HAVE_HMM = False
+    print("[Part 6] hmmlearn not available — will fall back to GMM. "
+          "Install with: pip install hmmlearn (it is listed in requirements.txt)")
 
 try:
     import duckdb
@@ -177,7 +162,13 @@ KNOWN_FOMC_DATES_2020_2026 = [
     "2024-09-18", "2024-11-07", "2024-12-18",
     "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30",
     "2025-09-17", "2025-10-29", "2025-12-10",
+    # FIX (Finding 28, Audit 2026-04-21): added H2 2026 and full 2027.
+    # The original list ended at 2026-06-17; after that date days_to_fomc returned
+    # 999 and fomc_in_7d permanently = 0 for the rest of 2026 and all of 2027.
     "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+    "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-16",
+    "2027-07-28", "2027-09-22", "2027-10-27", "2027-12-08",
 ]
 
 
@@ -588,7 +579,13 @@ def main() -> int:
         # json.dump side-effect. Downstream consumers must use str(state_id)
         # to look up labels, e.g. regime_map[str(label_int)].
         "regime_map": regime_map_str_keys,
-        "transition_matrix": engine.transition_matrix.tolist() if engine.transition_matrix is not None else None,
+        # FIX (Finding 30, Audit 2026-04-21): round matrix values to 8 decimal places
+        # before serialisation. json.dump of raw np.float64 values with full precision
+        # produces row sums of 1.0001 due to floating-point rounding in the decimal
+        # representation. Rounding to 8 d.p. preserves all meaningful precision while
+        # guaranteeing rows sum to exactly 1.0000 in the JSON representation.
+        "transition_matrix": [[round(float(v), 8) for v in row]
+                              for row in engine.transition_matrix.tolist()] if engine.transition_matrix is not None else None,
         "regime_distribution": regime_df["regime_label"].value_counts(normalize=True).to_dict(),
         "unknown_rate": round(unknown_rate, 6),
         "fomc_dates_included": len(KNOWN_FOMC_DATES_2020_2026),
