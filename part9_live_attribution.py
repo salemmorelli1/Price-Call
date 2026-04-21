@@ -262,8 +262,14 @@ def diebold_mariano_test(
     if d_var <= 0:
         return {"n": n, "dm_stat": 0.0, "p_value": 0.5, "model_better": False}
 
-    # DM statistic (Harvey, Leybourne, Newbold small-sample correction)
-    dm = float(d_bar / np.sqrt(d_var / n))
+    # Harvey, Leybourne & Newbold (1997) small-sample correction to the DM statistic.
+    # HLN multiply the raw DM statistic by sqrt((n + 1 - 2h + h(h-1)/n) / n).
+    # At h=1 this reduces to sqrt((n-1)/n), which is negligible for large n but
+    # reduces the rejection rate for the small live samples encountered early in
+    # deployment.
+    hln_correction = float(np.sqrt(max((n + 1 - 2 * h + h * (h - 1) / max(n, 1)) / n, 1e-12)))
+    dm_raw = float(d_bar / np.sqrt(d_var / n))
+    dm = dm_raw * hln_correction
     # One-tailed: positive DM = model worse, negative = model better
     p_value = float(stats.t.sf(-dm, df=n - 1))  # P(model better)
 
@@ -536,11 +542,29 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     live_stats = {}
     req_cols = {"p_final_cal", "px_voo_t", "px_ief_t", voo_real_col, ief_real_col}
     if req_cols.issubset(set(realized.columns)):
-        tail_series = pd.to_numeric(realized.get("tail_threshold", pd.Series([float(-0.015 / np.sqrt(7.0))] * len(realized))), errors="coerce").dropna()
-        tail_threshold = float(tail_series.iloc[-1]) if len(tail_series) else float(-0.015 / np.sqrt(7.0))
+        tail_series = pd.to_numeric(realized.get("tail_threshold", pd.Series([float(-0.015)] * len(realized))), errors="coerce").dropna()
+        # FIX (Finding 6, Audit 2026-04-21): fallback was -0.015/sqrt(7) = -0.00567 (H=7 formula).
+        # The daily H=1 correct threshold is -0.015. This fallback only fires when
+        # prediction_log.tail_threshold is absent (pre-schema rows); new rows carry the
+        # correct value written by Part 3 from Part 2's summary.
+        tail_threshold = float(tail_series.iloc[-1]) if len(tail_series) else float(-0.015)
         br_series = pd.to_numeric(realized.get("base_rate", pd.Series([0.20] * len(realized))), errors="coerce").dropna()
         base_rate = float(br_series.iloc[-1]) if len(br_series) else 0.20
-        pred_p = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
+        pred_p_raw = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
+        # FIX (Finding 14, Audit 2026-04-21): use the Platt-recalibrated probability
+        # p_regime_recal (written by Part 3) when it is available and well-populated.
+        # p_regime_recal is regime-conditional Platt-scaled and is the best-calibrated
+        # probability estimate the system produces. The original code exclusively used
+        # p_final_cal, leaving the recalibration entirely unused in statistical inference.
+        if "p_regime_recal" in realized.columns:
+            recal_series = pd.to_numeric(realized["p_regime_recal"], errors="coerce")
+            if recal_series.notna().mean() >= 0.5:
+                pred_p = recal_series.values
+                print("[Part 9] Using p_regime_recal (Platt-scaled) for live statistics.")
+            else:
+                pred_p = pred_p_raw
+        else:
+            pred_p = pred_p_raw
         spread_real = (
             pd.to_numeric(realized[voo_real_col], errors="coerce").values / pd.to_numeric(realized["px_voo_t"], errors="coerce").values - 1.0
         ) - (
@@ -631,4 +655,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
