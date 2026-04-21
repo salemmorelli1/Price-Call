@@ -1,0 +1,2 @@
+date,p_tail,base_rate,edge,target_w_voo,action_reason,target_source,dry_run,accuracy_gate_passed,accuracy_gate_reason,publish_mode,final_pass,raw_val_auc,px_voo,px_ief,nav
+2026-04-21,0.19,0.19,0.0,0.6,neutral_model_not_cleared (FAIL_CLOSED_NEUTRAL),heuristic_fallback,True,False,Only 0 live realized obs (need 60),FAIL_CLOSED_NEUTRAL,False,0.5385,652.78,95.93,1000.0

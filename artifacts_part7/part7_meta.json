@@ -1,0 +1,10 @@
+{
+  "version": "V2_DAILY_CANONICAL",
+  "built_at": "2026-04-21T00:53:48.171673+00:00",
+  "universe": [
+    "VOO",
+    "IEF"
+  ],
+  "optimizer": "cvxpy",
+  "rows": 1645
+}
