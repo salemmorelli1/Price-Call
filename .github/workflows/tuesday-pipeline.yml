@@ -45,6 +45,37 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # ── Restore accumulated artifacts before running ──────────────────
+      # FIX (Finding C, Audit 2026-04-21):
+      # actions/checkout always starts with a clean workspace snapshot from
+      # the commit at checkout time. If prediction_log.csv (or other
+      # accumulating artifacts) were updated by a previous run and committed,
+      # they are present in the workspace; but if the commit step was skipped
+      # (e.g., "no artifact changes to commit") the file on disk reflects
+      # only what was in the last commit, not what the last run wrote.
+      #
+      # The authoritative copy of accumulating artifacts lives on the remote.
+      # Fetch and hard-reset these files from origin before the pipeline runs
+      # so Part 3's _upsert_prediction_log appends to the full existing history
+      # rather than starting over from an empty or stale file.
+      #
+      # Paths covered:
+      #   artifacts_part3/prediction_log.csv  — Part 3 live prediction history
+      #   artifacts_part9/live_attribution_report.json — Part 9 live stats
+      #
+      # Strategy: `git fetch` then `git checkout origin/HEAD -- <path>`.
+      # Falls back silently if the file doesn't exist on the remote yet
+      # (first-ever run). Uses `|| true` so a missing remote file is not fatal.
+      - name: Restore accumulating artifacts from remote
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --quiet || true
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part3/prediction_log.csv \
+            2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part9/live_attribution_report.json \
+            2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+
       # ── Time gate ─────────────────────────────────────────────────────
       # Accepts any scheduled trigger that lands between 9:30–9:45 AM ET.
       # Manual dispatches (workflow_dispatch) always proceed immediately.
