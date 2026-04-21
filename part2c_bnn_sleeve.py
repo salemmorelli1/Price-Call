@@ -309,7 +309,27 @@ def _predict_sklearn(
     preds = np.stack([m.predict_proba(X)[:, 1] for m in models])
     mean      = preds.mean(axis=0)
     epistemic = preds.std(axis=0)
-    aleatoric = np.zeros_like(mean)          # no MC dropout available
+    # FIX (Finding D, Audit 2026-04-21):
+    # The original code set aleatoric = np.zeros_like(mean) because the sklearn
+    # backend has no MC dropout and cannot forward-pass stochastically to estimate
+    # within-model noise. However, zero aleatoric means p_bnn_total_std = epistemic
+    # everywhere, collapsing the two-component decomposition and making total_std
+    # a trivial alias for epistemic_std.
+    #
+    # For binary classification, the irreducible data (aleatoric) noise under a
+    # Bernoulli outcome model is: σ_aleatoric = sqrt(p*(1-p)). This is the minimum
+    # uncertainty that would exist even with a perfectly calibrated infinite-data
+    # model. It is computable analytically from the ensemble mean probability and
+    # provides a meaningful lower bound on total predictive uncertainty.
+    #
+    # Total uncertainty (law of total variance):
+    #   total_var = epistemic² + aleatoric²
+    #   total_std = sqrt(epistemic² + p*(1-p))
+    #
+    # Note: for low base-rate events (p ~ 0.16), sqrt(p*(1-p)) ≈ 0.37, which
+    # dominates the ensemble epistemic spread (~0.08). This is correct — the
+    # irreducible noise from predicting a rare binary event is inherently large.
+    aleatoric = np.sqrt(np.clip(mean * (1.0 - mean), 0.0, 0.25))
     return mean, epistemic, aleatoric
 
 
@@ -476,8 +496,34 @@ def predict_live(
     scaler: StandardScaler,
     x_live: np.ndarray,
     cfg: Part2CConfig,
+    epist_threshold: float = 0.0,
 ) -> Dict[str, float]:
-    """Single-row live prediction with full uncertainty decomposition."""
+    """Single-row live prediction with full uncertainty decomposition.
+
+    Parameters
+    ----------
+    models : list
+        Fitted ensemble members.
+    scaler : StandardScaler
+        Fitted feature scaler.
+    x_live : np.ndarray
+        Single-row (1 × n_features) feature array for the live date.
+    cfg : Part2CConfig
+        Pipeline configuration.
+    epist_threshold : float, optional
+        Walk-forward-derived 75th-percentile epistemic threshold used to gate
+        the overlay signal. Default 0.0 (always-on) for backward compatibility,
+        but callers should always pass the value derived from the walk-forward
+        evaluation so the helper is self-consistent.
+
+        FIX (Reviewer finding, Audit 2026-04-21):
+        The prior implementation hard-coded ``int(epist[0] > 0.0)`` as a
+        placeholder and relied on the caller overwriting ``bnn_overlay_on``
+        after the fact. While the main pipeline always performed that overwrite
+        correctly, any standalone call to this function (e.g., unit tests or
+        future consumers) would receive the wrong overlay value. Moving the
+        threshold inside the function eliminates that inconsistency.
+    """
     x_scaled = scaler.transform(x_live.reshape(1, -1))
     if HAVE_TORCH:
         mean, epist, aleat = _predict_torch(models, x_scaled, cfg.n_mc_samples)
@@ -485,13 +531,15 @@ def predict_live(
         mean, epist, aleat = _predict_sklearn(models, x_scaled)
     total = float(np.sqrt(epist[0] ** 2 + aleat[0] ** 2))
     return {
-        "p_bnn_mean":      float(mean[0]),
-        "p_bnn_epistemic": float(epist[0]),
-        "p_bnn_aleatoric": float(aleat[0]),
-        "p_bnn_total_std": total,
-        # Overlay gate: fire when epistemic uncertainty is in top quartile
-        # of historical distribution (replaces caution_signal >= 0.40)
-        "bnn_overlay_on":  int(epist[0] > 0.0),   # threshold set from wf eval
+        "p_bnn_mean":       float(mean[0]),
+        "p_bnn_epistemic":  float(epist[0]),
+        "p_bnn_aleatoric":  float(aleat[0]),
+        "p_bnn_total_std":  total,
+        # FIX (Reviewer finding, Audit 2026-04-21): use the caller-supplied
+        # epist_threshold rather than the placeholder > 0.0. The default 0.0
+        # keeps old behaviour for any call that omits the argument, but the
+        # main pipeline always passes the walk-forward 75th-percentile value.
+        "bnn_overlay_on":   int(epist[0] > epist_threshold),
     }
 
 
@@ -685,11 +733,14 @@ def main() -> int:
 
     # ── Live inference on latest feature row ──────────────────────────────
     live_row = X_all[-1:]
-    live_result = predict_live(models, scaler, live_row, cfg)
-    # Apply walk-forward-derived epistemic threshold
-    live_result["bnn_overlay_on"] = int(
-        live_result["p_bnn_epistemic"] > epist_threshold
-    )
+    # FIX (Reviewer finding, Audit 2026-04-21): pass epist_threshold directly
+    # so predict_live() is self-consistent. The prior pattern called
+    # predict_live() with no threshold (returning bnn_overlay_on = int(epist > 0.0))
+    # and then immediately overwrote the value — correct in the main pipeline path
+    # but wrong for any standalone call to the helper. The redundant overwrite below
+    # is removed; the threshold is now applied once, inside predict_live().
+    live_result = predict_live(models, scaler, live_row, cfg,
+                               epist_threshold=epist_threshold)
     live_result["bnn_epist_threshold"] = float(epist_threshold)
 
     print(f"\nLive prediction (latest row {X.index[-1].date()}):")
@@ -768,4 +819,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
