@@ -412,9 +412,6 @@ def compute_allocation(
         ewm_halflife=cfg.cov_ewm_halflife,
     )
 
-    # Scale cov to H-day horizon
-    cov_h = cov * (cfg.horizon / 252)
-
     # Market weights (CAPM prior)
     market_w = np.array([cfg.market_weights.get(a, 1.0/n) for a in available_cols])
     market_w = market_w / market_w.sum()
@@ -447,14 +444,11 @@ def compute_allocation(
     }
 
     # Expected returns from Black-Litterman.
-    # FIX (Finding #22, 2026-04): pi and q must share the same temporal unit.
-    # cov_h = cov_ann * (H/252) is daily-scale at H=1, making pi daily-scale.
-    # But view_return is expressed as an annualized return (10% * edge), so
-    # passing cov_h caused a ~252x scale mismatch: q >> pi, meaning the model
-    # view always dominated the CAPM prior regardless of view_confidence.
-    # Fix: pass cov_ann to estimate_expected_returns so both pi and q are in
-    # annual units. The optimizer receives cov_h for the risk/variance terms
-    # (correct H-day horizon), while expected-return estimation uses annual scale.
+    # mu_bl is in annual-return units because estimate_expected_returns() is
+    # fed annualized covariance. The optimizer must therefore also receive
+    # annualized covariance in its risk term. Passing daily covariance here
+    # shrinks the variance penalty by ~252x and drives the solution to the
+    # upper bound instead of producing genuine interior allocations.
     mu_bl = estimate_expected_returns(
         model_view, market_w, cov, available_cols,
         tau=cfg.tau, risk_aversion=cfg.risk_aversion
@@ -492,7 +486,7 @@ def compute_allocation(
 
     # Optimize
     w_opt = optimize_weights_cvxpy(
-        mu_bl, cov_h, available_cols, bounds,
+        mu_bl, cov, available_cols, bounds,
         risk_aversion=eff_risk_aversion,
         prev_weights=prev_weights,
         max_turnover=cfg.max_turnover,
@@ -553,33 +547,6 @@ def kelly_fraction(
 # Main
 # ============================================================
 
-
-
-def _json_safe(obj):
-    """Convert pandas / NumPy / datetime objects into JSON-safe scalars."""
-    import math
-    from datetime import date, datetime
-    from pathlib import Path
-
-    import numpy as np
-    import pandas as pd
-
-    if obj is None:
-        return None
-    if isinstance(obj, (bool, np.bool_)):
-        return bool(obj)
-    if isinstance(obj, (int, np.integer)):
-        return int(obj)
-    if isinstance(obj, (float, np.floating)):
-        x = float(obj)
-        return None if (math.isnan(x) or math.isinf(x)) else x
-    if isinstance(obj, (pd.Timestamp, datetime, date)):
-        return pd.Timestamp(obj).isoformat()
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, Path):
-        return str(obj)
-    return str(obj)
 
 def main() -> int:
     cfg = Part7Config()
@@ -689,9 +656,9 @@ def main() -> int:
 
     weights_tape = pd.DataFrame(rows)
     weights_tape.to_csv(os.path.join(cfg.out_dir, "portfolio_weights_tape.csv"), index=False)
-    latest = {k: _json_safe(v) for k, v in weights_tape.iloc[-1].to_dict().items()}
-    with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w", encoding="utf-8") as f:
-        json.dump(latest, f, indent=2)
+    latest = weights_tape.iloc[-1].to_dict()
+    with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w") as f:
+        json.dump(latest, f, indent=2, default=str)
 
     meta = {
         "version": cfg.version,
@@ -700,8 +667,7 @@ def main() -> int:
         "optimizer": "cvxpy" if HAVE_CVXPY else "scipy",
         "rows": int(len(weights_tape)),
     }
-    meta = {k: _json_safe(v) for k, v in meta.items()}
-    with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
     print(f"\n✅ PART 7 COMPLETE | rows={len(weights_tape)}")
@@ -711,9 +677,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
 
