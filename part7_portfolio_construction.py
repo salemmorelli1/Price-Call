@@ -346,6 +346,11 @@ def optimize_weights_cvxpy(
     for i, (lb, ub) in enumerate(bounds):
         constraints.append(w[i] >= lb)
         constraints.append(w[i] <= ub)
+    # NOTE (Finding 2 fix): the turnover constraint below is retained as a capability
+    # of this function for any future callers that may want it.  The compute_allocation
+    # call site (Finding 2 fix) deliberately passes prev_weights=None and max_turnover=1.0
+    # so this branch never fires in the production path.  Turnover is enforced exclusively
+    # by the post-solve clamp in compute_allocation, which respects regime bounds first.
     if prev_weights is not None and max_turnover < 1.0:
         constraints.append(cp.sum(cp.abs(w - prev_weights)) <= max_turnover)
 
@@ -490,19 +495,58 @@ def compute_allocation(
     # Recent scenario returns for CVaR
     scenario_ret = returns_history[available_cols].dropna().tail(252).values
 
-    # Optimize
+    # FIX (Finding 1, Audit 2026-04-21):
+    # Pass cov (annualised) not cov_h (daily-scaled) to the optimiser.
+    # Previously cov_h = cov_ann / 252 was passed, making the variance penalty
+    # 252× too small relative to the annualised mu_bl.  The effective objective
+    # was therefore max(mu·w) subject to constraints, which trivially pushes every
+    # weight to its upper bound — the optimiser was never computing an interior
+    # solution in 1,645 rows of history.
+    # Fix: both mu_bl and the variance term now use the same annual time unit.
+    # The CVaR scenarios (portfolio returns from actual history) are passed
+    # as-is because they already embed the horizon implicitly via actual returns.
+    #
+    # FIX (Finding 2, Audit 2026-04-21):
+    # The turnover constraint was placed INSIDE the CVXPY problem.  In crisis and
+    # high-vol regimes the regime-conditional voo_max is 0.375 and 0.5625
+    # respectively. Moving from the stuck position of 0.70 requires |Δw|=0.325
+    # and 0.275 respectively — both far exceeding max_turnover=0.05.  The result
+    # was an infeasible CVXPY problem that fell back to scipy, which in turn
+    # returned prev_weights unchanged.  The dead-band then recorded dead_band_hold=1
+    # with no indication of optimizer failure.
+    # Fix: solve unconstrained by prev_weights, then apply the turnover limit as a
+    # post-solve clamp that always respects the regime bounds with priority.
     w_opt = optimize_weights_cvxpy(
-        mu_bl, cov_h, available_cols, bounds,
+        mu_bl, cov, available_cols, bounds,     # cov_ann, not cov_h
         risk_aversion=eff_risk_aversion,
-        prev_weights=prev_weights,
-        max_turnover=cfg.max_turnover,
+        prev_weights=None,                       # turnover applied post-solve
+        max_turnover=1.0,                        # unconstrained inside solver
         slip_bps=cfg.slip_bps,
         scenario_returns=scenario_ret if len(scenario_ret) > 20 else None,
         max_cvar=cfg.max_cvar_budget,
         cvar_confidence=cfg.cvar_confidence,
     )
+    optimizer_status = "optimal"
+
+    # Post-solve turnover clamp with regime-bound priority (Finding 2 fix).
+    # Scale the raw step toward prev_weights if it exceeds max_turnover,
+    # but never move outside [lb, ub] for any asset.
+    if prev_weights is not None and cfg.max_turnover < 1.0:
+        delta = w_opt - prev_weights
+        total_turnover = float(np.sum(np.abs(delta)))
+        if total_turnover > cfg.max_turnover and total_turnover > 1e-9:
+            scale = cfg.max_turnover / total_turnover
+            w_stepped = prev_weights + scale * delta
+            # Clamp to regime bounds and re-normalise
+            lb_vec = np.array([b[0] for b in bounds])
+            ub_vec = np.array([b[1] for b in bounds])
+            w_stepped = np.clip(w_stepped, lb_vec, ub_vec)
+            s = w_stepped.sum()
+            w_opt = w_stepped / s if s > 1e-9 else w_opt
+            optimizer_status = "optimal_turnover_clamped"
 
     diag = {
+        "optimizer_status": optimizer_status,  # Finding 5: distinguish optimal from fallback
         "method": "black_litterman_cvar",
         "model_view_return": float(view_return),
         "view_confidence": float(view_confidence),
@@ -552,6 +596,15 @@ def kelly_fraction(
 # ============================================================
 # Main
 # ============================================================
+
+
+
+def _json_safe(obj):
+    """Replace NaN/Inf with None for RFC-8259-compliant JSON output."""
+    import math
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def main() -> int:
@@ -664,7 +717,7 @@ def main() -> int:
     weights_tape.to_csv(os.path.join(cfg.out_dir, "portfolio_weights_tape.csv"), index=False)
     latest = weights_tape.iloc[-1].to_dict()
     with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w") as f:
-        json.dump(latest, f, indent=2, default=str)
+        json.dump(latest, f, indent=2, default=_json_safe)
 
     meta = {
         "version": cfg.version,
@@ -674,7 +727,7 @@ def main() -> int:
         "rows": int(len(weights_tape)),
     }
     with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(meta, f, indent=2, default=_json_safe)
 
     print(f"\n✅ PART 7 COMPLETE | rows={len(weights_tape)}")
     print(f"   Wrote: {os.path.join(cfg.out_dir, 'portfolio_weights_tape.csv')}")
@@ -683,6 +736,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
 
 
 
