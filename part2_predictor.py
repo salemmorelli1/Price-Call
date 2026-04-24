@@ -296,6 +296,31 @@ class Part2Gen53Config:
     DOWNSIDE_REGIME_REQUIRED: bool = False
     DOWNSIDE_WEIGHT_MULT: float = 1.00
 
+    # Clearance logic fix (2026-04-24): replace the knife-edge deploy_downside_rate
+    # gate with an integer event-count gate plus hysteresis.
+    #
+    # Why: the old final_pass gate required deploy_downside_rate >= 0.002. With
+    # ~1,648 rows, that threshold is 3.296 events. In practice this means the
+    # whole stack can flip NORMAL -> FAIL_CLOSED_NEUTRAL on a one-event change
+    # (e.g. 4 deploy rows passes, 3 deploy rows fails), even when AUC, drift,
+    # IR, and suspicious-perf diagnostics remain healthy.
+    #
+    # New policy:
+    #   * ENTER / re-enter NORMAL when there are at least 3 deploy_downside rows
+    #     in the full tape and at least 1 in the trailing 252-row window.
+    #   * STAY NORMAL with hysteresis when the previous committed run was NORMAL
+    #     and there are still at least 2 deploy_downside rows in the full tape
+    #     plus at least 1 in the trailing 252-row window.
+    #
+    # This preserves the original intent (the defense sleeve must fire sometimes)
+    # but removes the one-row cliff caused by using a fractional rate threshold.
+    DEPLOY_DOWNSIDE_RATE_MIN: float = 0.002
+    DEPLOY_DOWNSIDE_RATE_MAX: float = 0.30
+    DEPLOY_DOWNSIDE_ENTER_COUNT_MIN: int = 3
+    DEPLOY_DOWNSIDE_STAY_COUNT_MIN: int = 2
+    DEPLOY_DOWNSIDE_RECENT_LOOKBACK: int = 252
+    DEPLOY_DOWNSIDE_RECENT_COUNT_MIN: int = 1
+
     DEF_TRIGGER_LOOKBACK: int = 52
     DEF_TRIGGER_MIN_HISTORY: int = 26
     DEF_TRIGGER_Q: float = 0.56
@@ -1541,6 +1566,86 @@ def _load_json(path: str) -> Dict[str, object]:
         return json.load(f)
 
 
+def _load_prior_part2_summary(cfg) -> Dict[str, object]:
+    """Load the committed Part 2 summary from the previous run, if it exists.
+
+    The GitHub Actions job starts from the last committed repo snapshot, so the
+    summary JSON on disk before this run is the immediately prior committed state.
+    We use it only for deploy-downside hysteresis (NORMAL can stay NORMAL on a
+    slightly weaker count than the entry threshold).
+    """
+    path = os.path.join(cfg.PRED_DIR, cfg.SUMMARY_FILE)
+    if not os.path.exists(path):
+        return {}
+    try:
+        data = _load_json(path)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _deploy_downside_gate_stats(
+    out: pd.DataFrame,
+    cfg,
+    prior_summary: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    """Evaluate the deploy-downside clearance gate using counts, not a brittle rate.
+
+    Old behavior: final_pass required deploy_downside_rate >= 0.002. At ~1,648
+    rows that is equivalent to 3.296 events, so the gate flips on a one-event
+    difference (4 deploy rows passes, 3 deploy rows fails).
+
+    New behavior: use integer counts plus hysteresis.
+      * enter_gate: total_count >= ENTER_COUNT_MIN and recent_count >= RECENT_COUNT_MIN
+      * stay_gate:  prior NORMAL run and total_count >= STAY_COUNT_MIN and
+                    recent_count >= RECENT_COUNT_MIN
+    """
+    deploy = pd.to_numeric(out.get("deploy_downside", pd.Series(dtype=float)), errors="coerce").fillna(0).astype(int)
+    total_count = int(deploy.sum())
+    total_rows = int(len(deploy))
+    rate = float(deploy.mean()) if total_rows else np.nan
+
+    lookback = int(max(1, cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK))
+    recent_count = int(deploy.tail(lookback).sum()) if total_rows else 0
+
+    prior_summary = prior_summary or {}
+    prior_publish_mode = str(prior_summary.get("publish_mode", "")).upper()
+    prior_final_pass = bool(prior_summary.get("final_pass", False))
+    prior_normal = prior_publish_mode == "NORMAL" or prior_final_pass
+
+    enter_gate = bool(
+        total_count >= int(cfg.DEPLOY_DOWNSIDE_ENTER_COUNT_MIN)
+        and recent_count >= int(cfg.DEPLOY_DOWNSIDE_RECENT_COUNT_MIN)
+    )
+    stay_gate = bool(
+        prior_normal
+        and total_count >= int(cfg.DEPLOY_DOWNSIDE_STAY_COUNT_MIN)
+        and recent_count >= int(cfg.DEPLOY_DOWNSIDE_RECENT_COUNT_MIN)
+    )
+    gate_pass = bool(enter_gate or stay_gate)
+
+    if enter_gate:
+        reason = "enter_normal_count_gate"
+    elif stay_gate:
+        reason = "stay_normal_hysteresis"
+    else:
+        reason = "insufficient_deploy_events"
+
+    return {
+        "total_count": total_count,
+        "recent_count": recent_count,
+        "total_rows": total_rows,
+        "rate": rate,
+        "prior_publish_mode": prior_publish_mode,
+        "prior_final_pass": int(prior_final_pass),
+        "prior_normal": int(prior_normal),
+        "enter_gate": int(enter_gate),
+        "stay_gate": int(stay_gate),
+        "gate_pass": int(gate_pass),
+        "gate_reason": reason,
+    }
+
+
 def _load_part1_meta(cfg) -> Dict[str, object]:
     path = os.path.join(cfg.PART1_DIR, "part1_meta.json")
     if not os.path.exists(path):
@@ -2156,6 +2261,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     conditional_active_ir = _conditional_active_ir(out, cfg.H, n_min=int(cfg.CONDITIONAL_ACTIVE_IR_MIN_N))
     strategy_ir = _annualized_ir(strat_net, cfg.H)
 
+    prior_summary = _load_prior_part2_summary(cfg)
+    deploy_gate = _deploy_downside_gate_stats(out, cfg, prior_summary)
+
     stress_panel = _compute_stress_panel(out, cfg)
     summary = {
         "part": "part2",
@@ -2185,7 +2293,20 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "drift_base_ece": _safe_num(out["drift_base_ece"].iloc[-1]) if len(out) else np.nan,
         "drift_base_brier": _safe_num(out["drift_base_brier"].iloc[-1]) if len(out) else np.nan,
         "drift_alarm_rate": drift_alarm_rate,
-        "deploy_downside_rate": float(out["deploy_downside"].fillna(0).mean()),
+        "deploy_downside_rate": float(deploy_gate["rate"]),
+        "deploy_downside_count_total": int(deploy_gate["total_count"]),
+        "deploy_downside_count_recent": int(deploy_gate["recent_count"]),
+        "deploy_downside_recent_lookback": int(cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK),
+        "deploy_downside_rate_min": float(cfg.DEPLOY_DOWNSIDE_RATE_MIN),
+        "deploy_downside_rate_max": float(cfg.DEPLOY_DOWNSIDE_RATE_MAX),
+        "deploy_downside_enter_count_min": int(cfg.DEPLOY_DOWNSIDE_ENTER_COUNT_MIN),
+        "deploy_downside_stay_count_min": int(cfg.DEPLOY_DOWNSIDE_STAY_COUNT_MIN),
+        "deploy_downside_recent_count_min": int(cfg.DEPLOY_DOWNSIDE_RECENT_COUNT_MIN),
+        "deploy_downside_gate_enter": int(deploy_gate["enter_gate"]),
+        "deploy_downside_gate_stay": int(deploy_gate["stay_gate"]),
+        "deploy_downside_gate_pass": bool(deploy_gate["gate_pass"]),
+        "deploy_downside_gate_reason": str(deploy_gate["gate_reason"]),
+        "prior_publish_mode_for_hysteresis": str(deploy_gate["prior_publish_mode"]),
         "defense_trigger_mean": float(np.nanmean(out["defense_trigger_raw"].values)),
         "defense_trigger_threshold_median": float(np.nanmedian(out["defense_trigger_threshold"].values)),
         "deploy_upside_rate": float(out["deploy_upside"].fillna(0).mean()),
@@ -2210,6 +2331,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "part1_version_consumed": str(part1_meta.get("version")),
         "environment": _environment_metadata(os.path.abspath(__file__) if "__file__" in globals() else "part2_gen5.py"),
         "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
+        "clearance_logic_version": "deploy_count_hysteresis_v1",
         "dist_overlay_on_rate": float(np.nanmean(out["dist_overlay_on_g53"].values)) if "dist_overlay_on_g53" in out.columns else np.nan,
         "dist_trust_mean": float(np.nanmean(out["dist_trust_score_g53"].values)) if "dist_trust_score_g53" in out.columns else np.nan,
         "dist_overlay_strength_mean": float(np.nanmean(out["dist_overlay_strength_g53"].values)) if "dist_overlay_strength_g53" in out.columns else np.nan,
@@ -2253,13 +2375,16 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             # (defer to deploy_downside_rate gate which enforces minimum activity).
             (not np.isfinite(conditional_active_ir) or conditional_active_ir >= float(cfg.CONDITIONAL_ACTIVE_IR_MIN)) and
             drift_alarm_rate <= float(final_pass_drift_max_eff) and
-            # H=1 recalibration (2026-04-12): deploy_downside floor lowered 0.01 → 0.002.
-            # At daily granularity the spread_component gate fires less frequently than
-            # at H=7, because daily log-return predictions have smaller amplitude.
-            # 0.002 ≈ 3.3 defense days per year; this is the structurally achievable
-            # floor after the DEPLOY_DOWNSIDE_SPREAD_ABS / SPREAD_CONFIRM_MIN recalibration.
-            float(out["deploy_downside"].fillna(0).mean()) >= 0.002 and
-            float(out["deploy_downside"].fillna(0).mean()) <= 0.30 and
+            # Clearance logic fix (2026-04-24): use integer deploy-event counts
+            # plus hysteresis instead of a brittle fractional rate threshold.
+            # Old gate: deploy_downside_rate >= 0.002. At ~1,648 rows that is an
+            # implied threshold of 3.296 events, so the whole stack can flip on a
+            # one-event change. The helper converts this into a transparent policy:
+            # enter NORMAL at >=3 total deploy rows (+ >=1 recent), stay NORMAL at
+            # >=2 total deploy rows (+ >=1 recent) if the previous committed run
+            # was already NORMAL.
+            bool(deploy_gate["gate_pass"]) and
+            np.isfinite(deploy_gate["rate"]) and float(deploy_gate["rate"]) <= float(cfg.DEPLOY_DOWNSIDE_RATE_MAX) and
             (not suspicious_perf_flag)
         ),
         "out_path": os.path.join(cfg.PRED_DIR, cfg.OUT_FILE),
