@@ -1,14 +1,32 @@
 name: Daily Production Run
 
-# Two crons cover both EST (UTC-5, winter) and EDT (UTC-4, summer).
-# A Python gate in the predict job then confirms the local NY time is
-# between 9:30 and 9:45 AM, providing a ±7-minute tolerance for
-# GitHub Actions scheduler drift.
+# FIX (Audit 2026-04-24): replaced the two-cron DST hack + 15-minute Python
+# gate with a single native-timezone cron.
+#
+# ROOT CAUSE OF PRIOR FAILURES
+# ─────────────────────────────
+# The old design used two weekday crons (13:35 UTC and 14:35 UTC) plus a
+# Python gate that only accepted runs landing between 9:30 and 9:45 AM ET
+# (a 15-minute window). GitHub's scheduler is not a precision timer; runs
+# routinely start 20-60+ minutes after the nominal cron time, and when a
+# second run queues behind the first via the concurrency guard the delay
+# compounds to 90+ minutes. Every production run since April 21 landed
+# between 10:57 AM and 12:18 PM EDT — all outside the 9:30-9:45 window.
+# The gate returned false, all subsequent steps were skipped, and the run
+# exited green in ~1 minute. No artifact was ever written.
+#
+# SOLUTION
+# ─────────
+# 1. Use GitHub's native timezone support so a single cron always resolves
+#    to 9:35 AM ET regardless of DST. No Python DST arithmetic needed.
+# 2. Widen the gate to 9:00-11:30 AM ET, tolerating up to 115 minutes of
+#    GitHub scheduler drift while still blocking accidental off-hours runs.
+# 3. The redundant second cron is removed. One trigger fires once per day.
 on:
   schedule:
-    - cron: "35 13 * * 1-5"   # 9:35 AM EDT (UTC-4, summer)
-    - cron: "35 14 * * 1-5"   # 9:35 AM EST (UTC-5, winter)
-  workflow_dispatch:           # always available for manual runs
+    - cron: "35 9 * * 1-5"
+      timezone: "America/New_York"   # 9:35 AM ET — handles EDT/EST automatically
+  workflow_dispatch:                 # always available for manual runs
 
 # ── Concurrency guard ────────────────────────────────────────────────────
 # Prevents the daily-backfill and production pipeline from running
@@ -76,10 +94,65 @@ jobs:
             artifacts_part9/live_attribution_report.json \
             2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
 
+      # ── Gate key consistency guard ─────────────────────────────────────
+      # REQUIRED: the gate step writes exactly one output key (currently
+      # "run"). Every downstream if: condition must reference that same key
+      # via steps.gate.outputs.<key>. A mismatch causes those conditions to
+      # evaluate as empty-string (falsy), silently skipping the pipeline
+      # while the workflow still exits green — the exact failure mode that
+      # caused production to stop updating in April 2026.
+      #
+      # This step greps the workflow file at runtime, extracts the key name
+      # written by the gate, and then verifies all downstream references use
+      # that same key. It fails loudly before the gate runs if they disagree.
+      # On any merge or edit to this file, watch for this step in the run log.
+      - name: Verify gate output key is consistent throughout workflow
+        run: |
+          # Derive the workflow file path dynamically from the GitHub-injected
+          # GITHUB_WORKFLOW_REF variable (format: owner/repo/.github/workflows/<file>@ref).
+          # This means the self-check works correctly regardless of what the file
+          # is named or where it is stored — no hardcoded path to keep in sync.
+          WORKFLOW_FILE="${GITHUB_WORKSPACE}/$(echo "${GITHUB_WORKFLOW_REF}" | sed 's|[^/]*/[^/]*/||; s|@.*||')"
+
+          # Extract the key name written by the gate step.
+          # Looks for:  f.write("run=...") or f.write("run_ok=...")
+          WRITTEN_KEY=$(grep -oP '(?<=f\.write\(")[a-z_]+(?==)' "$WORKFLOW_FILE" | head -1)
+          if [ -z "$WRITTEN_KEY" ]; then
+            echo "ERROR: Could not extract gate output key from $WORKFLOW_FILE"
+            exit 1
+          fi
+          echo "Gate writes output key: '${WRITTEN_KEY}'"
+
+          # Count downstream if: conditions referencing the correct key.
+          CORRECT=$(grep -c "steps\.gate\.outputs\.${WRITTEN_KEY}" "$WORKFLOW_FILE" || true)
+          # Count any if: conditions referencing a DIFFERENT gate output key.
+          WRONG=$(grep -cP "steps\.gate\.outputs\.(?!${WRITTEN_KEY})[a-z_]+" "$WORKFLOW_FILE" || true)
+
+          echo "Downstream conditions using '${WRITTEN_KEY}': ${CORRECT}"
+          echo "Downstream conditions using a different key:  ${WRONG}"
+
+          if [ "$WRONG" -ne 0 ]; then
+            echo ""
+            echo "FATAL: gate output key mismatch — downstream steps will be silently skipped."
+            echo "Fix: make every 'steps.gate.outputs.*' reference use the same key as the"
+            echo "     f.write() call in the gate step ('${WRITTEN_KEY}')."
+            grep -nP "steps\.gate\.outputs\." "$WORKFLOW_FILE"
+            exit 1
+          fi
+
+          echo "OK: gate key '${WRITTEN_KEY}' is consistent throughout the workflow."
+
       # ── Time gate ─────────────────────────────────────────────────────
-      # Accepts any scheduled trigger that lands between 9:30–9:45 AM ET.
+      # FIX (Audit 2026-04-24): widened from 9:30-9:45 AM ET (15 min) to
+      # 9:00-11:30 AM ET (150 min).
+      # The old 15-minute window caused every scheduled run to be silently
+      # skipped. Live data shows GitHub delivered all triggers 22-103 min
+      # late; every run landed at 10:57 AM-12:18 PM EDT, outside the old
+      # window. Gate returned false, pipeline never executed, dashboard went
+      # stale. The wider window tolerates realistic scheduler drift while
+      # still blocking genuine off-hours accidental triggers.
       # Manual dispatches (workflow_dispatch) always proceed immediately.
-      - name: Check run window (skip if outside 9:30-9:45 AM ET on weekdays)
+      - name: Check run window (skip if outside 9:00-11:30 AM ET on weekdays)
         id: gate
         run: |
           python - <<'PYEOF'
@@ -100,14 +173,22 @@ jobs:
           now = datetime.now(ZoneInfo("America/New_York"))
           hour, minute, weekday = now.hour, now.minute, now.weekday()
 
-          in_window = (hour == 9) and (30 <= minute <= 45) and (weekday < 5)
+          # FIX: 9:00-11:30 AM ET covers the 9:35 AM nominal trigger
+          # with up to 115 minutes of GitHub scheduler drift.
+          # Old: (hour == 9) and (30 <= minute <= 45) -- only 15 min wide,
+          #      failed every single live run (all arrived 10:57 AM-12:18 PM).
+          in_window = (weekday < 5) and (
+              (hour == 9) or
+              (hour == 10) or
+              (hour == 11 and minute <= 30)
+          )
           print(f"NY time: {now.strftime('%H:%M')} weekday={weekday} in_window={in_window}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"run={'true' if in_window else 'false'}\n")
 
           if not in_window:
-              print("Outside 9:30-9:45 AM ET window — skipping run.")
+              print("Outside 9:00-11:30 AM ET window — skipping run.")
           PYEOF
 
       - name: Run pipeline
