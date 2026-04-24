@@ -45,85 +45,99 @@
   ],
   "contract_extra_locked": [],
   "classification_base": {
-    "auc": 0.5135106785667052,
-    "pr": 0.21612699883892977,
+    "auc": 0.5128699189587315,
+    "pr": 0.21544432680661954,
     "lift": 1.0482358636021372,
-    "brier": 0.16216486655404383,
-    "ece": 0.011565237536296076
+    "brier": 0.16219929801146973,
+    "ece": 0.013892829394912955
   },
   "classification_dist": {
-    "auc": 0.5014593813135344,
-    "pr": 0.21839516734319647,
+    "auc": 0.5089227485622814,
+    "pr": 0.22043540887324364,
     "lift": 1.0482358636021372,
-    "brier": 0.17649853261904794,
-    "ece": 0.10938421810042043
+    "brier": 0.17628808051012912,
+    "ece": 0.11066721014279539
   },
   "classification_final_used": {
-    "auc": 0.5135106785667052,
-    "pr": 0.21612699883892977,
+    "auc": 0.5128699189587315,
+    "pr": 0.21544432680661954,
     "lift": 1.0482358636021372,
-    "brier": 0.16216486655404383,
-    "ece": 0.011565237536296076
+    "brier": 0.16219929801146973,
+    "ece": 0.013892829394912955
   },
   "distributional_diagnostics": {
-    "raw_coverage": 0.8214936247723132,
-    "conf_coverage": 0.8943533697632058,
-    "median_rmse": 0.014185674240401337
+    "raw_coverage": 0.8142076502732241,
+    "conf_coverage": 0.8894960534304797,
+    "median_rmse": 0.01415189209593946
   },
   "calibration_gate_on_rate": 0.9635922330097088,
-  "high_risk_state_rate": 0.13713592233009708,
-  "drift_base_ece": 0.011565237536296076,
-  "drift_base_brier": 0.16216486655404383,
-  "drift_alarm_rate": 0.09769417475728155,
-  "deploy_downside_rate": 0.0018203883495145632,
-  "defense_trigger_mean": 0.11642736432090348,
-  "defense_trigger_threshold_median": 0.11249999999999999,
+  "high_risk_state_rate": 0.35558252427184467,
+  "drift_base_ece": 0.013892829394912955,
+  "drift_base_brier": 0.16219929801146973,
+  "drift_alarm_rate": 0.10072815533980582,
+  "deploy_downside_rate": 0.0024271844660194173,
+  "deploy_downside_count_total": 4,
+  "deploy_downside_count_recent": 0,
+  "deploy_downside_recent_lookback": 252,
+  "deploy_downside_rate_min": 0.002,
+  "deploy_downside_rate_max": 0.3,
+  "deploy_downside_enter_count_min": 3,
+  "deploy_downside_stay_count_min": 2,
+  "deploy_downside_recent_count_min": 1,
+  "deploy_downside_gate_enter": 0,
+  "deploy_downside_gate_stay": 0,
+  "deploy_downside_gate_pass": false,
+  "deploy_downside_gate_reason": "insufficient_deploy_events",
+  "prior_publish_mode_for_hysteresis": "FAIL_CLOSED_NEUTRAL",
+  "defense_trigger_mean": 0.11727898383457885,
+  "defense_trigger_threshold_median": 0.15,
   "deploy_upside_rate": 0.0,
-  "raw_val_auc_median": 0.5403123680878008,
+  "raw_val_auc_median": 0.5392570704938793,
   "final_pass_auc_source": "rolling_median",
-  "final_pass_auc_value": 0.5403123680878008,
-  "active_ret_net_mean": 1.1859210754317368e-06,
-  "active_ret_net_ir": 0.0016299266973834492,
-  "strategy_ret_net_ir": 0.6648714920795443,
-  "negative_benchmark_active_mean": 0.006080117369006694,
+  "final_pass_auc_value": 0.5392570704938793,
+  "active_ret_net_mean": 6.048035895467105e-07,
+  "active_ret_net_ir": 0.0008312573617451271,
+  "strategy_ret_net_ir": 0.6636961967094893,
+  "negative_benchmark_active_mean": 0.006080882571702579,
   "negative_benchmark_hit_rate": 0.7724137931034483,
-  "downside_capture_ratio": -0.1165549664847266,
-  "avg_abs_active_weight_raw": 0.00020024271844660196,
-  "avg_abs_active_weight_capped": 0.00020024271844660196,
+  "downside_capture_ratio": -0.11669499353511734,
+  "avg_abs_active_weight_raw": 0.0003883495145631068,
+  "avg_abs_active_weight_capped": 0.0003883495145631068,
   "shuffle_auc_median": 0.4981762308055695,
   "suspicious_perf_flag": false,
   "stress_panel": {
     "slippage_5_0bps": {
-      "active_mean": 1.386285374156702e-06,
-      "active_ir": 0.0019053101548360577,
-      "strategy_ir": 0.6652871616226114
+      "active_mean": 8.962425695102856e-07,
+      "active_ir": 0.0012318194458564578,
+      "strategy_ir": 0.6642979273493037
     },
     "slippage_7_5bps": {
-      "active_mean": 1.2861032247942256e-06,
-      "active_ir": 0.0017676183246747084,
-      "strategy_ir": 0.6650793414532749
+      "active_mean": 7.505230795284938e-07,
+      "active_ir": 0.001031538347136194,
+      "strategy_ir": 0.6639970935380302
     },
     "slippage_10_0bps": {
-      "active_mean": 1.1859210754317368e-06,
-      "active_ir": 0.0016299266973834492,
-      "strategy_ir": 0.6648714920795443
+      "active_mean": 6.048035895467105e-07,
+      "active_ir": 0.0008312573617451271,
+      "strategy_ir": 0.6636961967094893
     }
   },
   "tail_event_threshold": -0.015,
   "part1_version_consumed": "V20_P1_DAILY",
   "environment": {
-    "utc_run_ts": "2026-04-24T08:20:03.865135+00:00",
+    "utc_run_ts": "2026-04-24T09:46:38.341412+00:00",
     "python": "3.12.13",
     "platform": "Linux-6.17.0-1010-azure-x86_64-with-glibc2.39",
     "pandas": "3.0.2",
     "numpy": "2.4.4",
     "script_path": "part2_predictor.py",
-    "script_sha256": "d3a8b2ca67c09378c6581c3d264bfdef5815a0669ceb45fe671c63ad95ab5203"
+    "script_sha256": "65af30f00c65f58882c65ede9a62009e8fa1e68b535b8294feec3c654e81113e"
   },
   "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
-  "dist_overlay_on_rate": 0.15655339805825244,
-  "dist_trust_mean": 0.759457262928948,
-  "dist_overlay_strength_mean": 0.15307264572479257,
+  "clearance_logic_version": "deploy_count_hysteresis_v1",
+  "dist_overlay_on_rate": 0.158373786407767,
+  "dist_trust_mean": 0.7607761224454129,
+  "dist_overlay_strength_mean": 0.15269776392021467,
   "active_ir_final_pass_min": 0.04,
   "active_ir_fail_closed_min": 0.04,
   "conditional_active_ir": NaN,
@@ -139,7 +153,7 @@
   "out_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv",
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "output_hashes": {
-    "consensus_tape_sha256": "c6bda8f9241ad76b2ff54773397fbc67cc19a387a704a31f614068f8726f4ae7",
-    "summary_payload_sha256": "16959e98593b3250e1936755c112056e0a2d992ca1ea2d838b5f896b185660b6"
+    "consensus_tape_sha256": "0d404d113727eb6f4f6e7089aa343eb6b94920f8e334faf0715d6a580aaff0b4",
+    "summary_payload_sha256": "664ba3d370c5d704836f5765a033e9a7c1abb443e942215c2259ee9fa862cb48"
   }
 }
