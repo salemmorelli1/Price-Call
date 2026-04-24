@@ -1,16 +1,16 @@
 {
-  "Date": "2026-04-21T00:00:00",
-  "w_target_voo": 0.7000000001561028,
-  "w_target_ief": 0.29999999984389725,
+  "Date": "2026-04-24 00:00:00",
+  "w_target_voo": 0.6,
+  "w_target_ief": 0.4,
   "regime_label": "calm",
-  "p_tail_base": 0.1887326509854784,
-  "base_rate": 0.2070331847449232,
-  "raw_val_auc": 0.5352657004830917,
-  "optimizer": "black_litterman_cvar",
-  "portfolio_vol_ann": 0.0905083517315185,
-  "view_confidence": 0.4408212560386468,
-  "edge": 0.018300533759444793,
+  "p_tail_base": 0.1977330742972636,
+  "base_rate": 0.2068794852759218,
+  "raw_val_auc": 0.5300053676865271,
+  "optimizer": "fail_closed_neutral",
+  "portfolio_vol_ann": 0.07936359970595011,
+  "view_confidence": 0.3750670960815883,
+  "edge": 0.009146410978658176,
   "dead_band_hold": 1,
-  "publish_mode": "NORMAL",
-  "final_pass": 1
+  "publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "final_pass": 0
 }
