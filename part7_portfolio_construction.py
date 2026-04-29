@@ -13,6 +13,22 @@
 #   4. Transaction cost-aware rebalancing
 #
 # Multi-asset universe: VOO, IEF, GLD, QQQ, TLT
+#
+# AUDIT CHANGELOG (Quant-Guild Part 8 session, 2026-04)
+# ──────────────────────────────────────────────────────
+# Finding D (IMPORTANT): mean-variance optimizer received mismatched units.
+#   mu_bl is produced in annual units by estimate_expected_returns(), but
+#   compute_allocation() computed cov_h = cov * (1/252) and passed that daily
+#   covariance to the optimizer.  In the objective
+#       maximize  mu @ w  -  0.5 * lambda * w' Sigma w
+#   the risk term was ~252x smaller than the return term, making effective risk
+#   aversion lambda/252 ≈ 0.01 instead of 2.5.  The optimizer saw the portfolio
+#   as nearly risk-free and maximised return by pushing w_voo to the upper bound
+#   (voo_max) on every unconstrained run.  The dead-band then locked that weight
+#   in for all 1,641 subsequent days.  The Black-Litterman computation was
+#   structurally bypassed in practice.
+#   Fix: pass cov (annualised) to the optimizer, matching the annual scale of
+#   mu_bl.  cov_h is removed; it served no correct purpose in this function.
 # =============================================================================
 from __future__ import annotations
 
@@ -444,15 +460,33 @@ def compute_allocation(
     }
 
     # Expected returns from Black-Litterman.
-    # mu_bl is in annual-return units because estimate_expected_returns() is
-    # fed annualized covariance. The optimizer must therefore also receive
-    # annualized covariance in its risk term. Passing daily covariance here
-    # shrinks the variance penalty by ~252x and drives the solution to the
-    # upper bound instead of producing genuine interior allocations.
+    # Both pi (CAPM equilibrium) and q (model view) are expressed in annual units.
+    # estimate_covariance() returns an annualised covariance matrix, so passing
+    # cov here keeps all three quantities — pi, q, Sigma — on the same annual scale.
     mu_bl = estimate_expected_returns(
         model_view, market_w, cov, available_cols,
         tau=cfg.tau, risk_aversion=cfg.risk_aversion
     )
+
+    # FIX (Audit 2026-04, cov_h unit mismatch):
+    # The previous code computed cov_h = cov * (1/252) and passed it to the
+    # optimizer alongside mu_bl (annual units).  The mean-variance objective is:
+    #
+    #   maximize  mu @ w  -  0.5 * lambda * w' Sigma w
+    #
+    # With mu annual (~0.05) and Sigma daily (cov/252, diagonal ~0.0001), the risk
+    # term is ~252x smaller than it should be relative to the return term.  The
+    # effective risk aversion is lambda/252 ≈ 0.01 instead of 2.5, so the optimizer
+    # sees the portfolio as essentially risk-free and maximises return by pushing to
+    # the upper bound on whichever asset has the highest expected return (VOO).
+    # Result: w_voo = voo_max on all 4 unconstrained runs; dead-band then locks
+    # that weight for all 1,641 subsequent days.  The Black-Litterman computation
+    # was entirely bypassed in practice.
+    #
+    # Fix: pass the annualised covariance (cov) to the optimizer, consistent with
+    # the annualised mu_bl.  Both return and risk are now on the same scale, so
+    # the optimizer genuinely trades off expected return against variance.
+    # cov_h is removed; it served no correct purpose anywhere in this function.
 
     # Regime-conditional risk aversion adjustment
     regime_mult = cfg.regime_risk_multipliers.get(str(regime_label).lower(), 0.70)
@@ -547,6 +581,33 @@ def kelly_fraction(
 # Main
 # ============================================================
 
+
+
+def _json_safe(obj):
+    """Convert pandas / NumPy / datetime objects into JSON-safe scalars."""
+    import math
+    from datetime import date, datetime
+    from pathlib import Path
+
+    import numpy as np
+    import pandas as pd
+
+    if obj is None:
+        return None
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
+    if isinstance(obj, (int, np.integer)):
+        return int(obj)
+    if isinstance(obj, (float, np.floating)):
+        x = float(obj)
+        return None if (math.isnan(x) or math.isinf(x)) else x
+    if isinstance(obj, (pd.Timestamp, datetime, date)):
+        return pd.Timestamp(obj).isoformat()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    return str(obj)
 
 def main() -> int:
     cfg = Part7Config()
@@ -656,9 +717,9 @@ def main() -> int:
 
     weights_tape = pd.DataFrame(rows)
     weights_tape.to_csv(os.path.join(cfg.out_dir, "portfolio_weights_tape.csv"), index=False)
-    latest = weights_tape.iloc[-1].to_dict()
-    with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w") as f:
-        json.dump(latest, f, indent=2, default=str)
+    latest = {k: _json_safe(v) for k, v in weights_tape.iloc[-1].to_dict().items()}
+    with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w", encoding="utf-8") as f:
+        json.dump(latest, f, indent=2)
 
     meta = {
         "version": cfg.version,
@@ -667,7 +728,8 @@ def main() -> int:
         "optimizer": "cvxpy" if HAVE_CVXPY else "scipy",
         "rows": int(len(weights_tape)),
     }
-    with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w") as f:
+    meta = {k: _json_safe(v) for k, v in meta.items()}
+    with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
     print(f"\n✅ PART 7 COMPLETE | rows={len(weights_tape)}")
@@ -677,5 +739,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
