@@ -319,6 +319,16 @@ class Part2Gen53Config:
     DEPLOY_DOWNSIDE_ENTER_COUNT_MIN: int = 3
     DEPLOY_DOWNSIDE_STAY_COUNT_MIN: int = 2
     DEPLOY_DOWNSIDE_RECENT_LOOKBACK: int = 252
+    # FIX (Audit 2026-04-30): changed from 1 to 0.
+    # With RECENT_COUNT_MIN=1, the April 24 run failed because all 3 deploy
+    # events were outside the trailing 252-row window (recent_count=0), so
+    # enter_gate=False and the stack demoted to FAIL_CLOSED_NEUTRAL even
+    # though total_count=3 satisfied the enter threshold.
+    # Setting this to 0 means the enter gate requires only total_count >=
+    # ENTER_COUNT_MIN — the recent window is informational only when set to 0.
+    # The hysteresis stay_gate still provides staleness protection: a stack
+    # that was previously NORMAL stays NORMAL with 2 total events; a stack
+    # that was FAIL_CLOSED must accumulate 3 total to re-enter NORMAL.
     DEPLOY_DOWNSIDE_RECENT_COUNT_MIN: int = 0
 
     DEF_TRIGGER_LOOKBACK: int = 52
@@ -2458,6 +2468,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
