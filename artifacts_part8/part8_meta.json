@@ -1,24 +1,99 @@
 {
   "version": "V2_DAILY_CANONICAL",
-  "built_at": "2026-04-27T15:39:02.100215+00:00",
+  "built_at": "2026-04-29T23:27:49.728123+00:00",
   "assets_modeled": [
     "VOO",
     "IEF",
     "GLD",
     "TLT"
   ],
-  "live_vix_used": 18.709999084472656,
+  "live_vix_used": 17.829999923706055,
   "latest_order_instructions": {
-    "decision_date": "2026-04-24 00:00:00",
-    "generated_at": "2026-04-27T15:39:02.040603+00:00",
+    "decision_date": "2026-04-27 00:00:00",
+    "generated_at": "2026-04-29T23:27:49.673775+00:00",
     "portfolio_dollars": 1000.0,
-    "vix_level": 18.709999084472656,
+    "vix_level": 17.829999923706055,
     "stress_label": "NORMAL",
-    "total_estimated_cost_dollars": 0.0,
-    "total_estimated_cost_bps": 0.0,
-    "instructions": [],
-    "n_trades": 0,
-    "execute_window": "10:00\u201314:30 on 2026-04-24 00:00:00"
+    "total_estimated_cost_dollars": 0.02,
+    "total_estimated_cost_bps": 0.153,
+    "instructions": [
+      {
+        "ticker": "VOO",
+        "direction": "buy",
+        "trade_dollars": 140.81,
+        "trade_shares_approx": 0.22,
+        "weight_delta": 0.140808,
+        "target_weight": 0.604365,
+        "prev_weight": 0.463557,
+        "pre_trade_cost": {
+          "ticker": "VOO",
+          "trade_dollars": 140.80783713371508,
+          "pct_adv": 3.196276153121275e-08,
+          "direction": "buy",
+          "spread_bps": 0.3,
+          "impact_bps": 0.0046881807092686,
+          "commission_bps": 0.0,
+          "sec_fee_bps": 0.0,
+          "total_bps": 0.30468818070926856,
+          "total_dollars": 0.004290248372587864,
+          "execution_strategy": "immediate_market",
+          "execution_horizon_min": 1,
+          "timing_risk_bps": 1.8969323923795125,
+          "optimal_window": "10:00\u201314:30",
+          "stressed_market": false
+        },
+        "execution_schedule": [
+          {
+            "time_offset_min": 0,
+            "shares_to_trade": 0.21521693979761433,
+            "pct_of_total": 1.0,
+            "cumulative_pct": 1.0
+          }
+        ],
+        "execute_between": "10:00\u201314:30",
+        "urgency": "NORMAL",
+        "stress_level": "NORMAL"
+      },
+      {
+        "ticker": "IEF",
+        "direction": "sell",
+        "trade_dollars": -140.81,
+        "trade_shares_approx": 1.48,
+        "weight_delta": -0.140808,
+        "target_weight": 0.395635,
+        "prev_weight": 0.536443,
+        "pre_trade_cost": {
+          "ticker": "IEF",
+          "trade_dollars": -140.8078371337152,
+          "pct_adv": 2.2003811976955274e-07,
+          "direction": "sell",
+          "spread_bps": 0.5,
+          "impact_bps": 0.005148368213014897,
+          "commission_bps": 0.0,
+          "sec_fee_bps": 0.278,
+          "total_bps": 0.7831483682130149,
+          "total_dollars": 0.011027342788287302,
+          "execution_strategy": "immediate_market",
+          "execution_horizon_min": 1,
+          "timing_risk_bps": 0.6175126015632242,
+          "optimal_window": "10:00\u201314:30",
+          "stressed_market": false
+        },
+        "execution_schedule": [
+          {
+            "time_offset_min": 0,
+            "shares_to_trade": -1.48,
+            "pct_of_total": 1.0,
+            "cumulative_pct": 1.0
+          }
+        ],
+        "execute_between": "10:00\u201314:30",
+        "urgency": "NORMAL",
+        "stress_level": "NORMAL"
+      }
+    ],
+    "n_trades": 2,
+    "execute_window": "10:00\u201314:30 on 2026-04-27 00:00:00"
   },
   "impact_coefficients": {
     "VOO": 0.35,
@@ -27,15 +102,15 @@
     "TLT": 0.4
   },
   "annual_drag_summary": {
-    "n_rebalances": 8,
-    "avg_turnover_pct": 0.05339805825242714,
+    "n_rebalances": 6,
+    "avg_turnover_pct": 0.039999999999999966,
     "portfolio_dollars": 1000.0,
-    "avg_cost_bps_actual": 0.3941717942750155,
+    "avg_cost_bps_actual": 0.39407780119361435,
     "avg_cost_bps_current_flat": 5.0,
-    "annual_drag_bps_actual": 0.1061,
-    "annual_drag_bps_current": 1.3456,
-    "current_overstates_by_bps": 1.2395,
-    "pct_overstated": 1168.5,
+    "annual_drag_bps_actual": 0.0794,
+    "annual_drag_bps_current": 1.008,
+    "current_overstates_by_bps": 0.9286,
+    "pct_overstated": 1168.8,
     "note": "The current flat 5bps assumption OVERSTATES costs for retail-scale portfolios on liquid ETFs. Your live strategy IR is likely HIGHER than the backtest shows. For portfolios >$10M, update asset_params with live ADV data."
   },
   "min_rebalance_threshold": 0.02,
