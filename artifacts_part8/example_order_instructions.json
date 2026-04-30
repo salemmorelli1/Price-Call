@@ -1,41 +1,41 @@
 {
-  "decision_date": "2026-04-27 00:00:00",
-  "generated_at": "2026-04-29T23:27:49.673775+00:00",
+  "decision_date": "2026-04-29 00:00:00",
+  "generated_at": "2026-04-30T00:34:03.720489+00:00",
   "portfolio_dollars": 1000.0,
-  "vix_level": 17.829999923706055,
+  "vix_level": 18.809999465942383,
   "stress_label": "NORMAL",
-  "total_estimated_cost_dollars": 0.02,
-  "total_estimated_cost_bps": 0.153,
+  "total_estimated_cost_dollars": 0.01,
+  "total_estimated_cost_bps": 0.139,
   "instructions": [
     {
       "ticker": "VOO",
-      "direction": "buy",
-      "trade_dollars": 140.81,
-      "trade_shares_approx": 0.22,
-      "weight_delta": 0.140808,
-      "target_weight": 0.604365,
-      "prev_weight": 0.463557,
+      "direction": "sell",
+      "trade_dollars": -128.13,
+      "trade_shares_approx": 0.2,
+      "weight_delta": -0.128128,
+      "target_weight": 0.438557,
+      "prev_weight": 0.566685,
       "pre_trade_cost": {
         "ticker": "VOO",
-        "trade_dollars": 140.80783713371508,
-        "pct_adv": 3.196276153121275e-08,
-        "direction": "buy",
+        "trade_dollars": -128.1275868901755,
+        "pct_adv": 3.1087913817515605e-08,
+        "direction": "sell",
         "spread_bps": 0.3,
-        "impact_bps": 0.0046881807092686,
+        "impact_bps": 0.004641822385656729,
         "commission_bps": 0.0,
-        "sec_fee_bps": 0.0,
-        "total_bps": 0.30468818070926856,
-        "total_dollars": 0.004290248372587864,
+        "sec_fee_bps": 0.278,
+        "total_bps": 0.5826418223856568,
+        "total_dollars": 0.007465249072356845,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
-        "timing_risk_bps": 1.8969323923795125,
+        "timing_risk_bps": 1.90441847272921,
         "optimal_window": "10:00\u201314:30",
         "stressed_market": false
       },
       "execution_schedule": [
         {
           "time_offset_min": 0,
-          "shares_to_trade": 0.21521693979761433,
+          "shares_to_trade": -0.19584187576836304,
           "pct_of_total": 1.0,
           "cumulative_pct": 1.0
         }
@@ -46,33 +46,33 @@
     },
     {
       "ticker": "IEF",
-      "direction": "sell",
-      "trade_dollars": -140.81,
-      "trade_shares_approx": 1.48,
-      "weight_delta": -0.140808,
-      "target_weight": 0.395635,
-      "prev_weight": 0.536443,
+      "direction": "buy",
+      "trade_dollars": 128.13,
+      "trade_shares_approx": 1.35,
+      "weight_delta": 0.128128,
+      "target_weight": 0.561443,
+      "prev_weight": 0.433315,
       "pre_trade_cost": {
         "ticker": "IEF",
-        "trade_dollars": -140.8078371337152,
-        "pct_adv": 2.2003811976955274e-07,
-        "direction": "sell",
+        "trade_dollars": 128.12758689017556,
+        "pct_adv": 2.0678325859242246e-07,
+        "direction": "buy",
         "spread_bps": 0.5,
-        "impact_bps": 0.005148368213014897,
+        "impact_bps": 0.005334065442863722,
         "commission_bps": 0.0,
-        "sec_fee_bps": 0.278,
-        "total_bps": 0.7831483682130149,
-        "total_dollars": 0.011027342788287302,
+        "sec_fee_bps": 0.0,
+        "total_bps": 0.5053340654428637,
+        "total_dollars": 0.006474723437859619,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
-        "timing_risk_bps": 0.6175126015632242,
+        "timing_risk_bps": 0.6599724995932938,
         "optimal_window": "10:00\u201314:30",
         "stressed_market": false
       },
       "execution_schedule": [
         {
           "time_offset_min": 0,
-          "shares_to_trade": -1.48,
+          "shares_to_trade": 1.35,
           "pct_of_total": 1.0,
           "cumulative_pct": 1.0
         }
@@ -83,5 +83,5 @@
     }
   ],
   "n_trades": 2,
-  "execute_window": "10:00\u201314:30 on 2026-04-27 00:00:00"
+  "execute_window": "10:00\u201314:30 on 2026-04-29 00:00:00"
 }
