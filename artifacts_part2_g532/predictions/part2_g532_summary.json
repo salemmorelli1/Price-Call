@@ -45,38 +45,38 @@
   ],
   "contract_extra_locked": [],
   "classification_base": {
-    "auc": 0.5158219221647751,
-    "pr": 0.21718725253822319,
+    "auc": 0.5176619446993721,
+    "pr": 0.21881043259087962,
     "lift": 1.0662268277815627,
-    "brier": 0.16174420519442267,
-    "ece": 0.018181027861639325
+    "brier": 0.16171809126954262,
+    "ece": 0.015064701373769331
   },
   "classification_dist": {
-    "auc": 0.5080665679263627,
-    "pr": 0.2199933390419989,
+    "auc": 0.5082573850780988,
+    "pr": 0.2196287489749269,
     "lift": 1.0514181218401522,
-    "brier": 0.17574869110159957,
-    "ece": 0.10810842449301933
+    "brier": 0.1758590844567778,
+    "ece": 0.11259311026054805
   },
   "classification_final_used": {
-    "auc": 0.5158219221647751,
-    "pr": 0.21718725253822319,
+    "auc": 0.5176619446993721,
+    "pr": 0.21881043259087962,
     "lift": 1.0662268277815627,
-    "brier": 0.16174420519442267,
-    "ece": 0.018181027861639325
+    "brier": 0.16171809126954262,
+    "ece": 0.015064701373769331
   },
   "distributional_diagnostics": {
     "raw_coverage": 0.8159806295399515,
-    "conf_coverage": 0.8922518159806295,
-    "median_rmse": 0.014164349417255622
+    "conf_coverage": 0.8934624697336562,
+    "median_rmse": 0.014132774650329924
   },
-  "calibration_gate_on_rate": 0.9758015728977616,
-  "high_risk_state_rate": 0.132486388384755,
-  "drift_base_ece": 0.018181027861639325,
-  "drift_base_brier": 0.16174420519442267,
-  "drift_alarm_rate": 0.10042347247428918,
-  "deploy_downside_rate": 0.0012099213551119178,
-  "deploy_downside_count_total": 2,
+  "calibration_gate_on_rate": 0.9637023593466425,
+  "high_risk_state_rate": 0.1336963097398669,
+  "drift_base_ece": 0.015064701373769331,
+  "drift_base_brier": 0.16171809126954262,
+  "drift_alarm_rate": 0.10223835450695705,
+  "deploy_downside_rate": 0.0024198427102238356,
+  "deploy_downside_count_total": 4,
   "deploy_downside_count_recent": 0,
   "deploy_downside_recent_lookback": 252,
   "deploy_downside_rate_min": 0.002,
@@ -84,48 +84,48 @@
   "deploy_downside_enter_count_min": 3,
   "deploy_downside_stay_count_min": 2,
   "deploy_downside_recent_count_min": 0,
-  "deploy_downside_gate_enter": 0,
+  "deploy_downside_gate_enter": 1,
   "deploy_downside_gate_stay": 1,
   "deploy_downside_gate_pass": true,
-  "deploy_downside_gate_reason": "stay_normal_hysteresis",
+  "deploy_downside_gate_reason": "enter_normal_count_gate",
   "prior_publish_mode_for_hysteresis": "NORMAL",
-  "defense_trigger_mean": 0.11554073862510393,
+  "defense_trigger_mean": 0.11579479133839468,
   "defense_trigger_threshold_median": 0.11249999999999999,
   "deploy_upside_rate": 0.0,
-  "raw_val_auc_median": 0.5394736842105263,
+  "raw_val_auc_median": 0.5366040209790209,
   "final_pass_auc_source": "rolling_median",
-  "final_pass_auc_value": 0.5394736842105263,
-  "active_ret_net_mean": 2.8625504436806053e-07,
-  "active_ret_net_ir": 0.00039380342507666275,
-  "strategy_ret_net_ir": 0.6702179642753588,
-  "negative_benchmark_active_mean": 0.006082573908113573,
+  "final_pass_auc_value": 0.5366040209790209,
+  "active_ret_net_mean": 4.1453159010767365e-07,
+  "active_ret_net_ir": 0.0005703030742077755,
+  "strategy_ret_net_ir": 0.6705600887872921,
+  "negative_benchmark_active_mean": 0.0060846846599006505,
   "negative_benchmark_hit_rate": 0.7730398899587345,
-  "downside_capture_ratio": -0.11859778367842594,
-  "avg_abs_active_weight_raw": 0.00013309134906231096,
-  "avg_abs_active_weight_capped": 0.00013309134906231096,
+  "downside_capture_ratio": -0.11898589006975106,
+  "avg_abs_active_weight_raw": 0.0002661826981246219,
+  "avg_abs_active_weight_capped": 0.0002661826981246219,
   "shuffle_auc_median": 0.4937421192134752,
   "suspicious_perf_flag": false,
   "stress_panel": {
     "slippage_5_0bps": {
-      "active_mean": 4.194269572009975e-07,
-      "active_ir": 0.0005770101741572561,
-      "strategy_ir": 0.6704923185885165
+      "active_mean": 6.142894593570707e-07,
+      "active_ir": 0.0008451257659869771,
+      "strategy_ir": 0.6709728640834598
     },
     "slippage_7_5bps": {
-      "active_mean": 3.528410007845332e-07,
-      "active_ir": 0.0004854067195682087,
-      "strategy_ir": 0.6703551516294468
+      "active_mean": 5.144105247323743e-07,
+      "active_ir": 0.0007077143959005204,
+      "strategy_ir": 0.6707664914888649
     },
     "slippage_10_0bps": {
-      "active_mean": 2.8625504436806053e-07,
-      "active_ir": 0.00039380342507666275,
-      "strategy_ir": 0.6702179642753588
+      "active_mean": 4.1453159010767365e-07,
+      "active_ir": 0.0005703030742077755,
+      "strategy_ir": 0.6705600887872921
     }
   },
   "tail_event_threshold": -0.015,
   "part1_version_consumed": "V20_P1_DAILY",
   "environment": {
-    "utc_run_ts": "2026-05-01T04:53:37.736184+00:00",
+    "utc_run_ts": "2026-05-01T14:53:11.880345+00:00",
     "python": "3.12.13",
     "platform": "Linux-6.17.0-1010-azure-x86_64-with-glibc2.39",
     "pandas": "3.0.2",
@@ -135,9 +135,9 @@
   },
   "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
   "clearance_logic_version": "deploy_count_hysteresis_v1",
-  "dist_overlay_on_rate": 0.1603145795523291,
-  "dist_trust_mean": 0.7571618009765992,
-  "dist_overlay_strength_mean": 0.15112860752227428,
+  "dist_overlay_on_rate": 0.16515426497277677,
+  "dist_trust_mean": 0.7593255706575575,
+  "dist_overlay_strength_mean": 0.15198284769836062,
   "active_ir_final_pass_min": 0.04,
   "active_ir_fail_closed_min": 0.04,
   "conditional_active_ir": NaN,
@@ -153,7 +153,7 @@
   "out_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv",
   "publish_mode": "NORMAL",
   "output_hashes": {
-    "consensus_tape_sha256": "0e6fd4ae25b211c6d5244dbda2e6a56463a089429ba85e51d85738e42bc4cf99",
-    "summary_payload_sha256": "c74582fbc42de7c00427c91a66da52ba829e48be7ed333c589a7b53a61fe3324"
+    "consensus_tape_sha256": "3eb134ce8faf8aa81cdc178445bd312bec2a7a01e8cd224e727766c06d3bb9f1",
+    "summary_payload_sha256": "da286910dd10f55f5c7b87df13e084e783f990c8b553d04f44c6804f3e15fa92"
   }
 }
