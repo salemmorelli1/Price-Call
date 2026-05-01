@@ -1,50 +1,50 @@
 {
-  "generated_at": "2026-04-30T15:49:50.022510+00:00",
-  "total_predictions": 5,
-  "n_live_realized": 3,
+  "generated_at": "2026-05-01T04:58:08.651302+00:00",
+  "total_predictions": 6,
+  "n_live_realized": 4,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 3.381292106934135,
-  "voo_rmse_live": 3.821667663443035,
+  "voo_mae_live": 4.071910936687061,
+  "voo_rmse_live": 4.5155650082113645,
   "classification_stats_live": {
-    "n": 3,
+    "n": 4,
     "accuracy": 0.0,
     "t_stat_accuracy": NaN,
     "p_value_accuracy": NaN,
     "auc": NaN,
     "t_stat_auc": NaN,
-    "brier": 0.6531431447680892,
-    "brier_null": 0.6291213412067894,
-    "brier_skill_score": -0.038183100594556985,
+    "brier": 0.6485455118335695,
+    "brier_null": 0.6292836171059982,
+    "brier_skill_score": -0.030609242161894423,
     "significant_5pct": false,
     "significant_1pct": false,
-    "tail_threshold": 0.05,
-    "base_rate": 0.2068283028203859,
-    "mean_active_return": 0.005603557125183863,
-    "estimated_annual_edge_bps": 1.5204858155474992,
+    "tail_threshold": 0.0584,
+    "base_rate": 0.2067260138476755,
+    "mean_active_return": 0.0073262652849397925,
+    "estimated_annual_edge_bps": 0.7213627118075125,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.1172
+    "annual_tc_drag_bps": 0.0529
   },
   "calibration_live": {
-    "ece": 0.8081557227764792,
-    "brier": 0.6531431447680892
+    "ece": 0.8052952003358034,
+    "brier": 0.6485455118335695
   },
   "classification_stats_backtest": {
-    "n": 1651,
-    "accuracy": 0.43549364021804965,
-    "t_stat_accuracy": -5.284685885166783,
-    "p_value_accuracy": 1.427060153103451e-07,
-    "auc": 0.5150700876152025,
-    "t_stat_auc": 0.8383850431689738,
-    "brier": 0.16187578968781755,
-    "brier_null": 0.16137568369811295,
-    "brier_skill_score": -0.0030990163941317928,
+    "n": 1652,
+    "accuracy": 0.44128329297820823,
+    "t_stat_accuracy": -4.804859094410074,
+    "p_value_accuracy": 1.689021373542162e-06,
+    "auc": 0.5158219221647751,
+    "t_stat_auc": 0.8760398223641024,
+    "brier": 0.16174420519442273,
+    "brier_null": 0.16130275724193724,
+    "brier_skill_score": -0.0027367656930357143,
     "significant_5pct": true,
     "significant_1pct": true
   },
-  "annual_tc_drag_bps": 0.1172,
+  "annual_tc_drag_bps": 0.0529,
   "health_status": "IMMATURE",
   "health_reasons": [
-    "Only 3 live observations (60 required)"
+    "Only 4 live observations (60 required)"
   ]
 }
