@@ -2098,6 +2098,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "excess_ret": _safe_num(current_row.iloc[0].get("excess_ret", np.nan)),
             "y_voo": _safe_num(current_row.iloc[0].get("y_voo", np.nan)),
             "y_rel_tail_voo_vs_ief": _safe_num(current_row.iloc[0].get("y_rel_tail_voo_vs_ief", np.nan)),
+            "tail_threshold_dynamic": _safe_num(current_row.iloc[0].get("tail_threshold_dynamic", np.nan)),
             "y_avail": y_avail,
             "CalibDate": pd.Timestamp(train_df.iloc[-1]["Date"]).strftime("%Y-%m-%d") if train_df is not None else None,
             "sign": float(np.sign(p_final_g5 - base_rate)),
@@ -2275,6 +2276,11 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     deploy_gate = _deploy_downside_gate_stats(out, cfg, prior_summary)
 
     stress_panel = _compute_stress_panel(out, cfg)
+    predictive_quality_ok = bool(
+        np.isfinite(cls_base.get("lift", np.nan)) and float(cls_base.get("lift", np.nan)) > 1.01 and
+        np.isfinite(cls_base.get("ece", np.nan)) and float(cls_base.get("ece", np.nan)) < 0.05
+    )
+
     summary = {
         "part": "part2",
         "version": "GEN5_PART2_GEN532_SOFT_CAUTION_OVERLAY",
@@ -2468,8 +2474,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
