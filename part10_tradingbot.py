@@ -510,11 +510,23 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
             return False, f"Part 9 SUSPEND: {reasons}"
 
         cs = report.get("classification_stats_live", {}) or {}
+        cal = report.get("calibration_live", {}) or {}
+
         t_auc = _safe_float(cs.get("t_stat_auc"), np.nan)
+        acc = _safe_float(cs.get("accuracy"), np.nan)
+        bss = _safe_float(cs.get("brier_skill_score"), np.nan)
+        ece = _safe_float(cal.get("ece"), np.nan)
+
         if cfg.fail_closed_on_nonfinite_t and not np.isfinite(t_auc):
             return False, "Live AUC t-stat unavailable — fail closed"
         if np.isfinite(t_auc) and t_auc < cfg.min_t_stat:
             return False, f"Live AUC t-stat {t_auc:.2f} < {cfg.min_t_stat:.2f}"
+        if np.isfinite(acc) and acc < 0.50:
+            return False, f"Live direction accuracy {acc:.2%} < 50%"
+        if np.isfinite(bss) and bss <= 0.0:
+            return False, f"Live Brier skill {bss:.4f} <= 0"
+        if np.isfinite(ece) and ece > 0.15:
+            return False, f"Live ECE {ece:.3f} > 0.15"
 
         if cfg.enforce_tc_gate:
             annual_tc_drag_bps = _safe_float(report.get("annual_tc_drag_bps"), np.nan)
@@ -522,7 +534,7 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
             if np.isfinite(annual_tc_drag_bps) and np.isfinite(annual_edge_bps) and annual_tc_drag_bps >= annual_edge_bps:
                 return False, f"Annual TC drag {annual_tc_drag_bps:.1f} bps >= estimated annual edge {annual_edge_bps:.1f} bps"
 
-        return True, f"Model significant: live t_stat={t_auc:.2f}, n={n_live}"
+        return True, f"Model passes live gate: t_auc={t_auc:.2f}, acc={acc:.2%}, bss={bss:.4f}, ece={ece:.3f}, n={n_live}"
     except Exception as e:
         return False, f"Error reading Part 9 report: {e}"
 
@@ -833,11 +845,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
 
 
 
