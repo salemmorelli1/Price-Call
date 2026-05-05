@@ -342,10 +342,10 @@ def build_part1_v20(cfg: Part1Config):
     )
 
     y_revealed = y_labels.dropna(subset=["y_rel_tail_voo_vs_ief"]).copy()
-    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief"]].to_parquet(
+    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief", "tail_threshold_dynamic"]].to_parquet(
         os.path.join(cfg.out_dir, "y_labels_revealed.parquet")
     )
-    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief"]].to_parquet(
+    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief", "tail_threshold_dynamic"]].to_parquet(
         os.path.join(cfg.out_dir, "y_labels_revealed_aligned.parquet")
     )
     y_labels.to_parquet(os.path.join(cfg.out_dir, "y_labels_full.parquet"))
