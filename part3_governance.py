@@ -773,10 +773,12 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         # The classification model was trained on the rolling-quantile label; Part 9
         # must evaluate it against the same definition.
         # Priority: tail_threshold_dynamic from the defense_row (if present) →
-        # signal_q_threshold (rolling quantile threshold in the consensus tape) →
         # fallback to summary JSON tail_event_threshold.
+        # NOTE: signal_q_threshold is a governance trigger quantile, not the
+        # label threshold used to define y_rel_tail_voo_vs_ief. It must never be
+        # written into prediction_log.tail_threshold.
         "tail_threshold": _safe_float(
-            _row_value(defense_row, ["tail_threshold_dynamic", "signal_q_threshold"], None)
+            _row_value(defense_row, ["tail_threshold_dynamic"], None)
             or _json_value(part2_summary, ["tail_event_threshold"], None)
         ),
         # publish_mode: raw governance value, consistent with part3_summary.json.
