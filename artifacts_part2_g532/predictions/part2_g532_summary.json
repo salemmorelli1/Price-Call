@@ -4,9 +4,9 @@
   "schema_version": "part2.g5.phase3_2.schema1",
   "horizon": 1,
   "holdout_start": "2020-01-01",
-  "rows_rebalance": 1653,
-  "rows_realized": 1652,
-  "rows_audit": 1652,
+  "rows_rebalance": 1655,
+  "rows_realized": 1654,
+  "rows_audit": 1654,
   "model_feature_count": 14,
   "forbidden_feature_count": 22,
   "forbidden_features_excluded": [
@@ -45,38 +45,38 @@
   ],
   "contract_extra_locked": [],
   "classification_base": {
-    "auc": 0.5176619446993721,
-    "pr": 0.21881043259087962,
-    "lift": 1.0662268277815627,
-    "brier": 0.16171809126954262,
-    "ece": 0.015064701373769331
+    "auc": 0.5181092360733079,
+    "pr": 0.21720304029185494,
+    "lift": 1.023037756821686,
+    "brier": 0.16135788321575317,
+    "ece": 0.012511718189908169
   },
   "classification_dist": {
-    "auc": 0.5082573850780988,
-    "pr": 0.2196287489749269,
-    "lift": 1.0514181218401522,
-    "brier": 0.1758590844567778,
-    "ece": 0.11259311026054805
+    "auc": 0.5061309199782253,
+    "pr": 0.22011977616121967,
+    "lift": 1.037864390978522,
+    "brier": 0.1754574713558472,
+    "ece": 0.10831146292242393
   },
   "classification_final_used": {
-    "auc": 0.5176619446993721,
-    "pr": 0.21881043259087962,
-    "lift": 1.0662268277815627,
-    "brier": 0.16171809126954262,
-    "ece": 0.015064701373769331
+    "auc": 0.5181092360733079,
+    "pr": 0.21720304029185494,
+    "lift": 1.023037756821686,
+    "brier": 0.16135788321575317,
+    "ece": 0.012511718189908169
   },
   "distributional_diagnostics": {
-    "raw_coverage": 0.8159806295399515,
-    "conf_coverage": 0.8934624697336562,
-    "median_rmse": 0.014132774650329924
+    "raw_coverage": 0.8204353083434099,
+    "conf_coverage": 0.8941958887545345,
+    "median_rmse": 0.014145508244147882
   },
-  "calibration_gate_on_rate": 0.9637023593466425,
-  "high_risk_state_rate": 0.1336963097398669,
-  "drift_base_ece": 0.015064701373769331,
-  "drift_base_brier": 0.16171809126954262,
-  "drift_alarm_rate": 0.10223835450695705,
-  "deploy_downside_rate": 0.0024198427102238356,
-  "deploy_downside_count_total": 4,
+  "calibration_gate_on_rate": 0.9758308157099698,
+  "high_risk_state_rate": 0.2066465256797583,
+  "drift_base_ece": 0.012511718189908169,
+  "drift_base_brier": 0.16135788321575317,
+  "drift_alarm_rate": 0.09728096676737161,
+  "deploy_downside_rate": 0.0018126888217522659,
+  "deploy_downside_count_total": 3,
   "deploy_downside_count_recent": 0,
   "deploy_downside_recent_lookback": 252,
   "deploy_downside_rate_min": 0.002,
@@ -89,43 +89,43 @@
   "deploy_downside_gate_pass": true,
   "deploy_downside_gate_reason": "enter_normal_count_gate",
   "prior_publish_mode_for_hysteresis": "NORMAL",
-  "defense_trigger_mean": 0.11579479133839468,
-  "defense_trigger_threshold_median": 0.11249999999999999,
+  "defense_trigger_mean": 0.07912931344727323,
+  "defense_trigger_threshold_median": 0.054811782404542,
   "deploy_upside_rate": 0.0,
-  "raw_val_auc_median": 0.5366040209790209,
+  "raw_val_auc_median": 0.5379901960784313,
   "final_pass_auc_source": "rolling_median",
-  "final_pass_auc_value": 0.5366040209790209,
-  "active_ret_net_mean": 4.1453159010767365e-07,
-  "active_ret_net_ir": 0.0005703030742077755,
-  "strategy_ret_net_ir": 0.6705600887872921,
-  "negative_benchmark_active_mean": 0.0060846846599006505,
-  "negative_benchmark_hit_rate": 0.7730398899587345,
-  "downside_capture_ratio": -0.11898589006975106,
-  "avg_abs_active_weight_raw": 0.0002661826981246219,
-  "avg_abs_active_weight_capped": 0.0002661826981246219,
-  "shuffle_auc_median": 0.4937421192134752,
+  "final_pass_auc_value": 0.5379901960784313,
+  "active_ret_net_mean": -1.4340722519340288e-07,
+  "active_ret_net_ir": -0.00019740180176008206,
+  "strategy_ret_net_ir": 0.6669612213694097,
+  "negative_benchmark_active_mean": 0.006081408001870158,
+  "negative_benchmark_hit_rate": 0.7733516483516484,
+  "downside_capture_ratio": -0.11888877493812114,
+  "avg_abs_active_weight_raw": 0.00019939577039274927,
+  "avg_abs_active_weight_capped": 0.00019939577039274927,
+  "shuffle_auc_median": 0.49760171967359823,
   "suspicious_perf_flag": false,
   "stress_panel": {
     "slippage_5_0bps": {
-      "active_mean": 6.142894593570707e-07,
-      "active_ir": 0.0008451257659869771,
-      "strategy_ir": 0.6709728640834598
+      "active_mean": -1.0396342484818856e-08,
+      "active_ir": -1.431067355699923e-05,
+      "strategy_ir": 0.6672354436113461
     },
     "slippage_7_5bps": {
-      "active_mean": 5.144105247323743e-07,
-      "active_ir": 0.0007077143959005204,
-      "strategy_ir": 0.6707664914888649
+      "active_mean": -7.690178383911086e-08,
+      "active_ir": -0.00010585617698843741,
+      "strategy_ir": 0.6670983426352706
     },
     "slippage_10_0bps": {
-      "active_mean": 4.1453159010767365e-07,
-      "active_ir": 0.0005703030742077755,
-      "strategy_ir": 0.6705600887872921
+      "active_mean": -1.4340722519340288e-07,
+      "active_ir": -0.00019740180176008206,
+      "strategy_ir": 0.6669612213694097
     }
   },
   "tail_event_threshold": -0.015,
   "part1_version_consumed": "V20_P1_DAILY",
   "environment": {
-    "utc_run_ts": "2026-05-01T14:53:11.880345+00:00",
+    "utc_run_ts": "2026-05-05T01:55:23.977785+00:00",
     "python": "3.12.13",
     "platform": "Linux-6.17.0-1010-azure-x86_64-with-glibc2.39",
     "pandas": "3.0.2",
@@ -135,9 +135,9 @@
   },
   "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
   "clearance_logic_version": "deploy_count_hysteresis_v1",
-  "dist_overlay_on_rate": 0.16515426497277677,
-  "dist_trust_mean": 0.7593255706575575,
-  "dist_overlay_strength_mean": 0.15198284769836062,
+  "dist_overlay_on_rate": 0.16495468277945619,
+  "dist_trust_mean": 0.7566041964449142,
+  "dist_overlay_strength_mean": 0.15165971453866298,
   "active_ir_final_pass_min": 0.04,
   "active_ir_fail_closed_min": 0.04,
   "conditional_active_ir": NaN,
@@ -153,7 +153,7 @@
   "out_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv",
   "publish_mode": "NORMAL",
   "output_hashes": {
-    "consensus_tape_sha256": "3eb134ce8faf8aa81cdc178445bd312bec2a7a01e8cd224e727766c06d3bb9f1",
-    "summary_payload_sha256": "da286910dd10f55f5c7b87df13e084e783f990c8b553d04f44c6804f3e15fa92"
+    "consensus_tape_sha256": "5f2fa2df3abbf1292be1f1c20febb3d6c39ec1ae475807ec5e74a53682139506",
+    "summary_payload_sha256": "44b82af5b7ba272ac45c96ef0681a9660dcbf27d96b6b85dc81b6b53011a0a15"
   }
 }
