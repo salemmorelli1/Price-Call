@@ -175,7 +175,10 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     _null = {"n": n, "t_stat_accuracy": np.nan, "p_value_accuracy": np.nan,
              "auc": np.nan, "t_stat_auc": np.nan,
              "brier": np.nan, "brier_null": np.nan, "brier_skill_score": np.nan,
-             "significant_5pct": False, "significant_1pct": False}
+             "better_than_null_acc_5pct": False, "better_than_null_acc_1pct": False,
+             "worse_than_null_acc_5pct": False, "worse_than_null_acc_1pct": False,
+             "better_than_null_auc_5pct": False, "better_than_null_auc_1pct": False,
+             "worse_than_null_auc_5pct": False, "worse_than_null_auc_1pct": False}
 
     if n < 2:
         return {**_null, "n": n}
@@ -219,30 +222,41 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     else:
         t_auc = np.nan
 
-    # Significance flags: require n >= 10 AND finite test statistics to prevent
-    # spurious flags from degenerate small-sample results (e.g. n=2, all correct).
+    # Directional significance flags: these encode whether the model is
+    # significantly BETTER or WORSE than the null, rather than collapsing both
+    # directions into a single ambiguous "significant" indicator.
     _min_n_for_sig = 10
-    _t_fin   = np.isfinite(t)
+    _t_fin = np.isfinite(t)
     _tauc_fin = np.isfinite(t_auc)
-    sig_5 = (n >= _min_n_for_sig) and (
-        (_t_fin and abs(t) > 1.96) or (_tauc_fin and abs(t_auc) > 1.96)
-    )
-    sig_1 = (n >= _min_n_for_sig) and (
-        (_t_fin and abs(t) > 2.58) or (_tauc_fin and abs(t_auc) > 2.58)
-    )
+
+    better_acc_5 = bool(n >= _min_n_for_sig and _t_fin and t > 1.96)
+    better_acc_1 = bool(n >= _min_n_for_sig and _t_fin and t > 2.58)
+    worse_acc_5 = bool(n >= _min_n_for_sig and _t_fin and t < -1.96)
+    worse_acc_1 = bool(n >= _min_n_for_sig and _t_fin and t < -2.58)
+
+    better_auc_5 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc > 1.96)
+    better_auc_1 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc > 2.58)
+    worse_auc_5 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc < -1.96)
+    worse_auc_1 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc < -2.58)
 
     return {
-        "n":                  n,
-        "accuracy":           accuracy,
-        "t_stat_accuracy":    t,
-        "p_value_accuracy":   pval,
-        "auc":                auc,
-        "t_stat_auc":         t_auc,
-        "brier":              brier_model,
-        "brier_null":         brier_null,
-        "brier_skill_score":  float(bss),
-        "significant_5pct":   bool(sig_5),
-        "significant_1pct":   bool(sig_1),
+        "n": n,
+        "accuracy": accuracy,
+        "t_stat_accuracy": t,
+        "p_value_accuracy": pval,
+        "auc": auc,
+        "t_stat_auc": t_auc,
+        "brier": brier_model,
+        "brier_null": brier_null,
+        "brier_skill_score": float(bss),
+        "better_than_null_acc_5pct": better_acc_5,
+        "better_than_null_acc_1pct": better_acc_1,
+        "worse_than_null_acc_5pct": worse_acc_5,
+        "worse_than_null_acc_1pct": worse_acc_1,
+        "better_than_null_auc_5pct": better_auc_5,
+        "better_than_null_auc_1pct": better_auc_1,
+        "worse_than_null_auc_5pct": worse_auc_5,
+        "worse_than_null_auc_1pct": worse_auc_1,
     }
 
 
@@ -709,7 +723,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
 
 
 
