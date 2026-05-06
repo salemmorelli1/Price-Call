@@ -620,6 +620,19 @@ def main() -> int:
     print(f"  xgb_overlay_on={live_overlay_on} (threshold={epist_threshold:.5f})")
 
     # ── Summary JSON ──────────────────────────────────────────────────────
+    baseline_auc = float(p2_summary.get("classification_base", {}).get("auc", np.nan))
+    baseline_ece = float(p2_summary.get("classification_base", {}).get("ece", np.nan))
+
+    promotion_ok = bool(
+        gate_validated and
+        np.isfinite(holdout_auc) and
+        np.isfinite(holdout_ece) and
+        np.isfinite(holdout_util) and
+        holdout_util >= 0.0 and
+        (not np.isfinite(baseline_auc) or holdout_auc >= baseline_auc - 0.01) and
+        (not np.isfinite(baseline_ece) or holdout_ece <= baseline_ece + 0.01)
+    )
+
     meta = {
         "part": "PART2B_XGB_ENSEMBLE",
         "version": "V1_BOOTSTRAP_ENSEMBLE",
@@ -647,9 +660,9 @@ def main() -> int:
         "live_p_xgb_ens_std":   float(p_live_std[0]),
         "live_xgb_overlay_on":  live_overlay_on,
         # Single XGBoost baseline from Part 2
-        "xgb_single_auc":   p2_summary.get("classification_base", {}).get("auc"),
-        "xgb_single_ece":   p2_summary.get("classification_base", {}).get("ece"),
-        "bnn_sleeve_recommended": bool(gate_validated),
+        "xgb_single_auc": baseline_auc if np.isfinite(baseline_auc) else None,
+        "xgb_single_ece": baseline_ece if np.isfinite(baseline_ece) else None,
+        "bnn_sleeve_recommended": promotion_ok,
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -663,9 +676,10 @@ def main() -> int:
     print(f"   WF results: {wf_path}")
     print(f"   Eval rows:  {wf_eval_path}")
     print(f"   Summary:    {meta_path}")
-    print(f"   BNN sleeve recommended: {gate_validated}")
+    print(f"   BNN sleeve recommended: {promotion_ok}")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
