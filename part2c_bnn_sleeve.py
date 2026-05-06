@@ -781,6 +781,17 @@ def main() -> int:
     tape.to_csv(tape_path, index=False)
 
     # ── Summary JSON ──────────────────────────────────────────────────────
+    baseline_auc = float(p2_summary.get("classification_base", {}).get("auc", np.nan))
+    baseline_ece = float(p2_summary.get("classification_base", {}).get("ece", np.nan))
+    uncertainty_backend_valid = bool(HAVE_TORCH and cfg.n_mc_samples > 0)
+    production_candidate = bool(
+        uncertainty_backend_valid and
+        np.isfinite(holdout_auc) and
+        np.isfinite(holdout_util) and
+        holdout_auc >= baseline_auc and
+        holdout_util >= 0.0
+    )
+
     meta = {
         "part": "PART2C_BNN",
         "version": "V1_DEEP_ENSEMBLE_MC_DROPOUT",
@@ -810,8 +821,10 @@ def main() -> int:
         "live_p_bnn_epistemic": live_result["p_bnn_epistemic"],
         "live_bnn_overlay_on": live_result["bnn_overlay_on"],
         # XGBoost baseline from Part 2 for quick comparison
-        "xgb_baseline_auc": p2_summary.get("classification_base", {}).get("auc"),
-        "xgb_baseline_ece": p2_summary.get("classification_base", {}).get("ece"),
+        "xgb_baseline_auc": baseline_auc if np.isfinite(baseline_auc) else None,
+        "xgb_baseline_ece": baseline_ece if np.isfinite(baseline_ece) else None,
+        "uncertainty_backend_valid": uncertainty_backend_valid,
+        "production_candidate": production_candidate,
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
 
