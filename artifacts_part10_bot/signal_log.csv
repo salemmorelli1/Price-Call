@@ -1,0 +1,2 @@
+date,p_tail,base_rate,edge,target_w_voo,action_reason,target_source,dry_run,accuracy_gate_passed,accuracy_gate_reason,publish_mode,final_pass,raw_val_auc,px_voo,px_ief,nav
+2026-05-06,0.196585,0.206471,0.009886,0.5584,part7_current_target (w_voo=0.558),part7_current_target,True,False,Only 0 live realized obs (need 60),NORMAL,True,0.5352,660.12,94.39,1000.0

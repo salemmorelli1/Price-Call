@@ -1,0 +1,16 @@
+{
+  "Date": "2026-05-06T00:00:00",
+  "w_target_voo": 0.5583773465145249,
+  "w_target_ief": 0.44162265348547525,
+  "regime_label": "crisis",
+  "p_tail_base": 0.1965849666586422,
+  "base_rate": 0.206470733514448,
+  "raw_val_auc": 0.5351583467525496,
+  "optimizer": "black_litterman_cvar",
+  "portfolio_vol_ann": 0.07585704185538103,
+  "view_confidence": 0.4394793344068698,
+  "edge": 0.009885766855805805,
+  "dead_band_hold": 1,
+  "publish_mode": "NORMAL",
+  "final_pass": 1
+}
