@@ -468,12 +468,35 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
         thresholds=thresholds,
     )
 
+    latest_alpha_eligible = _boolish(
+        _row_value(latest_row, ["latest_eligible", "eligible"], _json_value(alpha_summary_json, ["latest_eligible"], 0)),
+        0,
+    )
+    latest_alpha_abs = _safe_float(
+        _row_value(
+            latest_row,
+            ["latest_alpha_abs", "latest_alpha_position", "alpha_abs", "alpha_position"],
+            _json_value(alpha_summary_json, ["latest_alpha_abs", "latest_alpha_position"], 0.0),
+        )
+    )
+    if latest_alpha_abs is None:
+        latest_alpha_abs = 0.0
+    latest_alpha_reason = str(
+        _row_value(latest_row, ["latest_reason", "reason"], _json_value(alpha_summary_json, ["latest_reason"], "unknown"))
+    )
+
     alpha_live = latest_state in {"LIVE_TRIAL", "LIVE_FUSED"}
     if latest_state == "LIVE_FUSED":
         alpha_live = alpha_live and bool(fused_gate_open)
     if latest_state == "LIVE_TRIAL":
         alpha_live = alpha_live and bool(trial_gate_open)
     alpha_live = alpha_live and bool(quality_ok) and bool(drift_ok) and budget_mult > 0
+    alpha_live = alpha_live and bool(latest_alpha_eligible) and float(latest_alpha_abs) > 0.0
+
+    if (not latest_alpha_eligible) or float(latest_alpha_abs) <= 0.0:
+        current_alpha_live_status = "FLAT_VETOED" if latest_alpha_reason != "ok" else "FLAT_INACTIVE"
+    else:
+        current_alpha_live_status = latest_state
 
     return {
         "latest_state": latest_state,
@@ -488,6 +511,10 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
         "promotion_ready": promotion_ready,
         "blockers": str(blockers),
         "alpha_live": int(alpha_live),
+        "current_alpha_live_status": str(current_alpha_live_status),
+        "current_alpha_reason": str(latest_alpha_reason),
+        "current_alpha_eligible": int(latest_alpha_eligible),
+        "current_alpha_abs": float(latest_alpha_abs),
         "thresholds": thresholds,
     }
 
@@ -705,6 +732,10 @@ def _build_governance_df(decision_date: pd.Timestamp, part2_summary: Dict[str, A
         "alpha_state": alpha_status["latest_state"],
         "alpha_state_display": alpha_status["display_state"],
         "alpha_live": alpha_status["alpha_live"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": alpha_status.get("current_alpha_eligible", 0),
+        "current_alpha_abs": alpha_status.get("current_alpha_abs", 0.0),
         "drift_alarm": int(not alpha_status["drift_ok"]),
         "drift_rate": alpha_status["drift_rate"],
         "budget_mult": alpha_status["budget_mult"],
@@ -746,6 +777,8 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             # column, creating a mismatch with part3_summary.json's publish_mode field.
             "publish_mode", "deployment_mode", "final_pass",
             "latest_alpha_state", "alpha_live",
+            "historical_alpha_state", "current_alpha_live_status", "current_alpha_reason",
+            "current_alpha_eligible", "current_alpha_abs",
             "defense_source", "alpha_positions_source", "alpha_summary_source",
             "alpha_eligibility_source", "alpha_summary_json_source",
             "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction"
@@ -773,12 +806,10 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         # The classification model was trained on the rolling-quantile label; Part 9
         # must evaluate it against the same definition.
         # Priority: tail_threshold_dynamic from the defense_row (if present) →
+        # signal_q_threshold (rolling quantile threshold in the consensus tape) →
         # fallback to summary JSON tail_event_threshold.
-        # NOTE: signal_q_threshold is a governance trigger quantile, not the
-        # label threshold used to define y_rel_tail_voo_vs_ief. It must never be
-        # written into prediction_log.tail_threshold.
         "tail_threshold": _safe_float(
-            _row_value(defense_row, ["tail_threshold_dynamic"], None)
+            _row_value(defense_row, ["tail_threshold_dynamic", "signal_q_threshold"], None)
             or _json_value(part2_summary, ["tail_event_threshold"], None)
         ),
         # publish_mode: raw governance value, consistent with part3_summary.json.
@@ -788,6 +819,11 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "deployment_mode": "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL" else publish_mode,
         "final_pass": int(final_pass),
         "latest_alpha_state": alpha_status["latest_state"],
+        "historical_alpha_state": alpha_status["latest_state"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": int(alpha_status.get("current_alpha_eligible", 0)),
+        "current_alpha_abs": float(alpha_status.get("current_alpha_abs", 0.0)),
         "alpha_live": int(alpha_status["alpha_live"]),
         "defense_source": str(defense_source),
         "alpha_positions_source": str(alpha_sources["positions"]),
@@ -1163,6 +1199,11 @@ def main(cfg: Part3Config = CFG) -> None:
         "final_pass": int(final_pass),
         "latest_alpha_state": alpha_status["latest_state"],
         "latest_alpha_state_display": alpha_status["display_state"],
+        "historical_alpha_state": alpha_status["latest_state"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": int(alpha_status.get("current_alpha_eligible", 0)),
+        "current_alpha_abs": float(alpha_status.get("current_alpha_abs", 0.0)),
         # FIX (Finding 12, Audit 2026-04-21):
         # "realized_dates" is ambiguous: it sounds like live prediction-log rows with
         # realized prices, but actually counts historical tape rows where the backtest
@@ -1267,6 +1308,12 @@ if __name__ == "__main__":
 
 
 
+
+    
+
+
+
+    
 
     
 
