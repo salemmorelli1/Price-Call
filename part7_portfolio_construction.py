@@ -530,6 +530,18 @@ def compute_allocation(
         cvar_confidence=cfg.cvar_confidence,
     )
 
+    crisis_cap_applied = 0
+    if normalize_regime_label(regime_label) == "crisis" and "VOO" in available_cols:
+        crisis_voo_cap = 0.50
+        voo_idx = available_cols.index("VOO")
+        if float(w_opt[voo_idx]) > crisis_voo_cap:
+            w_opt = np.asarray(w_opt, dtype=float).copy()
+            w_opt[voo_idx] = crisis_voo_cap
+            if "IEF" in available_cols:
+                ief_idx = available_cols.index("IEF")
+                w_opt[ief_idx] = 1.0 - crisis_voo_cap
+            crisis_cap_applied = 1
+
     diag = {
         "method": "black_litterman_cvar",
         "model_view_return": float(view_return),
@@ -544,6 +556,7 @@ def compute_allocation(
         "p_tail_base": float(p_tail_base),
         "edge": float(edge),
         "portfolio_vol_ann": float(np.sqrt(w_opt @ cov @ w_opt)) if len(w_opt) == len(cov) else np.nan,
+        "crisis_cap_applied": int(crisis_cap_applied),
     }
     return w_opt, diag
 
@@ -705,6 +718,7 @@ def main() -> int:
             "portfolio_vol_ann": diag.get("portfolio_vol_ann", np.nan),
             "view_confidence": diag.get("view_confidence", np.nan),
             "edge": diag.get("edge", np.nan),
+            "crisis_cap_applied": int(diag.get("crisis_cap_applied", 0)),
             "dead_band_hold": diag.get("dead_band_hold", 0),
             "publish_mode": publish_mode,
             "final_pass": int(final_pass),
@@ -739,6 +753,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
