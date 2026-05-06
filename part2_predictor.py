@@ -2275,12 +2275,13 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     deploy_gate = _deploy_downside_gate_stats(out, cfg, prior_summary)
 
     stress_panel = _compute_stress_panel(out, cfg)
+    cls_base_lift = float(cls_base.get("lift", np.nan))
+    cls_base_ece = float(cls_base.get("ece", np.nan))
     predictive_quality_ok = bool(
-        np.isfinite(cls_base.get("lift", np.nan)) and float(cls_base.get("lift", np.nan)) > 1.05 and
-        np.isfinite(cls_base.get("ece", np.nan)) and float(cls_base.get("ece", np.nan)) < 0.03 and
-        np.isfinite(active_mean) and float(active_mean) > 0.0
+        np.isfinite(cls_base_lift) and cls_base_lift > 1.08 and
+        np.isfinite(cls_base_ece) and cls_base_ece < 0.03 and
+        np.isfinite(active_mean) and active_mean > 0.0
     )
-
     summary = {
         "part": "part2",
         "version": "GEN5_PART2_GEN532_SOFT_CAUTION_OVERLAY",
@@ -2402,8 +2403,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             # was already NORMAL.
             bool(deploy_gate["gate_pass"]) and
             np.isfinite(deploy_gate["rate"]) and float(deploy_gate["rate"]) <= float(cfg.DEPLOY_DOWNSIDE_RATE_MAX) and
-            predictive_quality_ok and
-            (not suspicious_perf_flag)
+            (not suspicious_perf_flag) and
+            predictive_quality_ok
         ),
         "out_path": os.path.join(cfg.PRED_DIR, cfg.OUT_FILE),
     }
@@ -2476,6 +2477,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
