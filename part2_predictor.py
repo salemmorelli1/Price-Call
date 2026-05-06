@@ -2098,7 +2098,6 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "excess_ret": _safe_num(current_row.iloc[0].get("excess_ret", np.nan)),
             "y_voo": _safe_num(current_row.iloc[0].get("y_voo", np.nan)),
             "y_rel_tail_voo_vs_ief": _safe_num(current_row.iloc[0].get("y_rel_tail_voo_vs_ief", np.nan)),
-            "tail_threshold_dynamic": _safe_num(current_row.iloc[0].get("tail_threshold_dynamic", np.nan)),
             "y_avail": y_avail,
             "CalibDate": pd.Timestamp(train_df.iloc[-1]["Date"]).strftime("%Y-%m-%d") if train_df is not None else None,
             "sign": float(np.sign(p_final_g5 - base_rate)),
@@ -2277,8 +2276,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
 
     stress_panel = _compute_stress_panel(out, cfg)
     predictive_quality_ok = bool(
-        np.isfinite(cls_base.get("lift", np.nan)) and float(cls_base.get("lift", np.nan)) > 1.01 and
-        np.isfinite(cls_base.get("ece", np.nan)) and float(cls_base.get("ece", np.nan)) < 0.05
+        np.isfinite(cls_base.get("lift", np.nan)) and float(cls_base.get("lift", np.nan)) > 1.05 and
+        np.isfinite(cls_base.get("ece", np.nan)) and float(cls_base.get("ece", np.nan)) < 0.03 and
+        np.isfinite(active_mean) and float(active_mean) > 0.0
     )
 
     summary = {
@@ -2362,6 +2362,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "effective_final_pass_drift_rate_max": float(final_pass_drift_max_eff),
         "effective_fail_closed_drift_rate": float(fail_closed_drift_rate_eff),
         "effective_fail_closed_cal_gate": float(fail_closed_cal_gate_eff),
+        "predictive_quality_ok": predictive_quality_ok,
         "final_pass": bool(
             # FIX (Finding A, Audit 2026-04-21):
             # The prior gate used cls_final["auc"] — the single-pass holdout AUC
@@ -2401,6 +2402,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             # was already NORMAL.
             bool(deploy_gate["gate_pass"]) and
             np.isfinite(deploy_gate["rate"]) and float(deploy_gate["rate"]) <= float(cfg.DEPLOY_DOWNSIDE_RATE_MAX) and
+            predictive_quality_ok and
             (not suspicious_perf_flag)
         ),
         "out_path": os.path.join(cfg.PRED_DIR, cfg.OUT_FILE),
