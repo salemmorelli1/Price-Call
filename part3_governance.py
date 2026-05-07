@@ -799,17 +799,27 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "p_final_cal": _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None)),
         "base_rate": _safe_float(_row_value(defense_row, ["T", "base_rate", "b"], None)),
         "raw_val_auc": _safe_float(_row_value(defense_row, ["raw_val_auc"], _json_value(part2_summary, ["raw_val_auc_median"], None))),
-        # FIX (Finding 14 / Finding 26, Audit 2026-04-21):
-        # Write the live row's actual dynamic threshold (from Part 1's rolling-quantile
-        # label) rather than the fixed summary JSON value (-0.00567, H=7 formula).
-        # Part 9 uses this value to reconstruct the live binary label for realized rows.
-        # The classification model was trained on the rolling-quantile label; Part 9
-        # must evaluate it against the same definition.
-        # Priority: tail_threshold_dynamic from the defense_row (if present) →
-        # signal_q_threshold (rolling quantile threshold in the consensus tape) →
-        # fallback to summary JSON tail_event_threshold.
+        # FIX (Audit 2026-05-07 — CRITICAL Bug: wrong tail_threshold written to log):
+        # The previous lookup included "signal_q_threshold" in the priority chain.
+        # "signal_q_threshold" in the consensus tape is the DEFENSE TRIGGER quantile
+        # threshold (the rolling 56th-percentile of defense_trigger_raw, ≈ 0.15) — it
+        # has nothing to do with the tail EVENT threshold used to construct the label.
+        #
+        # Writing 0.15 as tail_threshold corrupts Part 9 live attribution: Part 9 uses
+        # this field to reconstruct y_live = (excess_ret < tail_threshold). With threshold
+        # = 0.15, nearly every daily return qualifies as a "tail event" (excess_ret < 0.15
+        # is true ~99% of the time), producing a base rate of ~1.0 instead of ~0.20 and
+        # making every AUC, Brier, and ECE metric meaningless.
+        #
+        # Corrected priority:
+        #   1. tail_threshold_dynamic — future-proofing if Part 2 ever writes a per-row
+        #      dynamic threshold column explicitly named "tail_threshold_dynamic"
+        #   2. part2_summary["tail_event_threshold"] — the authoritative H=1 daily
+        #      threshold = -0.015, validated against Part 1's rolling-quantile labels
+        #
+        # "signal_q_threshold" is REMOVED from the lookup chain.
         "tail_threshold": _safe_float(
-            _row_value(defense_row, ["tail_threshold_dynamic", "signal_q_threshold"], None)
+            _row_value(defense_row, ["tail_threshold_dynamic"], None)
             or _json_value(part2_summary, ["tail_event_threshold"], None)
         ),
         # publish_mode: raw governance value, consistent with part3_summary.json.
@@ -1309,14 +1319,5 @@ if __name__ == "__main__":
 
 
 
-    
 
 
-
-    
-
-    
-
-
-
-    
