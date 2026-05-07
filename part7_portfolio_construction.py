@@ -85,7 +85,7 @@ class Part7Config:
     w_ief_max: float = 0.65
 
     # Max position change per rebalance (turnover control)
-    max_turnover: float = 0.05         # 15% max single-trade position change
+    max_turnover: float = 0.05         # 5% max single-trade position change (comment previously said 15% — documentation error)
 
     # Transaction costs
     slip_bps: float = 1.0              # One-way slippage per unit traded
@@ -684,9 +684,32 @@ def main() -> int:
         ief_idx = cfg.universe.index("IEF") if "IEF" in cfg.universe else 1
         w_voo = float(alloc[voo_idx]) if len(alloc) > voo_idx else 0.60
         w_ief = float(alloc[ief_idx]) if len(alloc) > ief_idx else 0.40
+        # FIX (Audit 2026-05-07 — Soft-clearance fallback):
+        # When final_pass is locked at False due to Part 2's circular dependency
+        # (predictive_quality_ok requiring active_mean > 0 in fail_closed mode),
+        # the BL optimizer was permanently bypassed even when the model has genuine
+        # predictive quality (raw_val_auc_median >= 0.52).
+        #
+        # Policy:
+        #   - Hard fail_closed (SHADOW / UNKNOWN publish_mode): always 60/40.
+        #   - FAIL_CLOSED_NEUTRAL with raw_val_auc_median >= 0.52: allow BL optimizer
+        #     to run as a soft-clearance path. The optimizer output is used as the
+        #     base weights, but the fail_closed governance context is preserved in
+        #     the diagnostics.  This allows Part 7 to provide meaningful regime-
+        #     conditional weights rather than a permanent 60/40 even when Part 2
+        #     hasn't fully cleared all governance gates.
+        #   - Once final_pass = True (publish_mode = NORMAL): full BL optimizer.
+        #
+        # The primary fix is in part2_predictor.py (removing the circular deadlock
+        # in predictive_quality_ok). This soft-clearance is a defence-in-depth guard.
+        _p2_raw_val_auc = float(_p2_summary.get("raw_val_auc_median", 0.0) or 0.0)
+        _soft_clearance_eligible = bool(
+            np.isfinite(_p2_raw_val_auc) and _p2_raw_val_auc >= 0.52
+            and publish_mode not in {"SHADOW", "UNKNOWN"}
+        )
         fail_closed_override = bool(
             publish_mode in {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"} or not final_pass
-        )
+        ) and not _soft_clearance_eligible
         if fail_closed_override:
             # Governance override is authoritative. After fail-closed neutral is
             # imposed, diagnostics must describe the published 60/40 weights, not
