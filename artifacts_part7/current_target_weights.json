@@ -1,0 +1,17 @@
+{
+  "Date": "2026-05-07T00:00:00",
+  "w_target_voo": 0.6,
+  "w_target_ief": 0.4,
+  "regime_label": "crisis",
+  "p_tail_base": 0.1912984673160462,
+  "base_rate": 0.2064197530864197,
+  "raw_val_auc": 0.5295759527643584,
+  "optimizer": "fail_closed_neutral",
+  "portfolio_vol_ann": 0.07134789764610933,
+  "view_confidence": 0.36969940955448033,
+  "edge": 0.0151212857703735,
+  "crisis_cap_applied": 1,
+  "dead_band_hold": 1,
+  "publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "final_pass": 0
+}
