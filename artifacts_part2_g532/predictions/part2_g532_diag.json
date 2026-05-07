@@ -1,0 +1,19 @@
+{
+  "distribution_validation": {
+    "raw_coverage_mean": 0.8271067429184509,
+    "conf_coverage_mean": 0.9102556733818051,
+    "median_rmse_mean": 0.01332887521293106
+  },
+  "fused_probabilities": {
+    "p_tail_base_mean": 0.20988279102640425,
+    "p_tail_dist_mean": 0.09464637436826284,
+    "p_final_g5_mean": 0.20988279102640425,
+    "uncertainty_penalty_mean": 0.49961372154514744,
+    "dist_tail_shift_mean": 0.0027051417867147505,
+    "dist_width_caution_mean": 0.18759757360205537,
+    "dist_overlay_on_rate": 0.16716958358479178,
+    "dist_trust_mean": 0.7567142491543489,
+    "dist_overlay_strength_mean": 0.15137115834360673
+  },
+  "tail_event_threshold": -0.015
+}
