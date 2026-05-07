@@ -818,10 +818,36 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         #      threshold = -0.015, validated against Part 1's rolling-quantile labels
         #
         # "signal_q_threshold" is REMOVED from the lookup chain.
-        "tail_threshold": _safe_float(
-            _row_value(defense_row, ["tail_threshold_dynamic"], None)
-            or _json_value(part2_summary, ["tail_event_threshold"], None)
-        ),
+        #
+        # FIX (Audit 2026-05-07 — F2 + F4):
+        # Three-tier lookup with hardcoded last resort.
+        #
+        # F4: the prior `or`-based pattern is incorrect Python.  `x or y` treats
+        #     x as truthy/falsy: if x == 0.0 (valid but falsy), the chain silently
+        #     discards it and returns y.  Explicit `if x is not None` is required.
+        #
+        # F2: the prior chain had no hardcoded last resort.  If part2_g532_summary.json
+        #     is ever missing the "tail_event_threshold" key (schema migration, cold start,
+        #     truncated write), _safe_float(None) returns None and prediction_log gets a
+        #     null tail_threshold, silently breaking all Part 9 y_live reconstructions.
+        #     A hardcoded fallback of -0.015 (authoritative H=1 daily threshold) closes
+        #     this gap regardless of upstream schema changes.
+        #
+        # Priority chain (highest → lowest):
+        #   1. tail_threshold_dynamic  — per-row dynamic threshold if Part 2 ever writes it
+        #   2. part2_summary["tail_event_threshold"]  — -0.015 from the current summary JSON
+        #   3. -0.015 hardcoded  — last resort; matches H=1 base daily threshold
+        **{
+            "tail_threshold": _safe_float(
+                _row_value(defense_row, ["tail_threshold_dynamic"], None)
+                if _row_value(defense_row, ["tail_threshold_dynamic"], None) is not None
+                else (
+                    _json_value(part2_summary, ["tail_event_threshold"], None)
+                    if _json_value(part2_summary, ["tail_event_threshold"], None) is not None
+                    else -0.015  # hardcoded H=1 last resort
+                )
+            )
+        },
         # publish_mode: raw governance value, consistent with part3_summary.json.
         # deployment_mode: user-facing operational label (DEFENSE_ONLY when fail-closed).
         # Separating these eliminates the prior cross-file field-name collision.
@@ -1315,6 +1341,10 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
+
+
+
+
 
 
 
