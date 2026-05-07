@@ -1145,9 +1145,39 @@ def main() -> int:
         "w_target_ief": w_ief,
     })
 
-    pd.DataFrame([record]).to_csv(
-        os.path.join(cfg.out_dir, "execution_cost_tape.csv"), index=False
-    )
+    # FIX (Audit 2026-05-07 — F1: execution_cost_tape.csv overwrote history on every run):
+    # The prior code wrote pd.DataFrame([record]).to_csv(tape_path) on every run,
+    # replacing the accumulated tape with a single row each day.  Historical execution
+    # cost data (n_rebalances, turnover, cost_bps) was permanently lost.
+    #
+    # Fix: read-then-append pattern (identical to Part 9's attribution report approach).
+    #   1. Read the existing tape if it exists.
+    #   2. Drop any row whose Date matches today (idempotent re-run safety).
+    #   3. Concat new row and write.
+    #
+    # This means the tape now correctly accumulates one row per production day, matching
+    # the intent of the annual_drag_summary.n_rebalances calculation.
+    tape_path = os.path.join(cfg.out_dir, "execution_cost_tape.csv")
+    df_new_row = pd.DataFrame([record])
+    if os.path.exists(tape_path):
+        try:
+            df_existing_tape = pd.read_csv(tape_path)
+            # Normalise Date column for dedup comparison
+            if "Date" in df_existing_tape.columns:
+                df_existing_tape["Date"] = pd.to_datetime(
+                    df_existing_tape["Date"], errors="coerce"
+                )
+                _today_str = str(pd.to_datetime(decision_date).normalize().date())
+                df_existing_tape = df_existing_tape[
+                    df_existing_tape["Date"].dt.date.astype(str) != _today_str
+                ]
+            df_tape_out = pd.concat([df_existing_tape, df_new_row], ignore_index=True)
+        except Exception as _tape_exc:
+            print(f"[Part 8] Warning: could not read existing tape ({_tape_exc}); starting fresh.")
+            df_tape_out = df_new_row
+    else:
+        df_tape_out = df_new_row
+    df_tape_out.to_csv(tape_path, index=False)
 
     meta = {
         "version": cfg.version,
@@ -1174,3 +1204,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
