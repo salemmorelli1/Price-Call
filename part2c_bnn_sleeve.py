@@ -651,6 +651,51 @@ def main() -> int:
     print(f"Ensemble size: {cfg.n_ensemble} | MC samples: {cfg.n_mc_samples if HAVE_TORCH else 'N/A'}")
     print("=" * 70)
 
+    # FIX (Audit 2026-05-07 — F3: sklearn fallback produces sub-random results):
+    # When torch is not installed, Part 2C falls back to sklearn CalibratedClassifierCV
+    # MLPClassifier. Empirical results show this produces holdout_auc = 0.491 (6/14
+    # folds below random). The sklearn fallback has:
+    #   - No MC dropout (n_mc_samples = 0)  → uncertainty_backend_valid = False
+    #   - Isotonic calibration with cv=3    → can overfit on small fold sets
+    #   - AUC < 0.50 on holdout             → calibrator inverts rank ordering
+    #
+    # A sub-random model running silently as "Part 2C BNN" is worse than not running
+    # at all. The degraded output: (a) consumes ~5 min of wall time, (b) writes a
+    # bnn_tape.csv with uninformative predictions, (c) causes confusion when Part 3
+    # reads the live_bnn_overlay_on field (currently fires = 1 with sub-random signal).
+    #
+    # Fix: hard exit with a clear message when torch is unavailable.
+    # To activate Part 2C:
+    #   1. Uncomment 'torch' in requirements.txt
+    #   2. Run: pip install torch
+    #   3. Verify HAVE_TORCH = True before running this file
+    #
+    # The gate condition is: part2b_xgb_summary.json must report bnn_sleeve_recommended: true
+    # (which it currently does). Once torch is installed, re-run Part 2C.
+    if not HAVE_TORCH:
+        print()
+        print("=" * 70)
+        print("PART 2C — CANNOT RUN: PyTorch not installed")
+        print("=" * 70)
+        print()
+        print("The sklearn fallback has been DISABLED (Audit 2026-05-07, Finding F3).")
+        print("Reason: empirical testing shows the sklearn degraded mode produces")
+        print("  holdout_auc = 0.491  (sub-random — 6/14 folds also below 0.50)")
+        print("  uncertainty_backend_valid = False")
+        print("  production_candidate = False")
+        print()
+        print("Running a sub-random BNN sleeve is worse than not running Part 2C at all.")
+        print("The live_bnn_overlay_on signal from a sub-random model is noise, not signal.")
+        print()
+        print("To activate Part 2C:")
+        print("  1. Uncomment 'torch' in requirements.txt")
+        print("  2. pip install torch  (or pip install torch --break-system-packages)")
+        print("  3. Verify torch imports successfully, then re-run Part 2C")
+        print()
+        print("Gate check: part2b_xgb_summary.json bnn_sleeve_recommended = True ✅")
+        print("Part 2C is READY to activate once torch is installed.")
+        return 1
+
     # ── Load Part 1 artifacts ──────────────────────────────────────────────
     X_path = Path(p1_dir) / "X_features.parquet"
     y_path = Path(p1_dir) / "y_labels_revealed.parquet"
