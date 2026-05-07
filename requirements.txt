@@ -11,6 +11,9 @@ hmmlearn
 cvxpy
 gradio
 plotly
-# Part 2C (BNN sleeve) — install when activating step 6 of the A+ sequence.
-# Keep commented until part2b_xgb_summary.json confirms bnn_sleeve_recommended: true.
-# torch
+# FIX (Audit 2026-05-07 — F3): torch uncommented.
+# Gate condition met: part2b_xgb_summary.json reports bnn_sleeve_recommended: true.
+# Part 2C's sklearn fallback produces holdout_auc = 0.491 (sub-random); the file
+# now hard-exits when torch is unavailable rather than silently degrading.
+# Install: pip install torch  (CPU-only build is sufficient; no GPU required).
+torch
