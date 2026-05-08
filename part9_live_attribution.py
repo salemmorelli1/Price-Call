@@ -62,6 +62,10 @@ class Part9Config:
     part6_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part6"
     out_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part9"
     part8_cost_path: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part8/execution_cost_tape.csv"
+    # FIX (BUG-1, Audit 2026-05-08): Part 1 feature artifacts needed for feature drift detection.
+    # detect_feature_drift() was defined but never called — feature drift stopping rules were
+    # permanently inoperative. Adding part1_dir so generate_live_report() can load X_features.parquet.
+    part1_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part1"
     horizon: int = 1                    # CHANGE: 1-day forecast horizon
 
     # Statistical thresholds
@@ -634,7 +638,8 @@ def generate_live_report(cfg: Part9Config) -> Dict:
                 _edge_set = False
                 if os.path.exists(p2_summary_path):
                     try:
-                        _p2s = json.load(open(p2_summary_path))
+                        with open(p2_summary_path, "r", encoding="utf-8") as _f:
+                            _p2s = json.load(_f)
                         _arm = float(_p2s.get("active_ret_net_mean", np.nan))
                         if np.isfinite(_arm):
                             live_stats["estimated_annual_edge_bps"] = float(_arm * 252 * 10000.0)
@@ -677,10 +682,36 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         except Exception:
             pass
 
+    # FIX (BUG-1, Audit 2026-05-08): detect_feature_drift() was defined but NEVER called.
+    # generate_live_report() was passing pd.DataFrame() (empty) to evaluate_stopping_rules,
+    # making the entire KS-test feature drift stopping rule permanently inoperative.
+    # Fix: load X_features.parquet from Part 1 and actually call detect_feature_drift().
+    # Historical = full feature history; recent = trailing 63 trading days (~3 months).
+    _drift_df = pd.DataFrame()
+    _x_features_path = os.path.join(cfg.part1_dir, "X_features.parquet")
+    if os.path.exists(_x_features_path):
+        try:
+            _x_all = pd.read_parquet(_x_features_path)
+            _x_all.index = pd.to_datetime(_x_all.index, errors="coerce")
+            _x_all = _x_all.dropna(how="all").sort_index()
+            if len(_x_all) >= 90:
+                # historical = everything except last 63 rows; recent = last 63 rows
+                _x_hist = _x_all.iloc[:-63]
+                _x_rec = _x_all.iloc[-63:]
+                _drift_df = detect_feature_drift(_x_hist, _x_rec, recent_window=63)
+                report["feature_drift"] = {
+                    "n_features_tested": len(_drift_df),
+                    "n_drifted_5pct": int(_drift_df["drifted"].sum()) if "drifted" in _drift_df.columns else 0,
+                    "n_severely_drifted_1pct": int(_drift_df["severely_drifted"].sum()) if "severely_drifted" in _drift_df.columns else 0,
+                    "most_drifted": _drift_df.head(3)[["feature", "ks_stat", "ks_pval", "mean_shift"]].to_dict(orient="records") if len(_drift_df) else [],
+                }
+        except Exception as _drift_exc:
+            print(f"[Part 9] Feature drift detection failed: {_drift_exc}")
+
     stopping = evaluate_stopping_rules(
         live_stats,
         report.get("calibration_live", {}),
-        pd.DataFrame(),
+        _drift_df,
         cfg,
     )
     report["health_status"] = stopping["status"]
@@ -709,6 +740,7 @@ def main() -> int:
     cfg = dataclasses.replace(cfg, part6_dir=_abs_path(cfg.part6_dir))
     cfg = dataclasses.replace(cfg, out_dir=_abs_path(cfg.out_dir))
     cfg = dataclasses.replace(cfg, part8_cost_path=_abs_path(cfg.part8_cost_path))
+    cfg = dataclasses.replace(cfg, part1_dir=_abs_path(cfg.part1_dir))
     os.makedirs(cfg.out_dir, exist_ok=True)
 
     report = generate_live_report(cfg)
