@@ -2405,7 +2405,21 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             # Fix: align final_pass to raw_val_auc_median (rolling cross-val median).
             # Threshold kept at 0.535 (slightly above DEPLOY_MIN_VAL_AUC = 0.530 to
             # require marginal additional evidence before full deployment).
-            np.isfinite(raw_val_auc_median) and raw_val_auc_median >= 0.535 and
+            # FIX (BUG-3, Audit 2026-05-08): AUC gate had no hysteresis.
+            # Observed: raw_val_auc_median = 0.53677, threshold = 0.535, margin = 0.00177
+            # SE(AUC) ≈ 0.032 at n=252/fold → margin is 0.055 SE → will flip on noise.
+            # Fix: enter NORMAL at AUC >= 0.537; stay NORMAL (if prior was NORMAL) at AUC >= 0.530.
+            # This matches the existing deploy_downside count hysteresis pattern (enter=3, stay=2).
+            # Prior run's publish_mode is read from prior_summary (already loaded).
+            np.isfinite(raw_val_auc_median) and (
+                raw_val_auc_median >= 0.537  # enter threshold (current value + noise buffer)
+                or (
+                    # stay threshold: prior NORMAL run + above DEPLOY_MIN_VAL_AUC = 0.530
+                    raw_val_auc_median >= float(cfg.DEPLOY_MIN_VAL_AUC)
+                    and prior_summary.get("publish_mode", "") == "NORMAL"
+                    and bool(prior_summary.get("final_pass", False))
+                )
+            ) and
             np.isfinite(strategy_ir) and strategy_ir >= 0.45 and
             np.isfinite(active_mean) and active_mean >= -0.002 and
             # H=1 recalibration (2026-04-13): full-series active_ir replaced by
