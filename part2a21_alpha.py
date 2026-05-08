@@ -560,15 +560,27 @@ def build_alpha_positions(
     alpha_turnover = (pd.Series(alpha_position, index=x.index) - prev_alpha).abs()
     alpha_cost_model = CFG.turnover_cost_per_unit * alpha_turnover * 2.0  # round-trip consistency with Part 3
 
+    # FIX (F4, Audit 2026-05-08): carry-day P&L tracking gap.
+    # The weekly hold logic carries alpha_position forward when eligible=0 (e.g.,
+    # low_agreement on carry days). Previously rank_ic and topk required eligible>0,
+    # which excluded carry days even when the position was held and realized return
+    # was available. Evidence: May 5-6 show eligible=0, y_avail=1, alpha_position=0.034356
+    # — position held, return available, P&L NOT tracked.
+    # Fix: condition on alpha_abs > 0 (position exists) instead of eligible > 0.
+    # This produces a properly time-weighted IR that includes all deployed days,
+    # not just days where the entry signal was active.
+    # The old eligible-only IR was a selection-bias estimator: it conditioned on
+    # days when the signal was highest, systematically overstating the realized edge.
+    alpha_position_series = pd.Series(alpha_position, index=x.index)
     rank_ic = np.where(
-        (mature > 0) & (positions_df["eligible"] > 0) & (positions_df["alpha_abs"] > 0),
+        (mature > 0) & (alpha_position_series.abs() > 0),
         np.where(np.sign(spread) == 0, 0.0, np.sign(spread)),
         np.nan,
     )
 
     topk_rel_ret_gross = np.where(
-        (mature > 0) & (positions_df["eligible"] > 0) & (positions_df["alpha_abs"] > 0),
-        pd.Series(alpha_position, index=x.index).abs() * spread,
+        (mature > 0) & (alpha_position_series.abs() > 0),
+        alpha_position_series.abs() * spread,
         np.nan,
     )
     topk_rel_ret_net = np.where(
