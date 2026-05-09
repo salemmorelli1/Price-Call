@@ -603,7 +603,19 @@ def build_alpha_positions(
         "Date": x["Date"],
         "rank_ic": pd.to_numeric(rank_ic, errors="coerce").round(6),
         "topk_rel_ret_net": pd.to_numeric(topk_rel_ret_net, errors="coerce").round(6),
-        "breadth_selected": ((positions_df["alpha_abs"] > 0) & (positions_df["eligible"] > 0)).astype(int),
+        # FIX (BUG-2, Audit 2026-05-09): F4 carry-day consistency fix.
+        # The F4 fix (Audit 2026-05-08) changed rank_ic / topk_rel_ret_net to
+        # condition on alpha_position_series.abs() > 0 (any deployed day, including
+        # weekly carry-over days where eligible=0 but the position is held).
+        # breadth_selected was still using (alpha_abs > 0) & (eligible > 0), which
+        # excluded 172 confirmed carry-day rows — exactly the days F4 added to P&L
+        # tracking.  This created a semantic contradiction: the IR denominator includes
+        # carry days but the "breadth" metric pretends they don't exist.
+        #
+        # Fix: condition on (alpha_abs > 0) & (mature > 0) — deployed AND realised.
+        # This matches the exact condition used by rank_ic and topk_rel_ret_net.
+        # eligible_breadth (line below) continues to report the entry-signal-only count.
+        "breadth_selected": ((positions_df["alpha_abs"] > 0) & (mature > 0)).astype(int),
         "eligible_breadth": positions_df["eligible"].astype(int),
         "gross_alpha_budget_used": positions_df["alpha_abs"].round(6),
         "alpha_drift_alarm": pd.to_numeric(drift_alarm_series, errors="coerce").round(6),
