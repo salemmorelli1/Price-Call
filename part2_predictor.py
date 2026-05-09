@@ -65,7 +65,7 @@ from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings("ignore")
 
-SCRIPT_VERSION = "GEN5_PART2_G532_DAILY_CANONICAL_V1"
+SCRIPT_VERSION = "GEN5_PART2_G532_DAILY_CANONICAL_V2"  # V2: Part 16 audit — per-regime AUC monitoring added
 
 try:
     import xgboost as xgb  # type: ignore
@@ -1911,6 +1911,57 @@ def _classification_metrics(y_true: np.ndarray, p: np.ndarray, bins: int) -> Dic
     }
 
 
+def _compute_regime_auc(realized: pd.DataFrame, bins: int = 10) -> Dict[str, object]:
+    """Compute per-regime classification metrics on the realized (y_avail=1) tape.
+
+    Added (Audit 2026-05-10 — Quant-Guild Part 16):
+    The full-tape AUC (0.515) masks a critical structural problem: the model is
+    anti-predictive in calm regimes (AUC=0.452) and near-random in crisis
+    (AUC=0.489).  This function makes the per-regime breakdown visible in the
+    summary JSON so it can be monitored in the dashboard and used to gate
+    deployment by regime in Part 7.
+
+    Returns a dict keyed by regime label with AUC, n, base_rate, and brier.
+    Also returns an 'active_regimes' list of regimes where AUC > 0.50 (model
+    is genuinely predictive).
+    """
+    if realized.empty:
+        return {}
+    regime_col = "regime_label"
+    if regime_col not in realized.columns or "p_final_cal" not in realized.columns or "y_rel_tail_voo_vs_ief" not in realized.columns:
+        return {}
+
+    result: Dict[str, object] = {}
+    active_regimes: list = []
+
+    for regime in sorted(realized[regime_col].dropna().unique()):
+        sub = realized[realized[regime_col] == str(regime)].dropna(
+            subset=["p_final_cal", "y_rel_tail_voo_vs_ief"]
+        )
+        if len(sub) < 30:
+            continue
+        y = sub["y_rel_tail_voo_vs_ief"].values.astype(int)
+        p = np.clip(sub["p_final_cal"].values, 1e-6, 1 - 1e-6)
+        if len(np.unique(y)) < 2:
+            continue
+        auc = float(roc_auc_score(y, p))
+        result[str(regime)] = {
+            "n": int(len(sub)),
+            "auc": round(auc, 6),
+            "base_rate": round(float(y.mean()), 6),
+            "brier": round(float(_brier(y, p)), 6),
+            "ece": round(float(_ece_score(y, p, bins)), 6),
+        }
+        if auc > 0.50:
+            active_regimes.append(str(regime))
+
+    result["active_regimes"] = sorted(active_regimes)
+    result["passive_regimes"] = sorted(
+        [r for r in result if r not in ("active_regimes", "passive_regimes") and r not in active_regimes]
+    )
+    return result
+
+
 def _gamma_to_uncertainty(gamma_val: float) -> float:
     """
     Safe gamma → uncertainty inversion.
@@ -2433,6 +2484,12 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "avg_abs_active_weight_capped": float(np.nanmean(np.abs(out["active_weight_capped"].values))),
         "shuffle_auc_median": shuffle_auc,
         "suspicious_perf_flag": suspicious_perf_flag,
+        # FIX (Audit 2026-05-10 — Quant-Guild Part 16):
+        # Per-regime AUC breakdown. Audit found the model is anti-predictive in
+        # calm (AUC=0.452) and near-random in crisis (AUC=0.489). This field makes
+        # the breakdown visible in the summary JSON and dashboard on every run so
+        # regime-level concept drift is caught before it compounds.
+        "regime_auc_breakdown": _compute_regime_auc(realized, bins=cfg.ECE_BINS),
         "stress_panel": stress_panel,
         "tail_event_threshold": tail_threshold,
         "part1_version_consumed": str(part1_meta.get("version")),
