@@ -1908,15 +1908,60 @@ def _gamma_to_uncertainty(gamma_val: float) -> float:
 
 
 def _json_safe(obj):
-    """Convert NaN/Inf to None so json.dump always produces valid JSON (RFC 8259).
-    NaN is not a valid JSON literal; Python's default json encoder emits it anyway
-    (allow_nan=True) but strict parsers (JavaScript JSON.parse, many REST clients)
-    will reject the file.
+    """Convert NaN/Inf/numpy scalars to JSON-safe Python types.
+
+    FIX (BUG-1, Audit 2026-05-09):
+    The previous version was used as `default=` in json.dump.  Python's
+    json encoder handles Python `float` NATIVELY (including NaN/Inf) —
+    it writes them as the literal tokens NaN / Infinity, which are invalid
+    per RFC 8259.  Because `float` is natively handled, the `default=`
+    hook is NEVER called for Python float values, so _json_safe never
+    intercepted them.  Result: `"conditional_active_ir": NaN` appeared
+    literally in part2_g532_summary.json.  JavaScript's JSON.parse()
+    throws SyntaxError on NaN, silently breaking the index.html dashboard
+    on every run where conditional_active_ir is NaN (i.e., until at least
+    10 defense events accumulate — currently 4 of 10 needed).
+
+    Fix: this function is now used via _deep_clean_for_json() which
+    recursively walks the entire dict/list structure and replaces any
+    non-RFC-8259-safe value with None BEFORE json.dump is called.
+    json.dump is then called WITHOUT a custom default= (using the safe
+    allow_nan=False mode via the cleaned dict).
     """
     import math
-    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+    import numpy as np
+    import pandas as pd
+
+    if obj is None or isinstance(obj, bool):
+        return obj
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, (float, np.floating)):
+        v = float(obj)
+        return None if (math.isnan(v) or math.isinf(v)) else v
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, pd.Timestamp):
+        return str(obj)
+    if obj is pd.NaT or (hasattr(pd, "NA") and obj is pd.NA):
         return None
-    return obj
+    return str(obj)
+
+
+def _deep_clean_for_json(obj):
+    """Recursively walk any dict/list and apply _json_safe to every leaf value.
+
+    This is the correct approach to guarantee RFC 8259 compliance because
+    json.dump's `default=` hook is never called for Python float (natively
+    serializable). We must pre-process the entire structure before serialising.
+    """
+    if isinstance(obj, dict):
+        return {k: _deep_clean_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_deep_clean_for_json(v) for v in obj]
+    return _json_safe(obj)
 
 
 def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
@@ -2461,10 +2506,20 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     # summary json
     summary_path = os.path.join(cfg.PRED_DIR, cfg.SUMMARY_FILE)
     summary["output_hashes"] = {"consensus_tape_sha256": _sha256_file(out_path)}
+    # FIX (BUG-1, Audit 2026-05-09): pre-process summary dict with _deep_clean_for_json
+    # before json.dump so NaN/Inf values are serialized as null (not NaN literal).
+    # json.dump's default= hook is NEVER called for Python float (natively handled),
+    # so the old default=_json_safe approach silently wrote NaN as the literal token NaN
+    # (invalid RFC 8259 JSON). JavaScript's JSON.parse() throws SyntaxError on NaN,
+    # breaking the index.html dashboard for every run where conditional_active_ir is NaN
+    # (i.e., until >= 10 defense events accumulate; currently 4 of 10).
+    _clean_summary = _deep_clean_for_json(summary)
     if cfg.WRITE_HASHED_SUMMARY:
-        summary["output_hashes"]["summary_payload_sha256"] = _sha256_text(json.dumps(summary, sort_keys=True, default=str))
+        _clean_summary["output_hashes"]["summary_payload_sha256"] = _sha256_text(
+            json.dumps(_clean_summary, sort_keys=True)
+        )
     with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, default=_json_safe)
+        json.dump(_clean_summary, f, indent=2)
 
     # diagnostics json
     diag = {
@@ -2488,7 +2543,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     }
     diag_path = os.path.join(cfg.PRED_DIR, cfg.DIAG_FILE)
     with open(diag_path, "w", encoding="utf-8") as f:
-        json.dump(diag, f, indent=2, default=_json_safe)
+        json.dump(_deep_clean_for_json(diag), f, indent=2)
 
     # ablation csv
     ablation = pd.DataFrame([
