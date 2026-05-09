@@ -1,0 +1,2 @@
+Date,publish_mode,final_pass,quality_ok,drift_ok,trial_gate_open,fused_gate_open,promotion_ready,alpha_state,alpha_state_display,alpha_live,current_alpha_live_status,current_alpha_reason,current_alpha_eligible,current_alpha_abs,drift_alarm,drift_rate,budget_mult,alpha_blockers
+2026-05-08,NORMAL,1,1,1,1,1,1,LIVE_FUSED,LIVE_FUSED,0,FLAT_VETOED,low_agreement,0,0.034309,0,0.0,1.0,NONE
