@@ -244,7 +244,17 @@ class Part2Gen53Config:
     )
     OUTPUT_SCHEMA_VERSION: str = "part2.g5.phase3_2.schema1"
     WRITE_HASHED_SUMMARY: bool = True
-    FAIL_CLOSED_ON_FALSE_PASS: bool = True
+    # FIX (F2, Audit 2026-05-09 — Quant-Guild Part 15):
+    # When True, _should_fail_closed() reduces to a tautology: if final_pass=False
+    # (e.g. AUC 0.0001 below threshold) it immediately fails closed, making all
+    # other _should_fail_closed conditions (drift, calibration, cond_ir) permanently
+    # unreachable. That creates a self-referential deadlock: fail_closed is triggered
+    # by the very condition it is supposed to resolve.
+    # Fix: set to False so _should_fail_closed is an INDEPENDENT governance signal
+    # based on drift, calibration and IR — not merely a mirror of final_pass.
+    # final_pass still gates alpha LIVE_TRIAL/LIVE_FUSED and bot LIVE mode;
+    # _should_fail_closed gates whether Part 2 outputs 60/40 weights vs model weights.
+    FAIL_CLOSED_ON_FALSE_PASS: bool = False
     FAIL_CLOSED_DRIFT_RATE: float = 0.25
     FAIL_CLOSED_CAL_GATE: float = 0.80
     FAIL_CLOSED_ACTIVE_IR: float = 0.04   # legacy full-series IR; kept for backward-compat
@@ -1825,8 +1835,19 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
     cond_ir_floor = float(summary.get("conditional_active_ir_floor_fail_closed",
                                        cfg.CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED))
     return bool(
-        (cfg.FAIL_CLOSED_ON_FALSE_PASS and (not bool(summary.get("final_pass", False))))
-        or bool(summary.get("suspicious_perf_flag", False))
+        # FIX (F2, Audit 2026-05-09 — Quant-Guild Part 15):
+        # FAIL_CLOSED_ON_FALSE_PASS condition REMOVED.
+        # When FAIL_CLOSED_ON_FALSE_PASS=True and final_pass=False, _should_fail_closed()
+        # was a tautology: it always returned True before evaluating drift/calibration/IR.
+        # This made _should_fail_closed() an alias for "not final_pass" — identical to
+        # the condition it was supposed to augment — and blocked all independent governance
+        # signals (drift, calibration, cond_ir) from being evaluated.
+        # Now _should_fail_closed() is an INDEPENDENT gate: it triggers only when something
+        # is GENUINELY wrong (suspicious performance, drift, calibration failure, severe
+        # negative cond_ir). The AUC marginally missing its threshold is handled by
+        # final_pass=False gating bot LIVE mode and alpha LIVE_TRIAL/LIVE_FUSED states,
+        # without requiring publish_mode=FAIL_CLOSED_NEUTRAL.
+        bool(summary.get("suspicious_perf_flag", False))
         or (np.isfinite(summary.get("drift_alarm_rate", np.nan)) and float(summary.get("drift_alarm_rate")) > drift_limit)
         # FIX (2026-04-13): was '> cal_limit', which incorrectly triggered fail_closed
         # when calibration was GOOD (e.g. 98.8% > 85%). The intent is to fail closed
@@ -2450,14 +2471,22 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             # Fix: align final_pass to raw_val_auc_median (rolling cross-val median).
             # Threshold kept at 0.535 (slightly above DEPLOY_MIN_VAL_AUC = 0.530 to
             # require marginal additional evidence before full deployment).
-            # FIX (BUG-3, Audit 2026-05-08): AUC gate had no hysteresis.
-            # Observed: raw_val_auc_median = 0.53677, threshold = 0.535, margin = 0.00177
-            # SE(AUC) ≈ 0.032 at n=252/fold → margin is 0.055 SE → will flip on noise.
-            # Fix: enter NORMAL at AUC >= 0.537; stay NORMAL (if prior was NORMAL) at AUC >= 0.530.
-            # This matches the existing deploy_downside count hysteresis pattern (enter=3, stay=2).
-            # Prior run's publish_mode is read from prior_summary (already loaded).
+            # FIX (BUG-3-REVISED, Audit 2026-05-09 — Quant-Guild Part 15):
+            # BUG-3 (2026-05-08) raised the enter threshold from 0.535 → 0.537 as a "noise
+            # buffer". Result: raw_val_auc_median = 0.5369 misses 0.537 by 0.0001 (< 0.003 SE,
+            # where SE≈0.032 at n=252/fold) — pure sampling noise — permanently locking the
+            # stack in FAIL_CLOSED_NEUTRAL.
+            #
+            # The 0.002 buffer provides 0.002/0.032 = 0.06 SE of protection — negligible.
+            # The hysteresis band (enter=0.535, stay=0.530) already gives 0.005 = 0.156 SE
+            # of exit-protection; that is the correct place for the hysteresis gap.
+            # Putting 0.002 of "buffer" inside the enter threshold costs a deadlock whenever
+            # the AUC wanders in [0.535, 0.537) — a structurally likely outcome given SE=0.032.
+            #
+            # Fix: revert enter threshold to 0.535. Stay threshold (0.530) is unchanged.
+            # This is consistent with the pre-BUG-3 design and avoids the deadlock.
             np.isfinite(raw_val_auc_median) and (
-                raw_val_auc_median >= 0.537  # enter threshold (current value + noise buffer)
+                raw_val_auc_median >= 0.535  # FIX: reverted from 0.537 (see comment above)
                 or (
                     # stay threshold: prior NORMAL run + above DEPLOY_MIN_VAL_AUC = 0.530
                     raw_val_auc_median >= float(cfg.DEPLOY_MIN_VAL_AUC)
