@@ -260,7 +260,19 @@ def _predict_torch(
     all_member_stds = []
 
     for model in models:
-        model.train()   # keep dropout ON
+        # FIX (Audit 2026-05-10 — Quant-Guild Part 17, Bug B):
+        # model.train() kept BatchNorm1d in training mode, which requires batch
+        # size > 1 to compute statistics. A single live-row input (batch=1) raises:
+        #   ValueError: Expected more than 1 value per channel when training
+        #
+        # Fix: model.eval() switches BatchNorm1d to use stored running statistics
+        # (valid for any batch size including 1). Then selectively re-enable only
+        # the Dropout layers so MC sampling still works. This is the canonical
+        # MC-Dropout + BatchNorm inference pattern.
+        model.eval()
+        for m in model.modules():
+            if isinstance(m, nn.Dropout):
+                m.train()   # re-enable dropout for stochastic MC forward passes
         with torch.no_grad():
             mc_samples = torch.stack([model(X_t) for _ in range(n_mc)])  # (n_mc, N)
         member_mean = mc_samples.mean(0).numpy()
