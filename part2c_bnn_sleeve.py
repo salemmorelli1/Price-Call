@@ -898,6 +898,22 @@ def main() -> int:
         "live_p_bnn_mean": live_result["p_bnn_mean"],
         "live_p_bnn_epistemic": live_result["p_bnn_epistemic"],
         "live_bnn_overlay_on": live_result["bnn_overlay_on"],
+        # FIX (Finding 5, Audit 2026-05-10 — Quant-Guild Part 19):
+        # Add live_epist_ratio: how many times the live epistemic uncertainty exceeds
+        # the 75th-percentile training threshold. A ratio > 1.0 means the overlay is
+        # active. A ratio > 1.5 means the BNN is operating outside its calibration range
+        # (epistemic is materially larger than any training-distribution row at the 75th
+        # percentile). At ratio=1.84 (current live value) the BNN is extrapolating in
+        # uncertainty space, which may indicate a genuinely novel market regime or a
+        # distribution shift that the training data never covered.
+        "live_epist_ratio": (
+            round(float(live_result["p_bnn_epistemic"]) / float(epist_threshold), 4)
+            if epist_threshold > 0 else None
+        ),
+        "live_high_epistemic_warning": bool(
+            epist_threshold > 0 and
+            float(live_result["p_bnn_epistemic"]) / float(epist_threshold) > 1.5
+        ),
         # XGBoost baseline from Part 2 for quick comparison
         "xgb_baseline_auc": baseline_auc if np.isfinite(baseline_auc) else None,
         "xgb_baseline_ece": baseline_ece if np.isfinite(baseline_ece) else None,
@@ -912,6 +928,12 @@ def main() -> int:
 
     print()
     print("✅ PART 2C COMPLETE")
+    # FIX (Finding 5): surface high epistemic warning at completion
+    _epist_ratio = meta.get("live_epist_ratio")
+    if meta.get("live_high_epistemic_warning"):
+        print(f"   ⚠️  HIGH EPISTEMIC WARNING: live_epist_ratio={_epist_ratio:.2f}x threshold — "
+              f"BNN operating outside training calibration range (>1.5x). "
+              f"Current market may be in an unseen regime. Review live_bnn_overlay_on.")
     print(f"   Tape:       {tape_path}")
     print(f"   WF results: {wf_path}")
     print(f"   Summary:    {meta_path}")
