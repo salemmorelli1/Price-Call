@@ -209,7 +209,10 @@ class Part2Gen53Config:
     SHUFFLE_BLOCK: int = 14
     USE_XGB: bool = False
 
-    EXPECTED_PART1_VERSION: str = "V19_P1_HARDENED"
+    # FIX (F6, Audit 2026-05-10 — Quant-Guild Part 17): Updated from "V19_P1_HARDENED"
+    # to "V20_P1_DAILY" to match Part 1's actual current output version. The prior
+    # value generated misleading error messages when the version check fired.
+    EXPECTED_PART1_VERSION: str = "V20_P1_DAILY"
     ACCEPTED_PART1_VERSIONS: tuple[str, ...] = ("V19_P1_HARDENED", "V20_P1_DAILY",)  # CHANGE: accept daily version
 
     LEGACY_EXPECTED_MODEL_FEATURE_COUNT: int = 64
