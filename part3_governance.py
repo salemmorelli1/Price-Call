@@ -917,7 +917,15 @@ def _extract_performance_metrics(defense_df: pd.DataFrame, alpha_summary_json: D
         "fused_ir": fused_ir,
         "active_ir": active_ir,
         "active_mean": active_mean,
+        # FIX (Finding 7, Audit 2026-05-10 — Quant-Guild Part 19):
+        # fusion_live_rate=1.0 while rows_realized_fused=0 and prediction_log_realized_rows=0
+        # is misleading. The metric means "is alpha currently being fused?" not "fraction
+        # of live rows with realized prices". The prior name implied the latter.
+        # Both names are now returned so downstream consumers are unambiguous:
+        #   fusion_live_rate:      preserved for backward compatibility (1.0 = alpha is live now)
+        #   alpha_fusion_is_live:  boolean, semantically correct label for the same metric
         "fusion_live_rate": fusion_live_rate,
+        "alpha_fusion_is_live": bool(fusion_live_rate >= 1.0),
     }
 
 
@@ -1001,6 +1009,12 @@ def _fit_regime_platt_scaling(
 
         params: Dict[str, Tuple[float, float]] = {}
 
+        # FIX (Finding 3, Audit 2026-05-10 — Quant-Guild Part 19):
+        # Track sample size per regime so _persist_platt_params can include 'n'.
+        # The comment in _persist_platt_params documented n: int but code never stored it.
+        # risk_on has only 55 rows — flagging this for operators is important.
+        params_n: Dict[str, int] = {}
+
         # Per-regime fit
         for regime in merged["regime_label"].dropna().unique():
             sub = merged[merged["regime_label"] == regime].copy()
@@ -1014,7 +1028,15 @@ def _fit_regime_platt_scaling(
             a = float(lr.coef_[0][0])
             b = float(lr.intercept_[0])
             params[regime] = (a, b)
-            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}")
+            params_n[regime] = len(sub)
+            # FIX (Finding 10, Audit 2026-05-10 — Quant-Guild Part 19):
+            # Warn when Platt coefficient a < 0 (signal inversion detected).
+            # a < 0 means the model is anti-predictive in this regime (AUC < 0.5):
+            # higher raw p_final_cal → lower recalibrated probability. This is
+            # statistically valid (calm AUC=0.446 in the current model), but operators
+            # must be aware that the Platt transform inverts the signal direction.
+            _inv_warn = " ⚠️ a<0 SIGNAL INVERSION — AUC<0.5 in this regime" if a < 0 else ""
+            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}{_inv_warn}")
 
         # Global fallback (all regimes combined)
         p_all = merged["p_final_cal"].clip(0.01, 0.99).values
@@ -1022,7 +1044,12 @@ def _fit_regime_platt_scaling(
         lr_global = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
         lr_global.fit(_logit(p_all).reshape(-1, 1), y_all)
         params["_global"] = (float(lr_global.coef_[0][0]), float(lr_global.intercept_[0]))
+        params_n["_global"] = len(merged)
         print(f"[Part 3] Platt(_global    ): a={params['_global'][0]:.4f}  b={params['_global'][1]:.4f}  n={len(merged)}")
+
+        # Attach sample sizes so _persist_platt_params can write them
+        # Store as a special key (not a regime) — _persist_platt_params reads it
+        params["__sample_sizes__"] = params_n  # type: ignore[assignment]
 
         return params
 
@@ -1049,10 +1076,23 @@ def _persist_platt_params(params: Dict[str, Tuple[float, float]], out_dir: Path)
     """
     if not params:
         return
+    # Extract embedded sample sizes written by _fit_regime_platt_scaling
+    # (stored under the special key "__sample_sizes__"; not a real regime).
+    _sample_sizes: Dict[str, int] = {}
+    if "__sample_sizes__" in params:
+        _sample_sizes = params.get("__sample_sizes__", {})  # type: ignore[assignment]
+
     payload: Dict[str, object] = {}
-    for regime, (a, b) in params.items():
-        payload[regime] = {"a": round(float(a), 6), "b": round(float(b), 6)}
-    payload["_meta"] = {"built_at": datetime.now(timezone.utc).isoformat() if "datetime" in dir() else "unknown"}
+    for regime, ab in params.items():
+        if regime.startswith("__") or not isinstance(ab, tuple):
+            continue  # skip metadata keys
+        a, b = ab
+        _n = _sample_sizes.get(regime, None)
+        entry: Dict[str, object] = {"a": round(float(a), 6), "b": round(float(b), 6)}
+        if _n is not None:
+            entry["n"] = int(_n)
+        payload[regime] = entry
+    payload["_meta"] = {"built_at": datetime.now(timezone.utc).isoformat()}
     try:
         out_path = out_dir / "part3_platt_params.json"
         with open(out_path, "w", encoding="utf-8") as f:
@@ -1298,6 +1338,12 @@ def main(cfg: Part3Config = CFG) -> None:
         "rows": int(len(prod_tape)),
         "rows_realized_fused": realized_rows,
         "fusion_live_rate": perf["fusion_live_rate"],
+        # FIX (Finding 7, Audit 2026-05-10 — Quant-Guild Part 19): explicit boolean alias
+        "alpha_fusion_is_live": perf["alpha_fusion_is_live"],
+        # prediction_log_realized_pct: fraction of live predictions with realized prices
+        "prediction_log_realized_pct": (
+            round(realized_rows / max(len(predlog_df), 1), 4) if "predlog_df" in dir() else 0.0
+        ),
         "defense_ir_net": perf["defense_ir"],
         "fused_ir_net": perf["fused_ir"],
         "active_ir_vs_60_40": perf["active_ir"],
