@@ -1488,10 +1488,35 @@ def _governance_mapping(
     else:
         governance_tier = 'NORMAL'
 
+    # FIX (BUG-1, Audit 2026-05-10 — Quant-Guild Part 18):
+    # The previous thresholds caused governance_tier to be STRUCTURALLY LOCKED to
+    # CAUTION on 100% of rows. Root causes:
+    #
+    #   uncertainty_penalty_g5: threshold was 0.25. But DIST_PENALTY_FLOOR=0.08 and
+    #     the practical daily minimum (from artifact analysis) is 0.31 — ALWAYS above 0.25.
+    #     Result: uncertainty_penalty condition triggered on 1658/1658 rows (100%).
+    #
+    #   dist_overlay_strength_g53: threshold was 0.12. Mean = 0.151, triggering on
+    #     1151/1658 rows (69.4%). Not selective enough to be a meaningful gate.
+    #
+    # Both conditions made governance_tier=NORMAL structurally unreachable, causing:
+    #   (a) alpha_scale never reaches 1.0 (always throttled by CAUTION path)
+    #   (b) No distinction between genuinely uncertain and routine prediction days
+    #   (c) Part 2A's governance_tier=CAUTION multiplier always applied (0.60 scalar)
+    #
+    # Statistical basis for new thresholds:
+    #   uncertainty_penalty: range [0.31, 0.65], median=0.499, mean=0.499.
+    #     Setting 0.55 (≈75th percentile) captures genuinely elevated uncertainty.
+    #     Expected effect: ~25% of rows trigger this condition (was 100%).
+    #
+    #   dist_overlay_strength: range [0, 0.33], mean=0.151.
+    #     Setting 0.20 (≈65th percentile) captures rows where the distributional
+    #     overlay has meaningful magnitude.
+    #     Expected effect: ~35% of rows trigger this condition (was 69.4%).
     if governance_tier == 'NORMAL' and (
-        dist_overlay_strength >= 0.12
+        dist_overlay_strength >= 0.20           # FIX: was 0.12 (too loose, 69% trigger rate)
         or dist_width_caution >= 0.40
-        or uncertainty_penalty >= 0.25
+        or uncertainty_penalty >= 0.55          # FIX: was 0.25 (always triggered, min=0.31)
     ):
         governance_tier = 'CAUTION'
 
