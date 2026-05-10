@@ -73,14 +73,34 @@ class Part2A21Config:
 
     # Gen 5.3.2 soft-caution integration
     overlay_entry_z_bump_max: float = 0.35
-    overlay_agreement_min_base: float = 0.50
+    # FIX (F4, Audit 2026-05-10 — Quant-Guild Part 17): Lower agreement base from
+    # 0.50 to 0.49 to eliminate structural dead zone. With 4 components, a 2/4 split
+    # produces component_agreement = 0.50 exactly. The old base of 0.50 combined with
+    # any non-zero caution bump (virtually always present) pushed agreement_min_eff
+    # above 0.50, causing ALL 2/4 splits to fail regardless of caution magnitude.
+    # Setting base to 0.49 means a 2/4 split passes at base (no caution) and is
+    # progressively blocked as caution_raw increases — the intended behavior.
+    overlay_agreement_min_base: float = 0.49
     overlay_agreement_bump_max: float = 0.10
     overlay_agreement_min_cap: float = 0.75
 
-    caution_shrink_overlay_w: float = 0.25
-    caution_shrink_width_w: float = 0.20
-    caution_shrink_unc_w: float = 0.10
-    caution_shrink_floor: float = 0.55
+    # FIX (F2, Audit 2026-05-10 — Quant-Guild Part 17): Normalize caution_raw weights
+    # to sum to 1.0. The prior weights (0.25 + 0.20 + 0.10 = 0.55) compressed
+    # caution_raw to [0, 0.55], reducing all downstream caution adjustments to ~55%
+    # of their configured magnitude:
+    #   entry_z_eff max bump:       was 0.35*0.55=0.193  → now 0.35*1.0=0.35
+    #   agreement_min_eff max bump: was 0.10*0.55=0.055  → now 0.10*1.0=0.10
+    #   caution_shrink min:         was 1-0.55=0.45       → now 1-1.0=0.0
+    # caution_shrink_floor is lowered from 0.55→0.40 so that the floor semantics
+    # ("minimum 40% of full position at extreme caution") remain comparable.
+    # New normalization: 0.45 + 0.35 + 0.20 = 1.00
+    caution_shrink_overlay_w: float = 0.45
+    caution_shrink_width_w: float = 0.35
+    caution_shrink_unc_w: float = 0.20
+    # FIX: floor lowered from 0.55 → 0.40 to preserve behavioral range post-normalization.
+    # Old: floor activated when caution_raw > 0.45 (82% of old max 0.55).
+    # New: floor activates when caution_raw > 0.60 (60% of new max 1.0) — broadly similar.
+    caution_shrink_floor: float = 0.40
 
     overlay_hard_veto_width: float = 0.995
     overlay_hard_veto_uncertainty: float = 0.995
@@ -355,7 +375,15 @@ def build_alpha_positions(
     not_stale = stale_days <= CFG.stale_days_max
 
     high_risk = pd.to_numeric(x.get("high_risk_state"), errors="coerce").fillna(0).astype(int) > 0
-    dislocated = x["regime_label"].astype(str).str.lower().eq("dislocated")
+    # FIX (F3, Audit 2026-05-10 — Quant-Guild Part 17): Dead code fix.
+    # Part 6 (HMM regime engine) labels the highest-stress regime "crisis", not
+    # "dislocated". "Dislocated" is only produced by Part 2's internal GMM fallback,
+    # which is never used because Part 6 achieves 0% unknown rate. The old check:
+    #   x["regime_label"].eq("dislocated")
+    # was permanently False, leaving crisis-regime rows unchecked by Part 2A.
+    # Fix: include "crisis" in the set so Part 6 crisis-regime rows are correctly vetoed.
+    # "dislocated" is retained for backward-compatibility with any GMM fallback rows.
+    dislocated = x["regime_label"].astype(str).str.lower().isin(["dislocated", "crisis"])
     deploy_downside = pd.to_numeric(x.get("deploy_downside"), errors="coerce").fillna(0).astype(int) > 0
     drift_alarm = pd.to_numeric(x.get("drift_alarm"), errors="coerce").fillna(0).astype(int) > 0
     publish_fail_closed = pd.to_numeric(x.get("publish_fail_closed"), errors="coerce").fillna(0).astype(int) > 0
