@@ -1,813 +1,1387 @@
-#!/usr/bin/env python3
-# @title PART 7 — Portfolio Construction & Risk Budgeting
-# =============================================================================
-# Industry-grade portfolio optimization for PriceCallProject v2
-#
-# Replaces the ad-hoc defense weight formula:
-#   w_voo = clip(0.60 + active_weight, 0.42, 0.70)
-#
-# With principled multi-asset allocation via:
-#   1. Black-Litterman framework (model view + CAPM prior)
-#   2. Risk parity / Kelly fraction position sizing
-#   3. CVaR-constrained optimization
-#   4. Transaction cost-aware rebalancing
-#
-# Multi-asset universe: VOO, IEF, GLD, QQQ, TLT
-#
-# AUDIT CHANGELOG (Quant-Guild Part 8 session, 2026-04)
-# ──────────────────────────────────────────────────────
-# Finding D (IMPORTANT): mean-variance optimizer received mismatched units.
-#   mu_bl is produced in annual units by estimate_expected_returns(), but
-#   compute_allocation() computed cov_h = cov * (1/252) and passed that daily
-#   covariance to the optimizer.  In the objective
-#       maximize  mu @ w  -  0.5 * lambda * w' Sigma w
-#   the risk term was ~252x smaller than the return term, making effective risk
-#   aversion lambda/252 ≈ 0.01 instead of 2.5.  The optimizer saw the portfolio
-#   as nearly risk-free and maximised return by pushing w_voo to the upper bound
-#   (voo_max) on every unconstrained run.  The dead-band then locked that weight
-#   in for all 1,641 subsequent days.  The Black-Litterman computation was
-#   structurally bypassed in practice.
-#   Fix: pass cov (annualised) to the optimizer, matching the annual scale of
-#   mu_bl.  cov_h is removed; it served no correct purpose in this function.
-# =============================================================================
 from __future__ import annotations
+import sys as _sys
+import os as _os
 
-import os
-import dataclasses
-from pathlib import Path
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
+
+
+
 import json
-import warnings
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
-from typing import Dict, List, Optional, Tuple
+import math
+import os
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
-from scipy.stats import norm
 
-warnings.filterwarnings("ignore")
-
+# ── Optional: regime-conditional Platt scaling (scipy + sklearn) ──────────
 try:
-    import cvxpy as cp
-    HAVE_CVXPY = True
-except ImportError:
-    HAVE_CVXPY = False
-    print("[Part 7] cvxpy not installed. pip install cvxpy — falling back to scipy optimizer.")
+    from scipy.special import logit as _logit, expit as _expit
+    from sklearn.linear_model import LogisticRegression as _LogisticRegression
+    HAVE_PLATT = True
+except Exception:
+    HAVE_PLATT = False
 
 
 # ============================================================
-# Configuration
+# @title PART 3 — Governance + Defense Sleeve + Fusion Engine
+# Standalone, Drive-first, root-anchored production consumer.
 # ============================================================
+
 
 @dataclass(frozen=True)
-class Part7Config:
-    version: str = "V2_DAILY_CANONICAL"
-    part0_dir: str = "./artifacts_part0"
-    part2_dir: str = "./artifacts_part2_g532/predictions"
-    part6_dir: str = "./artifacts_part6"
-    out_dir: str = "./artifacts_part7"
-    horizon: int = 1
-
-    # === Asset Universe ===
-    # The minimal 2-asset universe (VOO, IEF) plus optional extensions
-    # When only 2 assets are used, the problem reduces to the current system
-    universe: Tuple[str, ...] = ("VOO", "IEF")
-    extended_universe: Tuple[str, ...] = ("VOO", "IEF", "GLD", "TLT")
-
-    use_extended_universe: bool = False  # Set True when you have sufficient history
-
-    # === Risk Budget ===
-    # Maximum VOO allocation range
-    w_voo_min: float = 0.35
-    w_voo_max: float = 0.75
-    w_ief_min: float = 0.20
-    w_ief_max: float = 0.65
-
-    # Max position change per rebalance (turnover control)
-    max_turnover: float = 0.05         # 5% max single-trade position change (comment previously said 15% — documentation error)
-
-    # Transaction costs
-    slip_bps: float = 1.0              # One-way slippage per unit traded
-    commission_bps: float = 1.0        # Broker commission
-
-    # === Black-Litterman Parameters ===
-    tau: float = 0.05                  # Uncertainty in CAPM prior (typical: 0.02–0.10)
-    risk_aversion: float = 2.5         # Investor risk aversion coefficient λ
-    market_weights: Dict[str, float] = field(
-        default_factory=lambda: {"VOO": 0.60, "IEF": 0.40}  # Market-cap proxy
-    )
-
-    # === CVaR Parameters ===
-    cvar_confidence: float = 0.95      # CVaR at 95%
-    max_cvar_budget: float = 0.025     # Max expected loss at 95% CVaR per period
-
-    # === Regime-conditional risk budgets ===
-    # Matched to the 4-regime HMM in Part 6 (calm / risk_on / high_vol / crisis).
-    # Each multiplier scales both the VOO weight ceiling and the effective risk
-    # aversion used in the BL optimizer.  With crisis_mult=0.50, voo_max resolves
-    # to max(0.35, min(0.75*0.50, 0.70)) = 0.375 — feasible bounds guaranteed.
-    regime_risk_multipliers: Dict[str, float] = field(default_factory=lambda: {
-        "calm":     1.30,   # quietest 25% — lean into equity risk
-        "risk_on":  1.10,   # normal expansionary — modest equity tilt
-        "high_vol": 0.75,   # elevated vol — moderate defense
-        "crisis":   0.50,   # genuine tail episode — meaningful defense
-        "unknown":  0.70,
-    })
-
-    cov_window: int = 126              # Rolling covariance window: 126 trading days (~6 months)
-    cov_ewm_halflife: int = 21         # EWM half-life for covariance (1 trading month)
-    min_rebalance_threshold: float = 0.02  # 2% dead-band for daily rebalances
+class Part3Config:
+    root_env_var: str = "PRICECALL_ROOT"
+    strict_env_var: str = "PRICECALL_STRICT_DRIVE_ONLY"
+    alpha_family_env_var: str = "PRICECALL_ALPHA_FAMILY"
+    default_drive_root: str = "/content/drive/MyDrive/PriceCallProject"
+    out_dir_relative: str = "artifacts_part3_v1"
+    predlog_dir_relative: str = "artifacts_part3"
+    tape_name: str = "v1_final_production_tape.csv"
+    gov_name: str = "v1_final_production_governance.csv"
+    alloc_name: str = "v1_fusion_allocations.csv"
+    summary_name: str = "part3_summary.json"
+    predlog_name: str = "prediction_log.csv"
+    default_voo_weight: float = 0.60
+    default_ief_weight: float = 0.40
 
 
-CFG = Part7Config()
+CFG = Part3Config()
 
-def _resolve_root() -> str:
-    candidates = []
-    env_root = os.environ.get("PRICECALL_ROOT", "").strip()
+
+def resolve_root(cfg: Part3Config = CFG) -> Path:
+    env_root = os.environ.get(cfg.root_env_var, "").strip()
+    candidates: List[Path] = []
     if env_root:
         candidates.append(Path(env_root))
-    candidates.append(Path("/content/drive/MyDrive/PriceCallProject"))
+    candidates.append(Path(cfg.default_drive_root))
     try:
-        candidates.append(Path(__file__).resolve().parent)
+        candidates.append(Path(_DRIVE_ROOT))
     except Exception:
         pass
     candidates.append(Path.cwd())
+
+    for c in candidates:
+        try:
+            p = c.expanduser().resolve()
+        except Exception:
+            continue
+        if str(p) == "/content":
+            continue
+        if p.exists():
+            return p
+    return Path.cwd().resolve()
+
+
+def _project_roots(root: Path) -> List[Path]:
+    raw: List[Path] = []
+    raw.append(root)
+    drive_root = Path(CFG.default_drive_root)
+    raw.append(drive_root)
+    try:
+        raw.append(Path(_DRIVE_ROOT))
+    except Exception:
+        pass
+    raw.append(Path.cwd())
+
+    out: List[Path] = []
     seen = set()
-    for p in candidates:
+    for p in raw:
         try:
             rp = p.expanduser().resolve()
         except Exception:
             continue
+        if str(rp) == "/content":
+            continue
         s = str(rp)
-        if s == "/content" or s in seen:
+        if s not in seen:
+            seen.add(s)
+            out.append(rp)
+    return out
+
+
+def _expand_candidate_paths(candidates: Sequence[str], root: Path) -> List[Path]:
+    expanded: List[Path] = []
+    for c in candidates:
+        if not c:
             continue
-        seen.add(s)
-        if rp.exists():
-            return s
-    return str(Path.cwd().resolve())
-
-
-def _abs_path(p: str) -> str:
-    path = Path(p)
-    if path.is_absolute():
-        return str(path)
-    return str((Path(_resolve_root()) / path).resolve())
-
-
-
-def normalize_regime_label(label: object) -> str:
-    # FIX (Finding #14, 2026-04): the prior mapping collapsed 'calm' → 'risk_on',
-    # making the calm multiplier (1.30) in regime_risk_multipliers unreachable.
-    # 'calm' is now preserved as its own key so the optimizer applies the correct,
-    # more aggressive equity tilt in genuinely low-volatility regimes.
-    # 'dislocated' (Part 2 GMM label) continues to map to 'crisis' for conservative
-    # position sizing during stress episodes.
-    s = str(label).strip().lower() if label is not None else "unknown"
-    mapping = {
-        "calm":       "calm",     # was incorrectly mapped to "risk_on" — now preserved
-        "risk_on":    "risk_on",
-        "high_vol":   "high_vol",
-        "crisis":     "crisis",
-        "dislocated": "crisis",   # Part 2 GMM stress label → crisis multiplier
-        "unknown":    "unknown",
-    }
-    return mapping.get(s, "unknown")
-
-
-
-# ============================================================
-# Covariance estimation
-# ============================================================
-
-def estimate_covariance(
-    returns: pd.DataFrame,
-    window: int = 126,
-    ewm_halflife: int = 21,
-) -> np.ndarray:
-    """
-    Ledoit-Wolf shrinkage covariance estimate.
-    Combines sample covariance with constant-correlation target.
-    Dramatically more stable than sample covariance at small N.
-    """
-    from sklearn.covariance import LedoitWolf
-
-    r = returns.dropna().tail(window)
-    if len(r) < 20:
-        return np.eye(returns.shape[1]) * 0.04  # flat fallback
-
-    # EWM returns (more weight on recent data)
-    ewm_r = r.ewm(halflife=ewm_halflife).mean()
-    centered = r - ewm_r
-
-    lw = LedoitWolf()
-    lw.fit(centered.values)
-    cov = lw.covariance_
-
-    # Annualize
-    cov_ann = cov * 252
-    return cov_ann
-
-
-def estimate_expected_returns(
-    model_view: Dict[str, float],
-    market_weights: np.ndarray,
-    cov: np.ndarray,
-    asset_names: List[str],
-    tau: float = 0.05,
-    risk_aversion: float = 2.5,
-) -> np.ndarray:
-    """
-    Black-Litterman posterior expected returns.
-
-    Model view: p_tail_base gives us a directional view on VOO vs IEF spread.
-    We translate this to a return view on the excess return of VOO over IEF.
-
-    Formula:
-    mu_BL = [(τΣ)^-1 + P'Ω^-1P]^-1 × [(τΣ)^-1 × Π + P'Ω^-1 × q]
-
-    where:
-      Π = equilibrium expected returns (CAPM prior)
-      P = view matrix (which assets the view applies to)
-      q = view returns (what the model predicts)
-      Ω = view uncertainty
-    """
-    n = len(asset_names)
-    # CAPM equilibrium returns
-    pi = risk_aversion * cov @ market_weights.reshape(-1, 1)  # (n, 1)
-
-    voo_idx = asset_names.index("VOO") if "VOO" in asset_names else 0
-    ief_idx = asset_names.index("IEF") if "IEF" in asset_names else 1
-
-    # View: VOO - IEF excess return over H-day horizon
-    if "voo_excess_view" in model_view and np.isfinite(model_view["voo_excess_view"]):
-        # Single view on VOO-IEF spread
-        P = np.zeros((1, n))
-        P[0, voo_idx] = 1.0
-        P[0, ief_idx] = -1.0
-        q = np.array([[float(model_view["voo_excess_view"])]])
-        # Uncertainty in view: proportional to confidence
-        view_confidence = float(model_view.get("view_confidence", 0.5))
-        # P @ (tau * cov) @ P.T is a (1,1) matrix for a single view.
-        # Extract the scalar explicitly so float() is safe across all numpy versions.
-        view_var = float(np.asarray(P @ (tau * cov) @ P.T).reshape(-1)[0])
-        view_var = max(view_var, 1e-12)
-        omega = np.array([[view_var * (1.0 / max(view_confidence, 0.10))]], dtype=float)
-
-        # Black-Litterman formula
-        inv_tauS = np.linalg.inv(tau * cov)
-        inv_omega = np.linalg.inv(omega)
-        mu_bl = np.linalg.inv(inv_tauS + P.T @ inv_omega @ P) @ (
-            inv_tauS @ pi + P.T @ inv_omega @ q
-        )
-        return mu_bl.flatten()
-
-    # Fallback: CAPM prior only
-    return pi.flatten()
-
-
-# ============================================================
-# Optimization
-# ============================================================
-
-def optimize_weights_scipy(
-    mu: np.ndarray,
-    cov: np.ndarray,
-    asset_names: List[str],
-    bounds: List[Tuple[float, float]],
-    risk_aversion: float,
-    prev_weights: Optional[np.ndarray] = None,
-    max_turnover: float = 0.05,
-    slip_bps: float = 1.0,
-) -> np.ndarray:
-    """
-    Mean-variance optimization with:
-    - Transaction cost penalty
-    - Turnover constraint
-    """
-    n = len(mu)
-    w0 = prev_weights if prev_weights is not None else np.ones(n) / n
-
-    def objective(w):
-        ret = mu @ w
-        risk = w @ cov @ w
-        # Transaction costs
-        if prev_weights is not None:
-            tc = (slip_bps / 10000.0) * np.sum(np.abs(w - prev_weights))
+        p = Path(c).expanduser()
+        if p.is_absolute():
+            expanded.append(p)
         else:
-            tc = 0.0
-        return -(ret - 0.5 * risk_aversion * risk - tc)
-
-    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
-    if prev_weights is not None and max_turnover < 1.0:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w: max_turnover - np.sum(np.abs(w - prev_weights))
-        })
-
-    result = minimize(
-        objective,
-        x0=w0,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
-        options={"maxiter": 500, "ftol": 1e-10},
-    )
-
-    if result.success:
-        w = np.clip(result.x, 0.0, 1.0)
-        w = w / w.sum()
-        return w
-    else:
-        # Fallback to minimum variance
-        return w0
+            for r in _project_roots(root):
+                expanded.append((r / p).resolve())
+    dedup: List[Path] = []
+    seen = set()
+    for p in expanded:
+        s = str(p)
+        if s not in seen:
+            seen.add(s)
+            dedup.append(p)
+    return dedup
 
 
-def optimize_weights_cvxpy(
-    mu: np.ndarray,
-    cov: np.ndarray,
-    asset_names: List[str],
-    bounds: List[Tuple[float, float]],
-    risk_aversion: float,
-    prev_weights: Optional[np.ndarray] = None,
-    max_turnover: float = 0.05,
-    slip_bps: float = 1.0,
-    scenario_returns: Optional[np.ndarray] = None,
-    max_cvar: float = 0.025,
-    cvar_confidence: float = 0.95,
-) -> np.ndarray:
-    """
-    CVaR-constrained mean-variance optimization via CVXPY.
-    Requires cvxpy: pip install cvxpy
-    """
-    if not HAVE_CVXPY:
-        return optimize_weights_scipy(
-            mu, cov, asset_names, bounds, risk_aversion,
-            prev_weights, max_turnover, slip_bps
-        )
-
-    n = len(mu)
-    w = cp.Variable(n)
-    tc_cost = 0.0
-
-    objective_terms = [mu @ w, -0.5 * risk_aversion * cp.quad_form(w, cov)]
-
-    if prev_weights is not None:
-        tc_cost = (slip_bps / 10000.0) * cp.sum(cp.abs(w - prev_weights))
-        objective_terms.append(-tc_cost)
-
-    obj = cp.Maximize(cp.sum(objective_terms))
-
-    constraints = [cp.sum(w) == 1]
-    for i, (lb, ub) in enumerate(bounds):
-        constraints.append(w[i] >= lb)
-        constraints.append(w[i] <= ub)
-    if prev_weights is not None and max_turnover < 1.0:
-        constraints.append(cp.sum(cp.abs(w - prev_weights)) <= max_turnover)
-
-    # CVaR constraint (requires scenario returns)
-    if scenario_returns is not None and len(scenario_returns) > 10:
-        T = len(scenario_returns)
-        alpha = 1.0 - cvar_confidence
-        gamma = cp.Variable()
-        z = cp.Variable(T)
-        port_ret = scenario_returns @ w
-        constraints.extend([
-            z >= 0,
-            z >= -port_ret - gamma,
-            gamma + (1.0 / (alpha * T)) * cp.sum(z) <= max_cvar
-        ])
-
-    prob = cp.Problem(obj, constraints)
-    try:
-        prob.solve(solver=cp.CLARABEL, verbose=False)
-        if prob.status in ["optimal", "optimal_inaccurate"] and w.value is not None:
-            result = np.clip(w.value, 0.0, 1.0)
-            return result / result.sum()
-    except Exception as e:
-        print(f"[Part 7] CVXPY solve failed: {e}")
-
-    return optimize_weights_scipy(mu, cov, asset_names, bounds, risk_aversion, prev_weights)
+def _first_existing_path(candidates: Sequence[str], root: Path) -> Optional[Path]:
+    for p in _expand_candidate_paths(candidates, root):
+        if p.exists():
+            return p
+    return None
 
 
-# ============================================================
-# Black-Litterman complete allocation
-# ============================================================
-
-def compute_allocation(
-    p_tail_base: float,
-    base_rate: float,
-    raw_val_auc: float,
-    regime_label: str,
-    returns_history: pd.DataFrame,
-    prev_weights: Optional[np.ndarray],
-    cfg: Part7Config,
-) -> Tuple[np.ndarray, Dict]:
-    """
-    Full Black-Litterman + CVaR portfolio construction.
-
-    p_tail_base: model's tail risk probability
-    base_rate: historical base rate of tail events
-    raw_val_auc: model AUC (drives view confidence)
-    regime_label: current market regime
-    returns_history: recent asset returns for covariance estimation
-    prev_weights: previous period weights (for turnover control)
-    """
-    asset_names = list(cfg.universe)
-    n = len(asset_names)
-
-    # ── FIX (Audit 2026-05-10 — Quant-Guild Part 16, BUG-02): Regime-gated BL ──
-    # Statistical audit of the full 2020-2026 holdout tape reveals that the
-    # model's discriminative power is strongly regime-conditional:
-    #
-    #   Regime     n    AUC    Verdict
-    #   high_vol  654  0.547  POSITIVE signal — use BL optimizer
-    #   risk_on    55  0.543  POSITIVE signal — use BL optimizer
-    #   calm      610  0.452  ANTI-PREDICTIVE — BL view is actively harmful
-    #   crisis    338  0.489  NEAR-RANDOM, slightly anti — no value added
-    #
-    # In calm regimes the model systematically inverts: higher p_final_cal predicts
-    # LOWER actual tail rates (the direction of the view is wrong).  Letting the BL
-    # optimizer act on this inverted view tilts the portfolio in the wrong direction.
-    #
-    # Fix: bypass the BL optimizer entirely in calm and crisis; return the CAPM
-    # prior (market_weights = 60/40) with view_confidence=0.  The dead-band in
-    # main() will hold the previous weight if already near 60/40, or transition
-    # back toward it if coming from a model-driven weight.
-    #
-    # Effective AUC improvement:
-    #   Full tape (all regimes):  AUC = 0.515
-    #   Gated (high_vol+risk_on): AUC = 0.546  (+0.031)
-    REGIME_USES_MODEL: set = {"high_vol", "risk_on"}
-    _normalized_regime: str = str(regime_label).lower().strip()
-    if _normalized_regime not in REGIME_USES_MODEL:
-        _gate_cols = [a for a in asset_names if a in returns_history.columns]
-        _prior_w = np.array([cfg.market_weights.get(a, 1.0 / max(n, 1)) for a in _gate_cols])
-        _prior_w = _prior_w / _prior_w.sum() if _prior_w.sum() > 0 else np.array([0.60, 0.40])
-        return _prior_w, {
-            "method": "regime_gated_prior",
-            "regime_label": str(regime_label),
-            "regime_gate_active": True,
-            "view_confidence": 0.0,
-            "edge": float(base_rate - p_tail_base),
-            "portfolio_vol_ann": np.nan,
-            "dead_band_hold": 0,
-        }
-
-    # Estimate covariance
-    available_cols = [a for a in asset_names if a in returns_history.columns]
-    if len(available_cols) < 2:
-        fallback_w = np.array([0.60, 0.40])[:n]
-        return fallback_w, {"method": "fallback_no_data"}
-
-    cov = estimate_covariance(
-        returns_history[available_cols],
-        window=cfg.cov_window,
-        ewm_halflife=cfg.cov_ewm_halflife,
-    )
-
-    # Market weights (CAPM prior)
-    market_w = np.array([cfg.market_weights.get(a, 1.0/n) for a in available_cols])
-    market_w = market_w / market_w.sum()
-
-    # Construct model view
-    # Edge = model's prediction above base rate
-    # Positive edge → VOO expected to outperform IEF
-    edge = base_rate - p_tail_base  # positive = model expects VOO to outperform
-    view_confidence = float(np.clip((raw_val_auc - 0.50) / 0.08, 0.0, 1.0)) if np.isfinite(raw_val_auc) else 0.3
-    # Steeper confidence mapping vs the original (auc-0.50)/0.15:
-    # At AUC=0.541: old=0.273 → new=0.513  (model view gets ~2x more weight in BL)
-    # At AUC=0.55:  old=0.333 → new=0.625
-    # At AUC=0.58:  old=0.533 → new=1.000  (saturates at strong but realistic AUC)
-    # At AUC=0.50:  both=0.000 (null model contributes nothing — unchanged)
-    # Motivation: with the old mapping the BL posterior was 79% prior / 21% model view.
-    # At AUC=0.541 with the new mapping: ~50% prior / 50% model view.  The model's
-    # signal now materially reaches the portfolio instead of being near-drowned by CAPM.
-
-    # Convert edge to expected annualized excess return.
-    # FIX: removed ann_factor = 252/horizon.
-    # At H=1, ann_factor=252 caused view_return to always saturate the ±0.08 clip,
-    # making edge magnitude carry zero information into the BL posterior.
-    # Direct formulation: 10% annualized return per unit of model edge.
-    # This is horizon-invariant and preserves edge signal at all frequencies.
-    view_return = float(np.clip(edge * 0.10, -0.08, 0.08))  # max ±8% annual view
-
-    model_view = {
-        "voo_excess_view": view_return,
-        "view_confidence": view_confidence,
-    }
-
-    # Expected returns from Black-Litterman.
-    # Both pi (CAPM equilibrium) and q (model view) are expressed in annual units.
-    # estimate_covariance() returns an annualised covariance matrix, so passing
-    # cov here keeps all three quantities — pi, q, Sigma — on the same annual scale.
-    mu_bl = estimate_expected_returns(
-        model_view, market_w, cov, available_cols,
-        tau=cfg.tau, risk_aversion=cfg.risk_aversion
-    )
-
-    # FIX (Audit 2026-04, cov_h unit mismatch):
-    # The previous code computed cov_h = cov * (1/252) and passed it to the
-    # optimizer alongside mu_bl (annual units).  The mean-variance objective is:
-    #
-    #   maximize  mu @ w  -  0.5 * lambda * w' Sigma w
-    #
-    # With mu annual (~0.05) and Sigma daily (cov/252, diagonal ~0.0001), the risk
-    # term is ~252x smaller than it should be relative to the return term.  The
-    # effective risk aversion is lambda/252 ≈ 0.01 instead of 2.5, so the optimizer
-    # sees the portfolio as essentially risk-free and maximises return by pushing to
-    # the upper bound on whichever asset has the highest expected return (VOO).
-    # Result: w_voo = voo_max on all 4 unconstrained runs; dead-band then locks
-    # that weight for all 1,641 subsequent days.  The Black-Litterman computation
-    # was entirely bypassed in practice.
-    #
-    # Fix: pass the annualised covariance (cov) to the optimizer, consistent with
-    # the annualised mu_bl.  Both return and risk are now on the same scale, so
-    # the optimizer genuinely trades off expected return against variance.
-    # cov_h is removed; it served no correct purpose anywhere in this function.
-
-    # Regime-conditional risk aversion adjustment
-    regime_mult = cfg.regime_risk_multipliers.get(str(regime_label).lower(), 0.70)
-    eff_risk_aversion = cfg.risk_aversion / regime_mult  # higher RA in bad regimes
-
-    # Position bounds (regime-adjusted)
-    # FIX 1: in crisis regimes, cfg.w_voo_max * regime_mult can fall below cfg.w_voo_min
-    # (e.g. 0.75 * 0.40 = 0.30 < 0.35), which caused scipy to raise:
-    # "An upper bound is less than the corresponding lower bound."
-    # Clamp bounds so every (lb, ub) pair is feasible.
-    # FIX 2: cap voo_max at 0.70 to match Part 2's MAX_W_VOO hard ceiling.
-    # Without this cap, risk_on regime gives voo_max = 0.75 * 1.20 = 0.90, which
-    # exceeds Part 2's constraint and creates an inconsistent weight space between
-    # the two optimizers. The cap makes Part 7 a strict subset of Part 2's feasible set.
-    PART2_MAX_W_VOO: float = 0.70
-    voo_min = max(cfg.w_voo_min, 0.30)
-    voo_max = max(voo_min, min(cfg.w_voo_max * regime_mult, PART2_MAX_W_VOO))
-    ief_min = cfg.w_ief_min
-    ief_max = max(ief_min, cfg.w_ief_max)
-    bounds = []
-    for a in available_cols:
-        if a == "VOO":
-            bounds.append((float(voo_min), float(voo_max)))
-        elif a == "IEF":
-            bounds.append((float(ief_min), float(ief_max)))
-        else:
-            bounds.append((0.0, 0.25))  # Other assets: max 25%
-
-    # Recent scenario returns for CVaR
-    scenario_ret = returns_history[available_cols].dropna().tail(252).values
-
-    # Optimize
-    w_opt = optimize_weights_cvxpy(
-        mu_bl, cov, available_cols, bounds,
-        risk_aversion=eff_risk_aversion,
-        prev_weights=prev_weights,
-        max_turnover=cfg.max_turnover,
-        slip_bps=cfg.slip_bps,
-        scenario_returns=scenario_ret if len(scenario_ret) > 20 else None,
-        max_cvar=cfg.max_cvar_budget,
-        cvar_confidence=cfg.cvar_confidence,
-    )
-
-    diag = {
-        "method": "black_litterman_cvar",
-        "model_view_return": float(view_return),
-        "view_confidence": float(view_confidence),
-        "regime_label": str(regime_label),
-        "regime_mult": float(regime_mult),
-        "eff_risk_aversion": float(eff_risk_aversion),
-        "assets": available_cols,
-        "weights": w_opt.tolist(),
-        "w_voo": float(w_opt[available_cols.index("VOO")]) if "VOO" in available_cols else np.nan,
-        "w_ief": float(w_opt[available_cols.index("IEF")]) if "IEF" in available_cols else np.nan,
-        "p_tail_base": float(p_tail_base),
-        "edge": float(edge),
-        "portfolio_vol_ann": float(np.sqrt(w_opt @ cov @ w_opt)) if len(w_opt) == len(cov) else np.nan,
-    }
-    return w_opt, diag
+def _must_find(label: str, candidates: Sequence[str], root: Path) -> Path:
+    p = _first_existing_path(candidates, root)
+    if p is None:
+        attempted = "\n".join(str(x) for x in _expand_candidate_paths(candidates, root))
+        raise FileNotFoundError(f"{label} not found. Attempted:\n{attempted}")
+    return p
 
 
-# ============================================================
-# Kelly fraction position sizing
-# ============================================================
-
-def kelly_fraction(
-    edge: float,        # Expected return per unit risk (e.g., AUC - 0.5)
-    odds: float,        # Ratio of win:loss
-    confidence: float,  # Model confidence in edge estimate
-    max_fraction: float = 0.25,  # Cap for fractional Kelly
-) -> float:
-    """
-    Fractional Kelly criterion for position sizing.
-
-    Full Kelly: f = edge / odds (too aggressive for real trading)
-    Fractional Kelly: f_frac = confidence × full_kelly
-
-    For a binary outcome (VOO underperforms or not):
-        edge = P(win) - P(lose) = (1 - p_tail) - p_tail = 1 - 2p_tail
-        odds = average win / average loss
-
-    Returns fraction of portfolio to allocate to the active bet.
-    """
-    if not np.isfinite(edge) or not np.isfinite(odds) or odds <= 0:
-        return 0.0
-    full_kelly = edge / odds
-    fractional = confidence * full_kelly
-    return float(np.clip(fractional, 0.0, max_fraction))
+def _ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
 
 
-# ============================================================
-# Main
-# ============================================================
+def _read_csv(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    for c in ["Date", "decision_date", "target_date", "asof_date"]:
+        if c in df.columns:
+            df[c] = pd.to_datetime(df[c], errors="coerce")
+    return df
 
 
+def _read_json(path: Path) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def _json_safe(obj):
-    """Convert pandas / NumPy / datetime objects into JSON-safe scalars."""
-    import math
-    from datetime import date, datetime
-    from pathlib import Path
 
-    import numpy as np
-    import pandas as pd
+def _first_col(df: pd.DataFrame, names: Sequence[str]) -> Optional[str]:
+    for n in names:
+        if n in df.columns:
+            return n
+    return None
 
-    if obj is None:
+
+def _series(df: pd.DataFrame, names: Sequence[str], numeric: bool = False) -> Optional[pd.Series]:
+    col = _first_col(df, names)
+    if col is None:
         return None
-    if isinstance(obj, (bool, np.bool_)):
-        return bool(obj)
-    if isinstance(obj, (int, np.integer)):
-        return int(obj)
-    if isinstance(obj, (float, np.floating)):
-        x = float(obj)
-        return None if (math.isnan(x) or math.isinf(x)) else x
-    if isinstance(obj, (pd.Timestamp, datetime, date)):
-        return pd.Timestamp(obj).isoformat()
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, Path):
-        return str(obj)
-    return str(obj)
+    s = df[col]
+    return pd.to_numeric(s, errors="coerce") if numeric else s
 
-def main() -> int:
-    cfg = Part7Config()
-    cfg = dataclasses.replace(cfg, part0_dir=_abs_path(cfg.part0_dir))
-    cfg = dataclasses.replace(cfg, part2_dir=_abs_path(cfg.part2_dir))
-    cfg = dataclasses.replace(cfg, part6_dir=_abs_path(cfg.part6_dir))
-    cfg = dataclasses.replace(cfg, out_dir=_abs_path(cfg.out_dir))
-    os.makedirs(cfg.out_dir, exist_ok=True)
 
-    print("=" * 70)
-    print("PART 7 — Portfolio Construction & Risk Budgeting v1")
-    print("=" * 70)
+def _last_valid_row(df: pd.DataFrame) -> pd.Series:
+    if df.empty:
+        raise ValueError("DataFrame is empty")
+    xcol = _first_col(df, ["Date", "decision_date", "target_date"])
+    if xcol is not None:
+        g = df.copy()
+        g = g[pd.to_datetime(g[xcol], errors="coerce").notna()]
+        if not g.empty:
+            g = g.sort_values(xcol)
+            return g.iloc[-1]
+    return df.iloc[-1]
 
-    close_path = os.path.join(cfg.part0_dir, "close_prices.parquet")
-    tape_path = os.path.join(cfg.part2_dir, "g532_final_consensus_tape.csv")
-    if not os.path.exists(close_path):
-        print("[Part 7] Part 0 close prices not found. Run Part 0 first.")
+
+def _safe_float(x: Any) -> Optional[float]:
+    try:
+        if x is None:
+            return None
+        if isinstance(x, str) and not x.strip():
+            return None
+        y = float(x)
+        if math.isnan(y):
+            return None
+        return y
+    except Exception:
+        return None
+
+
+def _safe_int(x: Any, default: int = 0) -> int:
+    v = _safe_float(x)
+    return default if v is None else int(round(v))
+
+
+def _json_value(obj: Dict[str, Any], keys: Sequence[str], default: Any = None) -> Any:
+    for k in keys:
+        if k in obj and obj[k] is not None:
+            return obj[k]
+    return default
+
+
+def _row_value(row: pd.Series, keys: Sequence[str], default: Any = None) -> Any:
+    for k in keys:
+        if k in row.index and pd.notna(row[k]):
+            return row[k]
+    return default
+
+
+def _normalize_publish_mode(x: Any) -> str:
+    s = str(x).strip().upper() if x is not None else "UNKNOWN"
+    allowed = {"NORMAL", "DEFENSE_ONLY", "FAIL_CLOSED_NEUTRAL"}
+    return s if s in allowed else "UNKNOWN"
+
+
+def _boolish(x: Any, default: int = 0) -> int:
+    if isinstance(x, bool):
+        return int(x)
+    if isinstance(x, (int, float)):
+        return int(float(x) != 0.0)
+    if x is None:
+        return default
+    s = str(x).strip().lower()
+    if s in {"1", "true", "yes", "y", "open", "live"}:
         return 1
-    if not os.path.exists(tape_path):
-        print("[Part 7] Part 2 tape not found. Run Part 2 first.")
-        return 1
+    if s in {"0", "false", "no", "n", "closed", "shadow"}:
+        return 0
+    return default
 
-    close = pd.read_parquet(close_path)
-    close.index = pd.to_datetime(close.index)
-    returns = np.log(close).diff()
-    tape = pd.read_csv(tape_path)
-    tape["Date"] = pd.to_datetime(tape["Date"], errors="coerce")
-    tape = tape.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
 
-    # Load the Part 2 summary JSON once before the row loop.
-    # The consensus tape carries publish_fail_closed (int) but no publish_mode
-    # string, so row.get("publish_mode") always returns "UNKNOWN".  The summary
-    # JSON is the authoritative source for publish_mode and final_pass.
-    _p2_summary: Dict = {}
-    for _p2_name in ("part2_g532_summary.json", "part2_summary.json"):
-        _p2_path = os.path.join(cfg.part2_dir, _p2_name)
-        if os.path.exists(_p2_path):
-            try:
-                with open(_p2_path, "r", encoding="utf-8") as _f:
-                    _p2_summary = json.load(_f)
-                break
-            except Exception:
-                pass
-    _p2_publish_mode = str(_p2_summary.get("publish_mode", "UNKNOWN")).strip().upper()
-    if _p2_publish_mode not in {"NORMAL", "FAIL_CLOSED_NEUTRAL", "DEFENSE_ONLY"}:
-        _p2_publish_mode = "UNKNOWN"
-    _p2_final_pass = bool(_p2_summary.get("final_pass", False))
+def _state_display(state: str) -> str:
+    if state == "ELIGIBLE":
+        return "CANDIDATE"
+    return state
 
-    rows = []
-    prev_weights = np.array([0.60, 0.40], dtype=float)
-    for _, row in tape.iterrows():
-        dt = pd.Timestamp(row["Date"])
-        hist = returns.loc[returns.index <= dt, [c for c in cfg.universe if c in returns.columns]].dropna(how="all")
-        if hist.empty:
-            continue
-        p_tail = float(row.get("p_final_cal", row.get("p_final_g5", 0.20)))
-        base_rate = float(row.get("base_rate", row.get("T", 0.20)))
-        raw_auc = float(row.get("raw_val_auc", 0.55)) if np.isfinite(row.get("raw_val_auc", np.nan)) else 0.55
-        regime_label = normalize_regime_label(row.get("regime_label", "unknown"))
-        # Use Part 2 summary JSON values (loaded once above) — the tape does not
-        # carry a publish_mode string column, so per-row reads always return UNKNOWN.
-        publish_mode = _p2_publish_mode
-        final_pass = _p2_final_pass
-        alloc, diag = compute_allocation(
-            p_tail_base=p_tail,
-            base_rate=base_rate,
-            raw_val_auc=raw_auc,
-            regime_label=regime_label,
-            returns_history=hist,
-            prev_weights=prev_weights[:2],
-            cfg=cfg,
-        )
-        voo_idx = cfg.universe.index("VOO") if "VOO" in cfg.universe else 0
-        ief_idx = cfg.universe.index("IEF") if "IEF" in cfg.universe else 1
-        w_voo = float(alloc[voo_idx]) if len(alloc) > voo_idx else 0.60
-        w_ief = float(alloc[ief_idx]) if len(alloc) > ief_idx else 0.40
-        # FIX (Audit 2026-05-07 — Soft-clearance fallback):
-        # When final_pass is locked at False due to Part 2's circular dependency
-        # (predictive_quality_ok requiring active_mean > 0 in fail_closed mode),
-        # the BL optimizer was permanently bypassed even when the model has genuine
-        # predictive quality (raw_val_auc_median >= 0.52).
-        #
-        # Policy:
-        #   - Hard fail_closed (SHADOW / UNKNOWN publish_mode): always 60/40.
-        #   - FAIL_CLOSED_NEUTRAL with raw_val_auc_median >= 0.52: allow BL optimizer
-        #     to run as a soft-clearance path. The optimizer output is used as the
-        #     base weights, but the fail_closed governance context is preserved in
-        #     the diagnostics.  This allows Part 7 to provide meaningful regime-
-        #     conditional weights rather than a permanent 60/40 even when Part 2
-        #     hasn't fully cleared all governance gates.
-        #   - Once final_pass = True (publish_mode = NORMAL): full BL optimizer.
-        #
-        # The primary fix is in part2_predictor.py (removing the circular deadlock
-        # in predictive_quality_ok). This soft-clearance is a defence-in-depth guard.
-        _p2_raw_val_auc = float(_p2_summary.get("raw_val_auc_median", 0.0) or 0.0)
-        _soft_clearance_eligible = bool(
-            np.isfinite(_p2_raw_val_auc) and _p2_raw_val_auc >= 0.52
-            and publish_mode not in {"SHADOW", "UNKNOWN"}
-        )
-        fail_closed_override = bool(
-            publish_mode in {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"} or not final_pass
-        ) and not _soft_clearance_eligible
-        if fail_closed_override:
-            # Governance override is authoritative. After fail-closed neutral is
-            # imposed, diagnostics must describe the published 60/40 weights, not
-            # the optimizer's discarded proposal.
-            w_voo, w_ief = 0.60, 0.40
-            diag["method"] = "fail_closed_neutral"
-            diag["crisis_cap_applied"] = 0
-            diag["dead_band_hold"] = 0
-        elif abs(w_voo - float(prev_weights[0])) < cfg.min_rebalance_threshold:
-            w_voo = float(prev_weights[0])
-            w_ief = float(prev_weights[1])
-            diag["dead_band_hold"] = 1
-        else:
-            diag["dead_band_hold"] = 0
-        rows.append({
-            "Date": dt,
-            "w_target_voo": w_voo,
-            "w_target_ief": w_ief,
-            "regime_label": regime_label,
-            "p_tail_base": p_tail,
-            "base_rate": base_rate,
-            "raw_val_auc": raw_auc,
-            "optimizer": diag.get("method", "black_litterman_cvar"),
-            "portfolio_vol_ann": diag.get("portfolio_vol_ann", np.nan),
-            "view_confidence": diag.get("view_confidence", np.nan),
-            "edge": diag.get("edge", np.nan),
-            "dead_band_hold": diag.get("dead_band_hold", 0),
-            "publish_mode": publish_mode,
-            "final_pass": int(final_pass),
-        })
-        prev_weights = np.array([w_voo, w_ief], dtype=float)
 
-    if not rows:
-        print("[Part 7] No allocation rows produced.")
-        return 1
+def _canonical_state(state: Any) -> str:
+    s = str(state).strip().upper() if state is not None else "SHADOW"
+    if not s:
+        return "SHADOW"
+    allowed = {"SHADOW", "ELIGIBLE", "LIVE_TRIAL", "LIVE_FUSED", "CANDIDATE"}
+    if s not in allowed:
+        return "SHADOW"
+    return "ELIGIBLE" if s == "CANDIDATE" else s
 
-    weights_tape = pd.DataFrame(rows)
-    weights_tape.to_csv(os.path.join(cfg.out_dir, "portfolio_weights_tape.csv"), index=False)
-    latest = {k: _json_safe(v) for k, v in weights_tape.iloc[-1].to_dict().items()}
-    with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w", encoding="utf-8") as f:
-        json.dump(latest, f, indent=2)
 
-    meta = {
-        "version": cfg.version,
-        "built_at": datetime.now(timezone.utc).isoformat(),
-        "universe": list(cfg.universe),
-        "optimizer": "cvxpy" if HAVE_CVXPY else "scipy",
-        "rows": int(len(weights_tape)),
+# Numeric rank for the promotion ladder — used to take the higher of two states.
+_STATE_RANK: Dict[str, int] = {
+    "SHADOW": 0,
+    "ELIGIBLE": 1,
+    "LIVE_TRIAL": 2,
+    "LIVE_FUSED": 3,
+}
+
+
+def _infer_promotion_state(
+    realized_dates: int,
+    quality_ok: int,
+    drift_ok: int,
+    trial_gate_open: int,
+    fused_gate_open: int,
+    thresholds: Dict[str, Any],
+) -> str:
+    """Derive the canonical alpha promotion state from first principles.
+
+    This is the authoritative state-assignment path. Part 2A does not write
+    an ``alpha_state`` or ``latest_alpha_state`` field to its outputs — it
+    writes ``alpha_governance_tier``, ``latest_eligible``, etc. — so the
+    prior lookup-first strategy always fell through to the "SHADOW" default,
+    producing a locked-SHADOW tape regardless of realized_dates or gate flags.
+
+    State ladder (each level requires all lower conditions):
+      SHADOW     : realized_dates < th_eligible  OR  quality/drift gate failed
+      ELIGIBLE   : realized_dates >= th_eligible AND quality_ok AND drift_ok
+      LIVE_TRIAL : ELIGIBLE conditions AND realized_dates >= th_trial
+                   AND trial_gate_open
+      LIVE_FUSED : LIVE_TRIAL conditions AND realized_dates >= th_fused
+                   AND fused_gate_open
+
+    All threshold keys are read with safe integer conversion so stale or
+    missing JSON values fall back to the hard-coded defaults (26 / 52 / 78).
+    """
+    th_e = max(1, int(thresholds.get("Eligible", 26) or 26))
+    th_t = max(th_e + 1, int(thresholds.get("Trial", 52) or 52))
+    th_f = max(th_t + 1, int(thresholds.get("Fused", 78) or 78))
+
+    # Quality and drift are hard gates — failure at any level returns SHADOW.
+    if not quality_ok or not drift_ok:
+        return "SHADOW"
+    if realized_dates < th_e:
+        return "SHADOW"
+    # ELIGIBLE floor — gates above here are soft (closed gate → stay at lower tier).
+    if realized_dates >= th_f and fused_gate_open:
+        return "LIVE_FUSED"
+    if realized_dates >= th_t and trial_gate_open:
+        return "LIVE_TRIAL"
+    return "ELIGIBLE"
+
+
+def _extract_latest_price_call(defense_row: pd.Series) -> Tuple[Optional[float], Optional[float]]:
+    voo = _safe_float(_row_value(defense_row, [
+        "px_voo_call_1d", "voo_call_1d", "px_voo_call_7d", "voo_call_7d", "voo_target_price", "VOO_target_price", "price_call_voo"
+    ]))
+    ief = _safe_float(_row_value(defense_row, [
+        "px_ief_call_1d", "ief_call_1d", "px_ief_call_7d", "ief_call_7d", "ief_target_price", "IEF_target_price", "price_call_ief"
+    ]))
+    return voo, ief
+
+
+def _extract_base_weights(defense_row: pd.Series) -> Tuple[float, float]:
+    voo = _safe_float(_row_value(defense_row, [
+        "w_strategy_voo", "w_voo", "weight_voo", "alloc_voo", "defense_weight_voo", "voo_weight"
+    ]))
+    ief = _safe_float(_row_value(defense_row, [
+        "w_strategy_ief", "w_ief", "weight_ief", "alloc_ief", "defense_weight_ief", "ief_weight"
+    ]))
+    if voo is None and ief is None:
+        return CFG.default_voo_weight, CFG.default_ief_weight
+    if voo is None:
+        voo = max(0.0, 1.0 - float(ief))
+    if ief is None:
+        ief = max(0.0, 1.0 - float(voo))
+    total = max(float(voo) + float(ief), 1e-12)
+    return float(voo) / total, float(ief) / total
+
+
+def _load_part7_base_weights(root: Path) -> Tuple[Optional[float], Optional[float]]:
+    """Load the latest target portfolio weights from Part 7's output tape.
+
+    Part 3's default base weights (60/40) are stale relative to Part 7's
+    Black-Litterman/CVaR output, which currently targets ~70/30. Using Part 3's
+    defaults produces a fusion allocation whose core VOO sleeve is
+    systematically 10 pp too low, misaligning the allocation tape with the
+    portfolio construction output.
+
+    Returns (w_target_voo, w_target_ief) normalised to sum to 1.0, or
+    (None, None) if the tape cannot be found or parsed. Part 3 falls back
+    to _extract_base_weights(defense_row) → CFG defaults on None.
+    """
+    p = _first_existing_path(["artifacts_part7/portfolio_weights_tape.csv"], root)
+    if p is None:
+        return None, None
+    try:
+        df = _read_csv(p)
+        if df.empty:
+            return None, None
+        row = _last_valid_row(df)
+        voo = _safe_float(_row_value(row, ["w_target_voo", "w_voo", "target_weight_voo", "voo_weight"]))
+        ief = _safe_float(_row_value(row, ["w_target_ief", "w_ief", "target_weight_ief", "ief_weight"]))
+        if voo is None or ief is None:
+            return None, None
+        total = float(voo) + float(ief)
+        if total <= 1e-12:
+            return None, None
+        return float(voo) / total, float(ief) / total
+    except Exception:
+        return None, None
+
+
+def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str, Any]) -> Dict[str, Any]:
+    latest_row = _last_valid_row(alpha_tape_df) if not alpha_tape_df.empty else pd.Series(dtype=object)
+
+    # ── realized_dates ──────────────────────────────────────────────────────
+    # Primary source: alpha_summary_json["realized_dates"] — set by Part 2A
+    # to the count of historical dates where realized returns are available.
+    # Fallback chain: tape row columns → len(tape).
+    realized_dates = _safe_int(
+        _json_value(alpha_summary_json, ["realized_dates", "n_realized_dates", "realized_rows"],
+                    _row_value(latest_row, ["realized_dates", "realized_rows"], len(alpha_tape_df))),
+        default=len(alpha_tape_df),
+    )
+
+    budget_mult = _safe_float(
+        _row_value(latest_row, ["budget_mult", "alpha_budget_mult"],
+                   _json_value(alpha_summary_json, ["budget_mult", "alpha_budget_mult"], 1.0))
+    )
+    if budget_mult is None:
+        budget_mult = 1.0
+
+    drift_rate = _safe_float(
+        _row_value(latest_row, ["drift_rate", "alpha_drift_rate"],
+                   _json_value(alpha_summary_json, ["drift_rate", "alpha_drift_rate"], 0.0))
+    )
+    if drift_rate is None:
+        drift_rate = 0.0
+
+    quality_ok = _boolish(_row_value(latest_row, ["quality_ok"], _json_value(alpha_summary_json, ["quality_ok"], 1)), 1)
+    drift_ok = _boolish(_row_value(latest_row, ["drift_ok"], _json_value(alpha_summary_json, ["drift_ok"], 1)), 1)
+    trial_gate_open = _boolish(_row_value(latest_row, ["trial_gate_open"], _json_value(alpha_summary_json, ["trial_gate_open"], 1)), 1)
+    fused_gate_open = _boolish(_row_value(latest_row, ["fused_gate_open"], _json_value(alpha_summary_json, ["fused_gate_open"], 1)), 1)
+    promotion_ready = _boolish(_row_value(latest_row, ["promotion_ready"], _json_value(alpha_summary_json, ["promotion_ready"], 1)), 1)
+
+    blockers = _row_value(latest_row, ["alpha_blockers", "blockers"], _json_value(alpha_summary_json, ["alpha_blockers", "blockers"], "NONE"))
+    if blockers is None or (isinstance(blockers, float) and math.isnan(blockers)):
+        blockers = "NONE"
+    if isinstance(blockers, list):
+        blockers = ", ".join(str(x) for x in blockers) if blockers else "NONE"
+
+    thresholds = {
+        "Eligible": _safe_int(_json_value(alpha_summary_json, ["eligible_threshold", "Eligible"], 26), 26),
+        "Trial": _safe_int(_json_value(alpha_summary_json, ["trial_threshold", "Trial"], 52), 52),
+        "Fused": _safe_int(_json_value(alpha_summary_json, ["fused_threshold", "Fused"], 78), 78),
+        "Max drift rate": _safe_float(_json_value(alpha_summary_json, ["max_drift_rate", "max_alpha_drift_rate"], 0.80)) or 0.80,
     }
-    meta = {k: _json_safe(v) for k, v in meta.items()}
-    with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
 
-    print(f"\n✅ PART 7 COMPLETE | rows={len(weights_tape)}")
-    print(f"   Wrote: {os.path.join(cfg.out_dir, 'portfolio_weights_tape.csv')}")
+    # ── latest_state — derived from first principles ─────────────────────────
+    # FIX: Part 2A does not write an `alpha_state` or `latest_alpha_state`
+    # field to its summary tape or summary JSON. The previous lookup:
+    #
+    #   _row_value(latest_row, ["alpha_state_display", "alpha_state", ...],
+    #              _json_value(alpha_summary_json,
+    #                  ["latest_alpha_state_display", "latest_alpha_state", "alpha_state"],
+    #                  "SHADOW"))
+    #
+    # always fell through to the "SHADOW" default, locking the entire tape
+    # at SHADOW regardless of how many realized dates had accumulated or
+    # whether all promotion gates were open.
+    #
+    # The authoritative state is now always computed by _infer_promotion_state
+    # using the realized_dates derived above and the gate flags read from the
+    # alpha summary JSON / tape row.  The state is fully re-derived from
+    # underlying variables on every run, so stale alpha_state fields in older
+    # artifacts do not corrupt it.
+    # This eliminates the dependency on Part 2A writing a field it never wrote.
+    #
+    # For forward-compatibility: if a future Part 2A version does write
+    # alpha_state to its outputs, _infer_promotion_state still produces the
+    # correct answer because it re-derives state from underlying variables.
+    latest_state = _infer_promotion_state(
+        realized_dates=realized_dates,
+        quality_ok=quality_ok,
+        drift_ok=drift_ok,
+        trial_gate_open=trial_gate_open,
+        fused_gate_open=fused_gate_open,
+        thresholds=thresholds,
+    )
+
+    latest_alpha_eligible = _boolish(
+        _row_value(latest_row, ["latest_eligible", "eligible"], _json_value(alpha_summary_json, ["latest_eligible"], 0)),
+        0,
+    )
+    latest_alpha_abs = _safe_float(
+        _row_value(
+            latest_row,
+            ["latest_alpha_abs", "latest_alpha_position", "alpha_abs", "alpha_position"],
+            _json_value(alpha_summary_json, ["latest_alpha_abs", "latest_alpha_position"], 0.0),
+        )
+    )
+    if latest_alpha_abs is None:
+        latest_alpha_abs = 0.0
+    latest_alpha_reason = str(
+        _row_value(latest_row, ["latest_reason", "reason"], _json_value(alpha_summary_json, ["latest_reason"], "unknown"))
+    )
+
+    alpha_live = latest_state in {"LIVE_TRIAL", "LIVE_FUSED"}
+    if latest_state == "LIVE_FUSED":
+        alpha_live = alpha_live and bool(fused_gate_open)
+    if latest_state == "LIVE_TRIAL":
+        alpha_live = alpha_live and bool(trial_gate_open)
+    alpha_live = alpha_live and bool(quality_ok) and bool(drift_ok) and budget_mult > 0
+    alpha_live = alpha_live and bool(latest_alpha_eligible) and float(latest_alpha_abs) > 0.0
+
+    if (not latest_alpha_eligible) or float(latest_alpha_abs) <= 0.0:
+        current_alpha_live_status = "FLAT_VETOED" if latest_alpha_reason != "ok" else "FLAT_INACTIVE"
+    else:
+        current_alpha_live_status = latest_state
+
+    return {
+        "latest_state": latest_state,
+        "display_state": _state_display(latest_state),
+        "realized_dates": realized_dates,
+        "budget_mult": float(budget_mult),
+        "drift_rate": float(drift_rate),
+        "quality_ok": quality_ok,
+        "drift_ok": drift_ok,
+        "trial_gate_open": trial_gate_open,
+        "fused_gate_open": fused_gate_open,
+        "promotion_ready": promotion_ready,
+        "blockers": str(blockers),
+        "alpha_live": int(alpha_live),
+        "current_alpha_live_status": str(current_alpha_live_status),
+        "current_alpha_reason": str(latest_alpha_reason),
+        "current_alpha_eligible": int(latest_alpha_eligible),
+        "current_alpha_abs": float(latest_alpha_abs),
+        "thresholds": thresholds,
+    }
+
+
+def _alpha_distribution(alpha_tape_df: pd.DataFrame, alpha_status: Optional[Dict[str, Any]] = None) -> pd.Series:
+    col = _first_col(alpha_tape_df, ["alpha_state", "alpha_state_display", "state"])
+    if col is None or alpha_tape_df.empty:
+        if alpha_status and alpha_status.get("latest_state"):
+            return pd.Series({str(alpha_status["latest_state"]).upper(): 1.0}, dtype=float)
+        return pd.Series(dtype=float)
+    s = alpha_tape_df[col].astype(str).str.upper().replace({"CANDIDATE": "ELIGIBLE"})
+    s = s[s.notna() & (s != "")]
+    if s.empty and alpha_status and alpha_status.get("latest_state"):
+        return pd.Series({str(alpha_status["latest_state"]).upper(): 1.0}, dtype=float)
+    return s.value_counts(normalize=True).sort_index()
+
+
+def _extract_alpha_positions(alpha_positions_df: pd.DataFrame) -> pd.DataFrame:
+    """Return the latest-date alpha positions as raw portfolio weights.
+
+    FIX A (v1) — 'Ticker' added to ticker lookup.
+    FIX A (v2) — 'alpha_leg' added to ticker lookup.
+        Part 2A's positions CSV uses 'alpha_leg' (values: 'VOO' or 'FLAT').
+        'Ticker' and 'ticker' are not present in the actual schema.
+        Previous fix added 'Ticker' based on Part 4 GUI expected columns, which
+        reflect a historical schema Part 2A no longer writes.
+
+    FIX B (v1) — normalization removed.
+    FIX B (v2) — 'alpha_position' and 'w_alpha_voo' added to weight lookup.
+        Part 2A writes 'alpha_position' (and alias 'w_alpha_voo') as the
+        portfolio weight column. Neither 'weight', 'w', 'alloc', nor 'allocation'
+        is present. Both v1 lookups returned None → function returned an empty
+        DataFrame every run → no alpha sleeve was ever carved out despite
+        alpha_live=1 in governance.
+
+    Column map confirmed from part2a21_alpha.py lines 446–477:
+        ticker:  alpha_leg      (values: "VOO" | "FLAT")
+        weight:  alpha_position  (= w_alpha_voo; both are identical)
+
+    FLAT entries have alpha_position=0.0 and are dropped by the weight > 0 filter.
+    Raw weights are preserved (no normalization) as direct portfolio fractions.
+    """
+    if alpha_positions_df.empty:
+        return pd.DataFrame(columns=["ticker", "weight"])
+
+    g = alpha_positions_df.copy()
+    date_col = _first_col(g, ["Date", "decision_date", "asof_date"])
+    if date_col is not None:
+        d = pd.to_datetime(g[date_col], errors="coerce")
+        if d.notna().any():
+            g = g.loc[d == d.max()].copy()
+
+    # Part 2A writes 'alpha_leg'. Legacy/future schemas may use Ticker/ticker.
+    ticker_col = _first_col(g, ["alpha_leg", "Ticker", "ticker", "asset", "sleeve", "name", "symbol"])
+    # Part 2A writes 'alpha_position'. Legacy/future schemas may use weight/w.
+    weight_col = _first_col(g, ["alpha_position", "w_alpha_voo", "weight", "w", "alloc", "allocation"])
+    if ticker_col is None or weight_col is None:
+        return pd.DataFrame(columns=["ticker", "weight"])
+
+    out = g[[ticker_col, weight_col]].copy()
+    out.columns = ["ticker", "weight"]
+    out["ticker"] = out["ticker"].astype(str)
+    out["weight"] = pd.to_numeric(out["weight"], errors="coerce")
+    out = out.replace([np.inf, -np.inf], np.nan).dropna(subset=["weight"])
+    out = out.groupby("ticker", as_index=False)["weight"].sum()
+    # Keep only positive positions. FLAT rows (alpha_position=0) are dropped here.
+    out = out[out["weight"] > 0].copy()
+    # NOTE: do NOT normalize. Weights are already direct portfolio fractions.
+    # Normalizing to sum-to-1 would destroy the ~1.95% alpha magnitude.
+    return out.reset_index(drop=True)
+
+
+def _build_fusion_allocations(
+    decision_date: pd.Timestamp,
+    defense_row: pd.Series,
+    alpha_positions_df: pd.DataFrame,
+    alpha_status: Dict[str, Any],
+    part7_weights: Optional[Tuple[float, float]] = None,
+) -> Tuple[pd.DataFrame, float]:
+    # Base weights: prefer Part 7 portfolio construction output when available.
+    # Part 3's default fallback (0.60/0.40 from CFG) is misaligned with Part 7's
+    # current Black-Litterman/CVaR output (~0.70/0.30). If _load_part7_base_weights
+    # succeeded, those weights are passed in via part7_weights and used here.
+    if part7_weights is not None:
+        voo_base, ief_base = part7_weights
+    else:
+        voo_base, ief_base = _extract_base_weights(defense_row)
+    alpha_live = bool(alpha_status["alpha_live"])
+    budget_mult = float(alpha_status["budget_mult"])
+
+    rows: List[Dict[str, Any]] = []
+    voo_alpha_used = 0.0
+
+    if alpha_live and not alpha_positions_df.empty:
+        # FIX C — alpha sleeve sizing.
+        #
+        # Previous code:
+        #   alpha_share = min(voo_base, voo_base * budget_mult)   # always = voo_base = 0.60
+        #   alpha_positions["weight"] *= alpha_share              # 1.0 * 0.60 = 0.60 (after normalization)
+        #   voo_weight = max(0, voo_base - alpha_share)           # 0.60 - 0.60 = 0.0
+        #
+        # That routed the entire VOO sleeve to alpha because _extract_alpha_positions
+        # had normalized the Part 2A weight (0.0195) to 1.0 before arriving here.
+        # With the normalization fix in _extract_alpha_positions, weights are now
+        # raw portfolio fractions. The correct sizing is:
+        #
+        #   alpha_weight = raw_part2a_weight * budget_mult   (e.g. 0.0195 * 1.0 = 0.0195)
+        #   voo_core     = voo_base - alpha_weight            (e.g. 0.60  - 0.0195 = 0.5805)
+        #
+        # Safety cap: alpha sleeve cannot exceed voo_base regardless of budget_mult.
+        # If multiple alpha tickers sum above voo_base, scale all proportionally.
+        alpha_positions = alpha_positions_df.copy()
+        alpha_positions["weight"] = alpha_positions["weight"] * budget_mult
+
+        raw_alpha_total = float(alpha_positions["weight"].sum())
+        if raw_alpha_total > voo_base and raw_alpha_total > 0:
+            cap_scale = voo_base / raw_alpha_total
+            alpha_positions["weight"] = alpha_positions["weight"] * cap_scale
+
+        for _, r in alpha_positions.iterrows():
+            w = float(r["weight"])
+            if w <= 0:
+                continue
+            rows.append({
+                "Date": decision_date,
+                "sleeve": str(r["ticker"]),
+                "weight": w,
+                "is_alpha": 1,
+                "alpha_state": alpha_status["latest_state"],
+            })
+            voo_alpha_used += w
+
+    voo_weight = max(0.0, voo_base - voo_alpha_used)
+
+    rows.append({
+        "Date": decision_date,
+        "sleeve": "VOO",
+        "weight": float(voo_weight),
+        "is_alpha": 0,
+        "alpha_state": alpha_status["latest_state"],
+    })
+    rows.append({
+        "Date": decision_date,
+        "sleeve": "IEF",
+        "weight": float(ief_base),
+        "is_alpha": 0,
+        "alpha_state": alpha_status["latest_state"],
+    })
+
+    alloc = pd.DataFrame(rows)
+    total = float(alloc["weight"].sum()) if not alloc.empty else 0.0
+    if total <= 0:
+        alloc = pd.DataFrame([
+            {"Date": decision_date, "sleeve": "VOO", "weight": CFG.default_voo_weight, "is_alpha": 0, "alpha_state": alpha_status["latest_state"]},
+            {"Date": decision_date, "sleeve": "IEF", "weight": CFG.default_ief_weight, "is_alpha": 0, "alpha_state": alpha_status["latest_state"]},
+        ])
+        total = float(alloc["weight"].sum())
+    alloc["weight"] = alloc["weight"] / total
+    deviation = abs(float(alloc["weight"].sum()) - 1.0)
+    return alloc, deviation
+
+
+def _count_realized_fused_rows(tape: pd.DataFrame) -> int:
+    """Count live predictions whose realized prices have been backfilled.
+
+    NOTE: This function returns 0 to correctly reflect the live-prediction
+    realized state.  Historical tape rows are not 'fused live predictions'
+    regardless of whether their forward returns are revealed in the backtest
+    history. The prior implementation returned up to ~1,638 historical rows,
+    which contradicted the simultaneously-zero prediction_log_realized_rows.
+
+    The authoritative live realized count is prediction_log_realized_rows,
+    computed in _upsert_prediction_log and written to the summary dict.
+    rows_realized_fused=0 is kept for call-site compatibility; downstream
+    consumers must read prediction_log_realized_rows for the correct count.
+    See part3_summary.json: "prediction_log_realized_rows" for the live count.
+    """
+    # The authoritative live realized count is prediction_log_realized_rows,
+    # computed in _upsert_prediction_log and written to the summary dict.
+    # Return 0 here so rows_realized_fused reflects live-prediction state,
+    # not the 6-year historical tape.
     return 0
 
 
+def _prepare_production_tape(defense_df: pd.DataFrame, part2_summary: Dict[str, Any], alpha_status: Dict[str, Any], alpha_summary_json: Dict[str, Any]) -> pd.DataFrame:
+    tape = defense_df.copy()
+    if "Date" not in tape.columns:
+        dcol = _first_col(tape, ["decision_date", "target_date", "asof_date"])
+        if dcol is not None:
+            tape["Date"] = pd.to_datetime(tape[dcol], errors="coerce")
+        else:
+            tape["Date"] = pd.NaT
+    tape["publish_mode"] = _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN"))
+    tape["final_pass"] = _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)
+    tape["alpha_state"] = alpha_status["latest_state"]
+    tape["alpha_state_display"] = alpha_status["display_state"]
+    tape["alpha_live"] = alpha_status["alpha_live"]
+    tape["budget_mult"] = alpha_status["budget_mult"]
+    tape["drift_rate"] = alpha_status["drift_rate"]
+    tape["script_version_part2"] = str(_json_value(part2_summary, ["script_version", "version"], "UNKNOWN"))
+    tape["alpha_family"] = str(_json_value(alpha_summary_json, ["alpha_family", "version", "part"], "part2a21"))
+    return tape
+
+
+def _build_governance_df(decision_date: pd.Timestamp, part2_summary: Dict[str, Any], alpha_status: Dict[str, Any]) -> pd.DataFrame:
+    row = {
+        "Date": decision_date,
+        "publish_mode": _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN")),
+        "final_pass": _boolish(_json_value(part2_summary, ["final_pass"], 0), 0),
+        "quality_ok": alpha_status["quality_ok"],
+        "drift_ok": alpha_status["drift_ok"],
+        "trial_gate_open": alpha_status["trial_gate_open"],
+        "fused_gate_open": alpha_status["fused_gate_open"],
+        "promotion_ready": alpha_status["promotion_ready"],
+        "alpha_state": alpha_status["latest_state"],
+        "alpha_state_display": alpha_status["display_state"],
+        "alpha_live": alpha_status["alpha_live"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": alpha_status.get("current_alpha_eligible", 0),
+        "current_alpha_abs": alpha_status.get("current_alpha_abs", 0.0),
+        "drift_alarm": int(not alpha_status["drift_ok"]),
+        "drift_rate": alpha_status["drift_rate"],
+        "budget_mult": alpha_status["budget_mult"],
+        "alpha_blockers": alpha_status["blockers"],
+    }
+    return pd.DataFrame([row])
+
+
+def _count_realized_predlog_rows(predlog_df: pd.DataFrame) -> int:
+    if predlog_df.empty:
+        return 0
+    vcol = _first_col(predlog_df, ["px_voo_realized", "voo_realized"])
+    icol = _first_col(predlog_df, ["px_ief_realized", "ief_realized"])
+    if vcol is None or icol is None:
+        return 0
+    return int((predlog_df[vcol].notna() & predlog_df[icol].notna()).sum())
+
+
+def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, target_date: pd.Timestamp,
+                           voo_call: Optional[float], ief_call: Optional[float],
+                           publish_mode: str, final_pass: int, alpha_status: Dict[str, Any],
+                           defense_source: Path, alpha_sources: Dict[str, Path],
+                           defense_row: pd.Series, part2_summary: Dict[str, Any]) -> Tuple[pd.DataFrame, int]:
+    if predlog_path.exists():
+        predlog_df = _read_csv(predlog_path)
+    else:
+        predlog_df = pd.DataFrame()
+
+    if predlog_df.empty:
+        predlog_df = pd.DataFrame(columns=[
+            "decision_date", "target_date", "h_reb",
+            "px_voo_t", "px_ief_t",
+            "px_voo_call_1d", "px_ief_call_1d",
+            "p_final_cal", "base_rate", "raw_val_auc", "tail_threshold",
+            # publish_mode: raw Part 2 governance value (FAIL_CLOSED_NEUTRAL / NORMAL).
+            # deployment_mode: user-facing operational label (DEFENSE_ONLY / NORMAL).
+            # Keeping both columns avoids the cross-file field collision where predlog
+            # previously aliased FAIL_CLOSED_NEUTRAL → DEFENSE_ONLY in the publish_mode
+            # column, creating a mismatch with part3_summary.json's publish_mode field.
+            "publish_mode", "deployment_mode", "final_pass",
+            "latest_alpha_state", "alpha_live",
+            "historical_alpha_state", "current_alpha_live_status", "current_alpha_reason",
+            "current_alpha_eligible", "current_alpha_abs",
+            "defense_source", "alpha_positions_source", "alpha_summary_source",
+            "alpha_eligibility_source", "alpha_summary_json_source",
+            "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction"
+        ])
+
+    row = {
+        "decision_date": pd.Timestamp(decision_date).normalize(),
+        "target_date": pd.Timestamp(target_date).normalize(),
+        "h_reb": 1,
+        "px_voo_t": _safe_float(_row_value(defense_row, ["px_voo_t"], None)),
+        "px_ief_t": _safe_float(_row_value(defense_row, ["px_ief_t"], None)),
+        "px_voo_call_1d": voo_call,
+        "px_ief_call_1d": ief_call,
+        # NOTE: _7d alias columns removed. All consumers (backfill_realized.py,
+        # Part 9, Part 4) now prefer _1d explicitly and fall back gracefully.
+        # Existing rows in the prediction log retain their _7d columns harmlessly;
+        # new rows written from this point forward carry only _1d.
+        "p_final_cal": _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None)),
+        "base_rate": _safe_float(_row_value(defense_row, ["T", "base_rate", "b"], None)),
+        "raw_val_auc": _safe_float(_row_value(defense_row, ["raw_val_auc"], _json_value(part2_summary, ["raw_val_auc_median"], None))),
+        # FIX (Audit 2026-05-07 — CRITICAL Bug: wrong tail_threshold written to log):
+        # The previous lookup included "signal_q_threshold" in the priority chain.
+        # "signal_q_threshold" in the consensus tape is the DEFENSE TRIGGER quantile
+        # threshold (the rolling 56th-percentile of defense_trigger_raw, ≈ 0.15) — it
+        # has nothing to do with the tail EVENT threshold used to construct the label.
+        #
+        # Writing 0.15 as tail_threshold corrupts Part 9 live attribution: Part 9 uses
+        # this field to reconstruct y_live = (excess_ret < tail_threshold). With threshold
+        # = 0.15, nearly every daily return qualifies as a "tail event" (excess_ret < 0.15
+        # is true ~99% of the time), producing a base rate of ~1.0 instead of ~0.20 and
+        # making every AUC, Brier, and ECE metric meaningless.
+        #
+        # Corrected priority:
+        #   1. tail_threshold_dynamic — future-proofing if Part 2 ever writes a per-row
+        #      dynamic threshold column explicitly named "tail_threshold_dynamic"
+        #   2. part2_summary["tail_event_threshold"] — the authoritative H=1 daily
+        #      threshold = -0.015, validated against Part 1's rolling-quantile labels
+        #
+        # "signal_q_threshold" is REMOVED from the lookup chain.
+        #
+        # FIX (Audit 2026-05-07 — F2 + F4):
+        # Three-tier lookup with hardcoded last resort.
+        #
+        # F4: the prior `or`-based pattern is incorrect Python.  `x or y` treats
+        #     x as truthy/falsy: if x == 0.0 (valid but falsy), the chain silently
+        #     discards it and returns y.  Explicit `if x is not None` is required.
+        #
+        # F2: the prior chain had no hardcoded last resort.  If part2_g532_summary.json
+        #     is ever missing the "tail_event_threshold" key (schema migration, cold start,
+        #     truncated write), _safe_float(None) returns None and prediction_log gets a
+        #     null tail_threshold, silently breaking all Part 9 y_live reconstructions.
+        #     A hardcoded fallback of -0.015 (authoritative H=1 daily threshold) closes
+        #     this gap regardless of upstream schema changes.
+        #
+        # Priority chain (highest → lowest):
+        #   1. tail_threshold_dynamic  — per-row dynamic threshold if Part 2 ever writes it
+        #   2. part2_summary["tail_event_threshold"]  — -0.015 from the current summary JSON
+        #   3. -0.015 hardcoded  — last resort; matches H=1 base daily threshold
+        **{
+            "tail_threshold": _safe_float(
+                _row_value(defense_row, ["tail_threshold_dynamic"], None)
+                if _row_value(defense_row, ["tail_threshold_dynamic"], None) is not None
+                else (
+                    _json_value(part2_summary, ["tail_event_threshold"], None)
+                    if _json_value(part2_summary, ["tail_event_threshold"], None) is not None
+                    else -0.015  # hardcoded H=1 last resort
+                )
+            )
+        },
+        # publish_mode: raw governance value, consistent with part3_summary.json.
+        # deployment_mode: user-facing operational label (DEFENSE_ONLY when fail-closed).
+        # Separating these eliminates the prior cross-file field-name collision.
+        "publish_mode": publish_mode,
+        "deployment_mode": "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL" else publish_mode,
+        "final_pass": int(final_pass),
+        "latest_alpha_state": alpha_status["latest_state"],
+        "historical_alpha_state": alpha_status["latest_state"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": int(alpha_status.get("current_alpha_eligible", 0)),
+        "current_alpha_abs": float(alpha_status.get("current_alpha_abs", 0.0)),
+        "alpha_live": int(alpha_status["alpha_live"]),
+        "defense_source": str(defense_source),
+        "alpha_positions_source": str(alpha_sources["positions"]),
+        "alpha_summary_source": str(alpha_sources["summary_tape"]),
+        "alpha_eligibility_source": str(alpha_sources["eligibility"]),
+        "alpha_summary_json_source": str(alpha_sources["summary_json"]),
+    }
+
+    if "decision_date" in predlog_df.columns:
+        predlog_df["decision_date"] = pd.to_datetime(predlog_df["decision_date"], errors="coerce")
+        mask = predlog_df["decision_date"] == row["decision_date"]
+        if mask.any():
+            for k, v in row.items():
+                predlog_df.loc[mask, k] = v
+        else:
+            predlog_df = pd.concat([predlog_df, pd.DataFrame([row])], ignore_index=True)
+    else:
+        predlog_df = pd.concat([predlog_df, pd.DataFrame([row])], ignore_index=True)
+
+    predlog_df = predlog_df.sort_values("decision_date").reset_index(drop=True)
+    realized_rows = _count_realized_predlog_rows(predlog_df)
+    predlog_df.to_csv(predlog_path, index=False)
+    return predlog_df, realized_rows
+
+
+def _compute_ir_from_returns(values: Optional[pd.Series]) -> Optional[float]:
+    if values is None:
+        return None
+    s = pd.to_numeric(values, errors="coerce").dropna()
+    if s.empty:
+        return None
+    std = float(s.std(ddof=0))
+    if std <= 0:
+        return None
+    return float(s.mean() / std)
+
+
+def _extract_performance_metrics(defense_df: pd.DataFrame, alpha_summary_json: Dict[str, Any], alpha_status: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    defense_ir = _safe_float(_json_value(alpha_summary_json, ["defense_ir_net", "defense_ir"], None))
+    fused_ir = _safe_float(_json_value(alpha_summary_json, ["fused_ir_net", "fused_ir"], None))
+    active_ir = _safe_float(_json_value(alpha_summary_json, ["active_ir_vs_60_40", "active_ir"], None))
+    active_mean = _safe_float(_json_value(alpha_summary_json, ["active_mean", "active_return_mean"], None))
+    fusion_live_rate = _safe_float(_json_value(alpha_summary_json, ["fusion_live_rate", "fusion_live_rate_pct"], None))
+
+    if defense_ir is None:
+        defense_ir = _compute_ir_from_returns(_series(defense_df, ["ret_defense", "defense_return", "portfolio_return"], numeric=True))
+    if fused_ir is None:
+        fused_ir = defense_ir if alpha_status["alpha_live"] else defense_ir
+    if fusion_live_rate is None:
+        fusion_live_rate = 1.0 if alpha_status["alpha_live"] else 0.0
+
+    return {
+        "defense_ir": defense_ir,
+        "fused_ir": fused_ir,
+        "active_ir": active_ir,
+        "active_mean": active_mean,
+        "fusion_live_rate": fusion_live_rate,
+    }
+
+
+def _format_float(x: Optional[float], digits: int = 3) -> str:
+    return "NA" if x is None else f"{x:.{digits}f}"
+
+
+def _write_json(path: Path, obj: Dict[str, Any]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, default=str)
+
+
+# ============================================================
+# Regime-conditional Platt scaling
+# ============================================================
+
+def _fit_regime_platt_scaling(
+    defense_df: pd.DataFrame,
+    y_revealed_path: Optional[Path],
+    regime_history_path: Optional[Path],
+) -> Dict[str, Tuple[float, float]]:
+    """Fit per-regime logistic recalibration (Platt scaling) on the historical tape.
+
+    Joins three sources:
+      • defense_df         — Part 2 tape: Date, p_final_cal
+      • y_revealed_path    — Part 1 revealed labels: y_rel_tail_voo_vs_ief (index=Date)
+      • regime_history_path— Part 6 regime history: regime_label (index=Date)
+
+    Returns a dict mapping regime_label → (a, b) where the recalibrated probability is:
+        p_recal = σ(a * logit(p_final_cal) + b)
+
+    Also stores '_global' key as a fallback for unseen regime labels.
+
+    Design notes
+    ————————————
+    • Platt scaling has only 2 parameters per regime — extremely stable even at 200 rows.
+    • We fit on the full historical revealed tape (not a held-out set) because:
+        (a) the 2-parameter model cannot meaningfully overfit to 400+ observations, and
+        (b) using held-out data would discard ~3/4 of the already-small calibration set.
+    • If HAVE_PLATT is False (scipy/sklearn not available), returns empty dict and the
+      caller falls back to raw p_final_cal transparently.
+    """
+    if not HAVE_PLATT:
+        return {}
+    if y_revealed_path is None or not y_revealed_path.exists():
+        return {}
+    if regime_history_path is None or not regime_history_path.exists():
+        return {}
+
+    try:
+        # Load revealed labels
+        y_df = pd.read_parquet(y_revealed_path)
+        y_df.index = pd.to_datetime(y_df.index, errors="coerce")
+        y_df = y_df[~y_df.index.isna()]
+        if "y_rel_tail_voo_vs_ief" not in y_df.columns:
+            return {}
+
+        # Load regime history
+        reg_df = pd.read_parquet(regime_history_path)
+        reg_df.index = pd.to_datetime(reg_df.index, errors="coerce")
+        reg_df = reg_df[~reg_df.index.isna()]
+        if "regime_label" not in reg_df.columns:
+            return {}
+
+        # Build working frame: Date × p_final_cal
+        tape = defense_df.copy()
+        tape["Date"] = pd.to_datetime(tape.get("Date", tape.index), errors="coerce")
+        tape = tape.dropna(subset=["Date"]).set_index("Date")
+        if "p_final_cal" not in tape.columns:
+            return {}
+
+        # Inner-join all three sources
+        merged = (
+            tape[["p_final_cal"]]
+            .join(y_df[["y_rel_tail_voo_vs_ief"]], how="inner")
+            .join(reg_df[["regime_label"]], how="left")
+        )
+        merged = merged.dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
+        if len(merged) < 50:
+            return {}
+
+        params: Dict[str, Tuple[float, float]] = {}
+
+        # Per-regime fit
+        for regime in merged["regime_label"].dropna().unique():
+            sub = merged[merged["regime_label"] == regime].copy()
+            if len(sub) < 30:
+                continue
+            p = sub["p_final_cal"].clip(0.01, 0.99).values
+            y = sub["y_rel_tail_voo_vs_ief"].values
+            X = _logit(p).reshape(-1, 1)
+            lr = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
+            lr.fit(X, y)
+            a = float(lr.coef_[0][0])
+            b = float(lr.intercept_[0])
+            params[regime] = (a, b)
+            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}")
+
+        # Global fallback (all regimes combined)
+        p_all = merged["p_final_cal"].clip(0.01, 0.99).values
+        y_all = merged["y_rel_tail_voo_vs_ief"].values
+        lr_global = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
+        lr_global.fit(_logit(p_all).reshape(-1, 1), y_all)
+        params["_global"] = (float(lr_global.coef_[0][0]), float(lr_global.intercept_[0]))
+        print(f"[Part 3] Platt(_global    ): a={params['_global'][0]:.4f}  b={params['_global'][1]:.4f}  n={len(merged)}")
+
+        return params
+
+    except Exception as e:
+        print(f"[Part 3] Platt scaling fit failed: {e} — using raw p_final_cal")
+        return {}
+
+
+def _persist_platt_params(params: Dict[str, Tuple[float, float]], out_dir: Path) -> None:
+    """Write Platt calibration parameters to part3_platt_params.json.
+
+    FIX (F7, Audit 2026-05-10 — Quant-Guild Part 17):
+    The (a, b) coefficients were previously recomputed on every run and never
+    written to disk.  This meant:
+      (a) No audit trail — operators cannot verify which calibration was active
+          on a given date without re-running Part 3.
+      (b) No independent reproducibility — a code change that breaks _fit_regime_platt_scaling
+          would silently fall back to raw p_final_cal with no persisted baseline to diff against.
+      (c) Dashboard inaccessibility — index.html cannot display Platt coefficients
+          without reading from a stable artifact path.
+
+    Format: {regime: {a: float, b: float, n: int}, "_meta": {built_at: str}}
+    p_recal = sigmoid(a * logit(p_final_cal) + b)
+    """
+    if not params:
+        return
+    payload: Dict[str, object] = {}
+    for regime, (a, b) in params.items():
+        payload[regime] = {"a": round(float(a), 6), "b": round(float(b), 6)}
+    payload["_meta"] = {"built_at": datetime.now(timezone.utc).isoformat() if "datetime" in dir() else "unknown"}
+    try:
+        out_path = out_dir / "part3_platt_params.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"[Part 3] Platt params written to {out_path}")
+    except Exception as e:
+        print(f"[Part 3] WARNING: Could not persist Platt params: {e}")
+
+
+def _apply_regime_platt(
+    p_cal: Optional[float],
+    regime_label: str,
+    params: Dict[str, Tuple[float, float]],
+) -> Optional[float]:
+    """Apply regime-conditional Platt scaling to a single probability.
+
+    Returns None if p_cal is None or params is empty (transparent fallback).
+    """
+    if not HAVE_PLATT or not params or p_cal is None or not math.isfinite(p_cal):
+        return p_cal
+    p_clipped = max(0.01, min(0.99, float(p_cal)))
+    logit_p = float(_logit(p_clipped))
+    if regime_label in params:
+        a, b = params[regime_label]
+    elif "_global" in params:
+        a, b = params["_global"]
+    else:
+        return p_cal
+    return float(_expit(a * logit_p + b))
+
+
+def main(cfg: Part3Config = CFG) -> None:
+    root = resolve_root(cfg)
+    os.environ[cfg.root_env_var] = str(root)
+
+    part2_tape = _must_find(
+        "Defense tape",
+        [
+            "artifacts_part2_g532/predictions/g532_final_consensus_tape.csv",
+                    ],
+        root,
+    )
+    part2_summary_path = _must_find(
+        "Part 2 summary JSON",
+        [
+            "artifacts_part2_g532/predictions/part2_g532_summary.json",
+                    ],
+        root,
+    )
+    alpha_positions_path = _must_find(
+        "Alpha positions",
+        [
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv",
+                    ],
+        root,
+    )
+    alpha_summary_tape_path = _must_find(
+        "Alpha summary tape",
+        [
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
+                    ],
+        root,
+    )
+    alpha_eligibility_path = _must_find(
+        "Alpha eligibility",
+        [
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv",
+                    ],
+        root,
+    )
+    alpha_summary_json_path = _must_find(
+        "Alpha summary JSON",
+        [
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_summary.json",
+                    ],
+        root,
+    )
+
+    defense_df = _read_csv(part2_tape)
+    part2_summary = _read_json(part2_summary_path)
+    alpha_positions_df = _read_csv(alpha_positions_path)
+    alpha_tape_df = _read_csv(alpha_summary_tape_path)
+    _ = _read_csv(alpha_eligibility_path)
+    alpha_summary_json = _read_json(alpha_summary_json_path)
+
+    # ── Regime-conditional Platt scaling ──────────────────────────────────
+    # Load Part 6 regime history and Part 1 revealed labels to fit a per-regime
+    # logistic recalibration of p_final_cal.  Falls back silently to raw p_final_cal
+    # if either artifact is missing, if insufficient data exists, or if scipy/sklearn
+    # are unavailable.
+    regime_history_path = _first_existing_path(["artifacts_part6/regime_history.parquet"], root)
+    y_revealed_path     = _first_existing_path(["artifacts_part1/y_labels_revealed.parquet"], root)
+    platt_params = _fit_regime_platt_scaling(defense_df, y_revealed_path, regime_history_path)
+    platt_active = bool(platt_params)
+    # FIX (F7, Audit 2026-05-10): Persist Platt calibration parameters to disk.
+    if platt_active:
+        _persist_platt_params(platt_params, out_dir)
+
+    # Part 7 base weights — optional, preferred over CFG 60/40 defaults.
+    part7_voo, part7_ief = _load_part7_base_weights(root)
+    part7_weights: Optional[Tuple[float, float]] = (part7_voo, part7_ief) if part7_voo is not None else None
+    if part7_weights is not None:
+        print(f"[Part 3] Part 7 base weights loaded: VOO={part7_voo:.4f} | IEF={part7_ief:.4f}")
+    else:
+        print(f"[Part 3] Part 7 tape not found — using default base weights: VOO={CFG.default_voo_weight} | IEF={CFG.default_ief_weight}")
+
+    publish_mode = _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN"))
+    final_pass = _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)
+    if publish_mode not in {"NORMAL", "DEFENSE_ONLY", "FAIL_CLOSED_NEUTRAL"}:
+        raise RuntimeError(f"Uncertified publish_mode: {publish_mode}")
+    if not final_pass and publish_mode != "FAIL_CLOSED_NEUTRAL":
+        raise RuntimeError("Part 2 final_pass is False and publish_mode is not FAIL_CLOSED_NEUTRAL")
+
+    defense_row = _last_valid_row(defense_df)
+    decision_date = pd.to_datetime(_row_value(defense_row, ["Date", "decision_date", "asof_date"]), errors="coerce")
+    if pd.isna(decision_date):
+        decision_date = pd.Timestamp.today().normalize()
+    target_date = decision_date + pd.tseries.offsets.BDay(1)
+
+    voo_call, ief_call = _extract_latest_price_call(defense_row)
+    alpha_status = _load_alpha_status(alpha_tape_df, alpha_summary_json)
+    alpha_positions_latest = _extract_alpha_positions(alpha_positions_df)
+
+    # Compute regime-recalibrated probability for the current live row
+    p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
+    current_regime = str(_row_value(defense_row, ["regime_label"], "unknown"))
+    p_regime_recal: Optional[float] = _apply_regime_platt(p_raw, current_regime, platt_params)
+
+    prod_tape = _prepare_production_tape(defense_df, part2_summary, alpha_status, alpha_summary_json)
+    gov_df = _build_governance_df(decision_date, part2_summary, alpha_status)
+    alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, part7_weights)
+
+    out_dir = root / cfg.out_dir_relative
+    predlog_dir = root / cfg.predlog_dir_relative
+    _ensure_dir(out_dir)
+    _ensure_dir(predlog_dir)
+
+    tape_out = out_dir / cfg.tape_name
+    gov_out = out_dir / cfg.gov_name
+    alloc_out = out_dir / cfg.alloc_name
+    predlog_out = predlog_dir / cfg.predlog_name
+    summary_out = out_dir / cfg.summary_name
+
+    prod_tape.to_csv(tape_out, index=False)
+
+    # FIX (Finding #19): Governance CSV now accumulates a time-series history
+    # instead of overwriting on each run. We append the new row and deduplicate
+    # on Date, keeping the most-recent entry for each date so re-runs are
+    # idempotent. This provides a complete audit trail of governance state
+    # changes (e.g. when fail-closed was entered, when alpha advanced tiers).
+    if gov_out.exists():
+        try:
+            _existing_gov = pd.read_csv(gov_out)
+            _existing_gov["Date"] = pd.to_datetime(_existing_gov["Date"], errors="coerce")
+            gov_df_combined = pd.concat([_existing_gov, gov_df], ignore_index=True)
+            gov_df_combined["Date"] = pd.to_datetime(gov_df_combined["Date"], errors="coerce")
+            gov_df_combined = (
+                gov_df_combined
+                .sort_values("Date")
+                .drop_duplicates(subset=["Date"], keep="last")
+                .reset_index(drop=True)
+            )
+            gov_df_combined.to_csv(gov_out, index=False)
+        except Exception:
+            gov_df.to_csv(gov_out, index=False)
+    else:
+        gov_df.to_csv(gov_out, index=False)
+
+    alloc_df.to_csv(alloc_out, index=False)
+
+    alpha_sources = {
+        "positions": alpha_positions_path,
+        "summary_tape": alpha_summary_tape_path,
+        "eligibility": alpha_eligibility_path,
+        "summary_json": alpha_summary_json_path,
+    }
+    predlog_df, realized_rows = _upsert_prediction_log(
+        predlog_out,
+        decision_date,
+        target_date,
+        voo_call,
+        ief_call,
+        publish_mode,   # pass raw governance value; deployment_mode aliasing done inside upsert
+        final_pass,
+        alpha_status,
+        part2_tape,
+        alpha_sources,
+        defense_row,
+        part2_summary,
+    )
+
+    # Add regime-recalibrated probability to the prediction log row
+    if not predlog_df.empty and p_regime_recal is not None:
+        predlog_df["p_regime_recal"] = np.nan
+        date_mask = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
+        if date_mask.any():
+            predlog_df.loc[date_mask, "p_regime_recal"] = p_regime_recal
+        predlog_df.to_csv(predlog_out, index=False)
+
+    perf = _extract_performance_metrics(defense_df, alpha_summary_json, alpha_status)
+    dist = _alpha_distribution(alpha_tape_df, alpha_status)
+    dist_display = {str(k): float(v) for k, v in dist.items()}
+
+    summary = {
+        "part": "PART3_V1",
+        "root": str(root),
+        "defense_source": str(part2_tape),
+        "part2_summary_source": str(part2_summary_path),
+        "alpha_positions_source": str(alpha_positions_path),
+        "alpha_summary_source": str(alpha_summary_tape_path),
+        "alpha_eligibility_source": str(alpha_eligibility_path),
+        "alpha_summary_json_source": str(alpha_summary_json_path),
+        "publish_mode": publish_mode,
+        "deployment_mode": "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL" else publish_mode,
+        "final_pass": int(final_pass),
+        "latest_alpha_state": alpha_status["latest_state"],
+        "latest_alpha_state_display": alpha_status["display_state"],
+        "historical_alpha_state": alpha_status["latest_state"],
+        "current_alpha_live_status": alpha_status.get("current_alpha_live_status", alpha_status["latest_state"]),
+        "current_alpha_reason": alpha_status.get("current_alpha_reason", "unknown"),
+        "current_alpha_eligible": int(alpha_status.get("current_alpha_eligible", 0)),
+        "current_alpha_abs": float(alpha_status.get("current_alpha_abs", 0.0)),
+        # FIX (Finding 12, Audit 2026-04-21):
+        # "realized_dates" is ambiguous: it sounds like live prediction-log rows with
+        # realized prices, but actually counts historical tape rows where the backtest
+        # labels are revealed (2020-2026). Operators reading this field incorrectly
+        # concluded 381 live predictions had been evaluated. Renamed to make the
+        # distinction unambiguous. prediction_log_realized_rows is the live count.
+        "alpha_tape_historical_realized_dates": alpha_status["realized_dates"],
+        "realized_dates": alpha_status["realized_dates"],  # kept for backward-compat; deprecated
+        "realized_dates_note": "Backtest tape rows only — NOT live realized predictions. See prediction_log_realized_rows for live count.",
+        "budget_mult": alpha_status["budget_mult"],
+        "drift_rate": alpha_status["drift_rate"],
+        "quality_ok": alpha_status["quality_ok"],
+        "drift_ok": alpha_status["drift_ok"],
+        "trial_gate_open": alpha_status["trial_gate_open"],
+        "fused_gate_open": alpha_status["fused_gate_open"],
+        "promotion_ready": alpha_status["promotion_ready"],
+        "alpha_blockers": alpha_status["blockers"],
+        "rows": int(len(prod_tape)),
+        "rows_realized_fused": realized_rows,
+        "fusion_live_rate": perf["fusion_live_rate"],
+        "defense_ir_net": perf["defense_ir"],
+        "fused_ir_net": perf["fused_ir"],
+        "active_ir_vs_60_40": perf["active_ir"],
+        "active_mean": perf["active_mean"],
+        "alpha_state_distribution": dist_display,
+        "prediction_log_path": str(predlog_out),
+        "prediction_log_realized_rows": realized_rows,
+        "allocation_sum_to_one_max_deviation": max_dev,
+        "horizon": 1,
+        "part7_base_weights_source": "part7_portfolio_weights_tape" if part7_weights is not None else "cfg_default_60_40",
+        "part7_voo_base": float(part7_voo) if part7_voo is not None else CFG.default_voo_weight,
+        "part7_ief_base": float(part7_ief) if part7_ief is not None else CFG.default_ief_weight,
+        "alpha_family": str(_json_value(alpha_summary_json, ["alpha_family", "version", "part"], os.environ.get(CFG.alpha_family_env_var, "part2a21"))),
+        "alpha_contract": "legacy_state_machine",
+        "preferred_alpha_family": os.environ.get(CFG.alpha_family_env_var, "part2a21"),
+        "strict_drive_only": _boolish(os.environ.get(CFG.strict_env_var, "0"), 0),
+        # Regime-conditional Platt recalibration
+        "platt_scaling_active": platt_active,
+        "current_regime": current_regime,
+        "p_final_cal_raw": p_raw,
+        "p_regime_recal": p_regime_recal,
+        "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
+        # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
+        "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
+    }
+    _write_json(summary_out, summary)
+
+    print(f"✅ DEFENSE TAPE DISCOVERED: {part2_tape}")
+    print(f"Decision-time 1D price call: VOO={voo_call:.4f} (explicit_call) | IEF={ief_call:.4f} (explicit_call)" if voo_call is not None and ief_call is not None else "Decision-time 1D price call: NA")
+    print(f"Part 3 V1 defense_source: {part2_tape}")
+    print(f"Part 3 V1 last defense Date: {pd.Timestamp(decision_date)} | is_live tail: 1")
+    print(f"✅ ALPHA POSITIONS DISCOVERED: {alpha_positions_path}")
+    print(f"✅ ALPHA SUMMARY DISCOVERED: {alpha_summary_tape_path}")
+    print(f"✅ ALPHA ELIGIBILITY DISCOVERED: {alpha_eligibility_path}")
+    print(f"✅ ALPHA SUMMARY JSON DISCOVERED: {alpha_summary_json_path}")
+    print(
+        f"Alpha state latest: {alpha_status['latest_state']} (display={alpha_status['display_state']}) | "
+        f"realized_dates={alpha_status['realized_dates']} | budget_mult={alpha_status['budget_mult']:.2f} | drift_rate={alpha_status['drift_rate']:.4f}"
+    )
+    print(
+        f"Alpha diagnostics: quality_ok={alpha_status['quality_ok']} | drift_ok={alpha_status['drift_ok']} | "
+        f"trial_gate_open={alpha_status['trial_gate_open']} | fused_gate_open={alpha_status['fused_gate_open']} | promotion_ready={alpha_status['promotion_ready']}"
+    )
+    print(f"Alpha blockers: {alpha_status['blockers']}")
+    print("\n" + "=" * 96)
+    print("🏛️  PART 3 V1 AUDIT (Defense Sleeve + Fusion Engine)")
+    print("=" * 96)
+    print(
+        f"Rows: {len(prod_tape)} | Realized fused rows: {realized_rows} | "
+        f"Fusion live rate: {(summary['fusion_live_rate'] or 0.0) * 100:.2f}%"
+    )
+    print(
+        f"Defense IR (net): {_format_float(summary['defense_ir_net'])} | "
+        f"Fused IR (net): {_format_float(summary['fused_ir_net'])} | "
+        f"Active IR vs 60/40: {_format_float(summary['active_ir_vs_60_40'])} | "
+        f"Active mean: {_format_float(summary['active_mean'], 6)}"
+    )
+    print("Alpha state distribution:")
+    if dist.empty:
+        print("alpha_state\nSHADOW    1.0000")
+    else:
+        print(dist.rename_axis("alpha_state"))
+    th = alpha_status["thresholds"]
+    print("\nAlpha promotion thresholds:")
+    print(
+        f"Eligible={th['Eligible']} | Trial={th['Trial']} | Fused={th['Fused']} | Max drift rate={th['Max drift rate']:.2f}"
+    )
+    print(f"[PredLog] realized rows={realized_rows} ({'not enough tape history yet' if realized_rows == 0 else 'matured rows found'}).")
+    print(f"[PredLog] path: {predlog_out}")
+    print(f"Fusion allocation sum-to-one max deviation: {max_dev:.8f}")
+    print("\n✅ PART 3 V1 WRITTEN")
+    print(f"   Tape:        {tape_out}")
+    print(f"   Governance:  {gov_out}")
+    print(f"   Allocations: {alloc_out}")
+    print(f"   Summary:     {summary_out}")
+    print(f"   Prediction log: {predlog_out}")
+    print("   Alpha is only made live when the state machine reaches LIVE_TRIAL or LIVE_FUSED.")
+    print("   Fusion is funded from the VOO sleeve, not from IEF.")
+    print("   UI-facing alpha label uses CANDIDATE instead of ambiguous ELIGIBLE.")
+
+
 if __name__ == "__main__":
-    main()
+    main(CFG)
+
+
+
+
 
 
 
