@@ -34,6 +34,7 @@ import json
 import math
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -1030,6 +1031,37 @@ def _fit_regime_platt_scaling(
         return {}
 
 
+def _persist_platt_params(params: Dict[str, Tuple[float, float]], out_dir: Path) -> None:
+    """Write Platt calibration parameters to part3_platt_params.json.
+
+    FIX (F7, Audit 2026-05-10 — Quant-Guild Part 17):
+    The (a, b) coefficients were previously recomputed on every run and never
+    written to disk.  This meant:
+      (a) No audit trail — operators cannot verify which calibration was active
+          on a given date without re-running Part 3.
+      (b) No independent reproducibility — a code change that breaks _fit_regime_platt_scaling
+          would silently fall back to raw p_final_cal with no persisted baseline to diff against.
+      (c) Dashboard inaccessibility — index.html cannot display Platt coefficients
+          without reading from a stable artifact path.
+
+    Format: {regime: {a: float, b: float, n: int}, "_meta": {built_at: str}}
+    p_recal = sigmoid(a * logit(p_final_cal) + b)
+    """
+    if not params:
+        return
+    payload: Dict[str, object] = {}
+    for regime, (a, b) in params.items():
+        payload[regime] = {"a": round(float(a), 6), "b": round(float(b), 6)}
+    payload["_meta"] = {"built_at": datetime.now(timezone.utc).isoformat() if "datetime" in dir() else "unknown"}
+    try:
+        out_path = out_dir / "part3_platt_params.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"[Part 3] Platt params written to {out_path}")
+    except Exception as e:
+        print(f"[Part 3] WARNING: Could not persist Platt params: {e}")
+
+
 def _apply_regime_platt(
     p_cal: Optional[float],
     regime_label: str,
@@ -1115,6 +1147,7 @@ def main(cfg: Part3Config = CFG) -> None:
     y_revealed_path     = _first_existing_path(["artifacts_part1/y_labels_revealed.parquet"], root)
     platt_params = _fit_regime_platt_scaling(defense_df, y_revealed_path, regime_history_path)
     platt_active = bool(platt_params)
+    # NOTE: _persist_platt_params is called AFTER out_dir is defined below (F7 ordering fix).
 
     # Part 7 base weights — optional, preferred over CFG 60/40 defaults.
     part7_voo, part7_ief = _load_part7_base_weights(root)
@@ -1154,6 +1187,11 @@ def main(cfg: Part3Config = CFG) -> None:
     predlog_dir = root / cfg.predlog_dir_relative
     _ensure_dir(out_dir)
     _ensure_dir(predlog_dir)
+    # FIX (F7 ordering, Audit 2026-05-10 — Quant-Guild Part 17):
+    # Persist Platt calibration parameters now that out_dir is defined.
+    # The prior placement (before out_dir was assigned) caused UnboundLocalError.
+    if platt_active:
+        _persist_platt_params(platt_params, out_dir)
 
     tape_out = out_dir / cfg.tape_name
     gov_out = out_dir / cfg.gov_name
@@ -1282,6 +1320,8 @@ def main(cfg: Part3Config = CFG) -> None:
         "p_final_cal_raw": p_raw,
         "p_regime_recal": p_regime_recal,
         "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
+        # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
+        "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
     }
     _write_json(summary_out, summary)
 
