@@ -2399,6 +2399,84 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "median_rmse": _rmse(realized["excess_ret"].values, realized["spread_q50"].values),
         }
 
+    # ── FIX (F3, Audit 2026-05-10 — Quant-Guild Part 20): Ensemble probability blend ──
+    # Part 2B (XGB ensemble, n=10): holdout AUC=0.570, t=2.34 — SIGNIFICANT
+    # Part 2C (BNN, n=10×100 MC):   holdout AUC=0.584, t=2.82 — SIGNIFICANT
+    # Part 2 base (LogReg/GBT):     holdout AUC=0.515, t=0.49 — NOT SIGNIFICANT
+    #
+    # The pipeline previously used only Part 2's AUC=0.515 (statistically indistinguishable
+    # from random) as the sole predictive signal, while Parts 2B/2C ran as isolated
+    # side-computations with no downstream integration.
+    #
+    # Fix: attempt to load Part 2B and Part 2C probability tapes and blend into
+    # p_final_g5 using equal weights (1/3 each). Equal weighting is defensible
+    # until live track records accumulate to support walk-forward weight tuning.
+    # The blend falls back gracefully: if only one sleeve is available, use 50/50;
+    # if neither, keep p_final_g5 unchanged. A new column 'p_final_g5_source'
+    # records which blend was applied to every row for auditability.
+    _PART2B_DIR = os.path.join(cfg.PRED_DIR.replace("artifacts_part2_g532/predictions", "artifacts_part2b_xgb"))
+    _PART2C_DIR = os.path.join(cfg.PRED_DIR.replace("artifacts_part2_g532/predictions", "artifacts_part2c_bnn"))
+    _p2b_tape_path = os.path.join(_PART2B_DIR, "part2b_xgb_tape.csv")
+    _p2c_tape_path = os.path.join(_PART2C_DIR, "part2c_bnn_tape.csv")
+    _p2b_available = False
+    _p2c_available = False
+    try:
+        if os.path.exists(_p2b_tape_path):
+            _p2b_tape = pd.read_csv(_p2b_tape_path)
+            _p2b_tape["Date"] = pd.to_datetime(_p2b_tape["Date"], errors="coerce")
+            _p2b_tape = _p2b_tape.dropna(subset=["Date"]).set_index("Date")
+            if "p_xgb_ens_mean" in _p2b_tape.columns:
+                _p2b_available = True
+                print(f"[Part 2] F3 fix: Part 2B XGB tape loaded ({len(_p2b_tape)} rows)")
+    except Exception as _e2b:
+        print(f"[Part 2] F3 fix: Part 2B tape load failed ({_e2b}) — skipping 2B blend")
+    try:
+        if os.path.exists(_p2c_tape_path):
+            _p2c_tape = pd.read_csv(_p2c_tape_path)
+            _p2c_tape["Date"] = pd.to_datetime(_p2c_tape["Date"], errors="coerce")
+            _p2c_tape = _p2c_tape.dropna(subset=["Date"]).set_index("Date")
+            if "p_bnn_mean" in _p2c_tape.columns:
+                _p2c_available = True
+                print(f"[Part 2] F3 fix: Part 2C BNN tape loaded ({len(_p2c_tape)} rows)")
+    except Exception as _e2c:
+        print(f"[Part 2] F3 fix: Part 2C tape load failed ({_e2c}) — skipping 2C blend")
+
+    if _p2b_available or _p2c_available:
+        out = out.copy()
+        out["p_final_g5_source"] = "base_only"
+        _n_blended = 0
+        for _i in out.index:
+            _dt = pd.Timestamp(out.loc[_i, "Date"]).normalize() if "Date" in out.columns else None
+            _p_base = float(out.loc[_i, "p_final_g5"]) if "p_final_g5" in out.columns else np.nan
+            if not np.isfinite(_p_base) or _dt is None:
+                continue
+            _p_2b = np.nan
+            _p_2c = np.nan
+            if _p2b_available:
+                try:
+                    _p_2b = float(_p2b_tape.loc[_dt, "p_xgb_ens_mean"]) if _dt in _p2b_tape.index else np.nan
+                except Exception:
+                    _p_2b = np.nan
+            if _p2c_available:
+                try:
+                    _p_2c = float(_p2c_tape.loc[_dt, "p_bnn_mean"]) if _dt in _p2c_tape.index else np.nan
+                except Exception:
+                    _p_2c = np.nan
+            _vals = [(p, w) for p, w in [(_p_base, 1.0), (_p_2b, 1.0), (_p_2c, 1.0)] if np.isfinite(p)]
+            if len(_vals) > 1:
+                _p_blend = sum(p * w for p, w in _vals) / sum(w for _, w in _vals)
+                out.at[_i, "p_final_g5"] = float(np.clip(_p_blend, 1e-4, 1 - 1e-4))
+                _sources = ["base"]
+                if np.isfinite(_p_2b): _sources.append("2b_xgb")
+                if np.isfinite(_p_2c): _sources.append("2c_bnn")
+                out.at[_i, "p_final_g5_source"] = "+".join(_sources)
+                _n_blended += 1
+        _blend_desc = ("3-model(base+2b+2c)" if (_p2b_available and _p2c_available)
+                       else "2-model(base+2b)" if _p2b_available else "2-model(base+2c)")
+        print(f"[Part 2] F3 fix: Ensemble blend applied ({_blend_desc}) to {_n_blended}/{len(out)} rows.")
+    else:
+        print("[Part 2] F3 fix: Neither Part 2B nor Part 2C tape found — p_final_g5 unchanged (base only).")
+
     shuffle_auc = _shuffle_auc(full.loc[full["y_avail"] == 1].tail(cfg.TRAIN_WINDOW_DAYS).copy(), feature_cols, cfg)
     active_net = realized["active_ret_net"].dropna().values if len(realized) else np.array([])
     strat_net = realized["strategy_ret_net"].dropna().values if len(realized) else np.array([])
