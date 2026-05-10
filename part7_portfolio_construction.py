@@ -117,7 +117,15 @@ class Part7Config:
 
     cov_window: int = 126              # Rolling covariance window: 126 trading days (~6 months)
     cov_ewm_halflife: int = 21         # EWM half-life for covariance (1 trading month)
-    min_rebalance_threshold: float = 0.02  # 2% dead-band for daily rebalances
+    # FIX (Finding 1, Audit 2026-05-10 — Quant-Guild Part 19):
+    # The original 2% dead-band was calibrated for H=7 weekly rebalancing where
+    # daily noise could cause spurious trading. At H=1 daily rebalancing the
+    # Black-Litterman optimizer produces Δw ≈ 0.3–1.5% in normal conditions
+    # (edge ≈ 1–3%, risk_aversion ≈ 2.5, portfolio_vol ≈ 8%). With a 2% threshold,
+    # 98.1% of rows were permanently locked at 60/40 — the entire BL computation
+    # was structurally bypassed. Reducing to 0.5% allows regime-conditional
+    # rebalancing while still suppressing genuinely negligible changes (<0.5%).
+    min_rebalance_threshold: float = 0.005  # 0.5% dead-band for H=1 daily rebalances (was 0.02)
 
 
 CFG = Part7Config()
@@ -496,12 +504,19 @@ def compute_allocation(
     # signal now materially reaches the portfolio instead of being near-drowned by CAPM.
 
     # Convert edge to expected annualized excess return.
-    # FIX: removed ann_factor = 252/horizon.
-    # At H=1, ann_factor=252 caused view_return to always saturate the ±0.08 clip,
-    # making edge magnitude carry zero information into the BL posterior.
-    # Direct formulation: 10% annualized return per unit of model edge.
-    # This is horizon-invariant and preserves edge signal at all frequencies.
-    view_return = float(np.clip(edge * 0.10, -0.08, 0.08))  # max ±8% annual view
+    # FIX (Finding 4, Audit 2026-05-10 — Quant-Guild Part 19):
+    # The prior multiplier of 0.10 converted a 1.8% daily probability edge into a
+    # 0.18% annual view return. Feeding a 0.18% view into the BL posterior with
+    # risk_aversion=2.5 produces Δw ≈ 0.18% / (2.5 × portfolio_var) ≈ 0.1–0.4%.
+    # This is always below the 2% dead-band (and usually below even the corrected
+    # 0.5% dead-band), making the BL optimizer produce 60/40 on every non-crisis row.
+    #
+    # Corrected multiplier: 1.0 — the edge is already in probability units (0–1).
+    # At edge=0.018 → view_return=0.018 (1.8% annual view). The BL then produces
+    # Δw ≈ 1.8% / (2.5 × portfolio_var) ≈ 0.8–2.5% per unit of signal, which
+    # regularly clears the 0.5% dead-band in high_vol and risk_on regimes.
+    # The ±8% clip still prevents extreme positions from runaway views.
+    view_return = float(np.clip(edge * 1.0, -0.08, 0.08))  # max ±8% annual view (multiplier: 0.10 → 1.0)
 
     model_view = {
         "voo_excess_view": view_return,
@@ -707,6 +722,7 @@ def main() -> int:
 
     rows = []
     prev_weights = np.array([0.60, 0.40], dtype=float)
+    prev_publish_mode = ""  # track mode transitions for prev_weights reset
     for _, row in tape.iterrows():
         dt = pd.Timestamp(row["Date"])
         hist = returns.loc[returns.index <= dt, [c for c in cfg.universe if c in returns.columns]].dropna(how="all")
@@ -739,6 +755,20 @@ def main() -> int:
         ief_idx = cfg.universe.index("IEF") if "IEF" in cfg.universe else 1
         w_voo = float(alloc[voo_idx]) if len(alloc) > voo_idx else 0.60
         w_ief = float(alloc[ief_idx]) if len(alloc) > ief_idx else 0.40
+        # FIX (Finding 8, Audit 2026-05-10 — Quant-Guild Part 19):
+        # When the system transitions from FAIL_CLOSED_NEUTRAL → NORMAL, prev_weights
+        # carries a 0.60/0.40 baseline inherited from the entire fail-closed period.
+        # The dead-band then compares BL proposals against 0.60, perpetuating the lock
+        # even when NORMAL mode should allow regime-conditional rebalancing.
+        # Reset prev_weights to market_weights on any transition out of fail-closed.
+        _fail_closed_modes = {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"}
+        if prev_publish_mode in _fail_closed_modes and publish_mode not in _fail_closed_modes:
+            prev_weights = np.array([cfg.market_weights.get("VOO", 0.60),
+                                     cfg.market_weights.get("IEF", 0.40)], dtype=float)
+            print(f"[Part 7] Mode transition {prev_publish_mode} → {publish_mode}: "
+                  f"prev_weights reset to market_weights {prev_weights}")
+        prev_publish_mode = publish_mode
+
         # FIX (Audit 2026-05-07 — Soft-clearance fallback):
         # When final_pass is locked at False due to Part 2's circular dependency
         # (predictive_quality_ok requiring active_mean > 0 in fail_closed mode),
