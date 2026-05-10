@@ -391,18 +391,32 @@ def _load_part7_base_weights(root: Path) -> Tuple[Optional[float], Optional[floa
         return None, None
 
 
-def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str, Any]) -> Dict[str, Any]:
+def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str, Any], live_realized_rows: int = 0) -> Dict[str, Any]:
     latest_row = _last_valid_row(alpha_tape_df) if not alpha_tape_df.empty else pd.Series(dtype=object)
 
-    # ── realized_dates ──────────────────────────────────────────────────────
-    # Primary source: alpha_summary_json["realized_dates"] — set by Part 2A
-    # to the count of historical dates where realized returns are available.
-    # Fallback chain: tape row columns → len(tape).
-    realized_dates = _safe_int(
+    # ── realized_dates (backtest) vs live_realized_rows ────────────────────
+    # FIX (F1, Audit 2026-05-10 — Quant-Guild Part 20):
+    # PROBLEM: alpha_summary_json["realized_dates"] = 1109 is the BACKTEST tape count
+    # (rows of the Part 2A summary_tape with non-null rank_ic / topk_rel_ret_net).
+    # These are historical in-sample rows, NOT live prediction-log realized rows.
+    # With 1109 >> 78 (FUSED threshold), _infer_promotion_state always returned
+    # LIVE_FUSED — even with prediction_log_realized_rows = 0.
+    # Effect: alpha_position=0.0516 was added to the portfolio on zero live track record.
+    #
+    # CORRECT DESIGN: the promotion thresholds (26/52/78) gate on LIVE realized
+    # observations only. The backtest history is useful for performance monitoring
+    # but must NOT satisfy the live-observation gate.
+    #
+    # FIX: _infer_promotion_state now receives live_realized_rows (passed in from the
+    # main function via prediction_log_realized_rows). The backtest count is preserved
+    # as backtest_realized_dates for monitoring and display only.
+    backtest_realized_dates = _safe_int(
         _json_value(alpha_summary_json, ["realized_dates", "n_realized_dates", "realized_rows"],
                     _row_value(latest_row, ["realized_dates", "realized_rows"], len(alpha_tape_df))),
         default=len(alpha_tape_df),
     )
+    # realized_dates for promotion = live prediction-log rows with confirmed realized prices
+    realized_dates = int(max(0, live_realized_rows))
 
     budget_mult = _safe_float(
         _row_value(latest_row, ["budget_mult", "alpha_budget_mult"],
@@ -502,7 +516,8 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
     return {
         "latest_state": latest_state,
         "display_state": _state_display(latest_state),
-        "realized_dates": realized_dates,
+        "realized_dates": realized_dates,          # LIVE realized rows (used for promotion)
+        "backtest_realized_dates": backtest_realized_dates,  # backtest rows (monitoring only)
         "budget_mult": float(budget_mult),
         "drift_rate": float(drift_rate),
         "quality_ok": quality_ok,
@@ -1023,7 +1038,15 @@ def _fit_regime_platt_scaling(
             p = sub["p_final_cal"].clip(0.01, 0.99).values
             y = sub["y_rel_tail_voo_vs_ief"].values
             X = _logit(p).reshape(-1, 1)
-            lr = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
+            # FIX (F6, Audit 2026-05-10 — Quant-Guild Part 20):
+            # risk_on has n=55 and AUC=0.527 (0.83 SE above random — not significant).
+            # Platt C=1e4 (unregularized) amplifies a near-noise signal via a=1.19.
+            # At n<100 use C=0.1 (L2 ridge ≡ MAP with N(0,1) prior on coefficients),
+            # which shrinks 'a' toward 0 (no-signal). This is Platt's recommended
+            # practice for small-n calibration sets to prevent overfit amplification.
+            # At n>=100 (calm n=610, high_vol n=654, crisis n=338) C=1e4 is fine.
+            _platt_C = 0.1 if len(sub) < 100 else 1e4
+            lr = _LogisticRegression(C=_platt_C, max_iter=2000, solver="lbfgs")
             lr.fit(X, y)
             a = float(lr.coef_[0][0])
             b = float(lr.intercept_[0])
@@ -1211,7 +1234,23 @@ def main(cfg: Part3Config = CFG) -> None:
     target_date = decision_date + pd.tseries.offsets.BDay(1)
 
     voo_call, ief_call = _extract_latest_price_call(defense_row)
-    alpha_status = _load_alpha_status(alpha_tape_df, alpha_summary_json)
+
+    # FIX (F1, Audit 2026-05-10 — Quant-Guild Part 20):
+    # Compute live_predlog_rows from the EXISTING prediction_log (before today's upsert).
+    # This is the count of live predictions with confirmed realized prices — the correct
+    # input for _infer_promotion_state. The full upsert happens later in the function.
+    _predlog_path_early = Path(root) / "artifacts_part3" / "prediction_log.csv"
+    if _predlog_path_early.exists():
+        try:
+            _predlog_early = pd.read_csv(_predlog_path_early)
+            live_predlog_rows = _count_realized_predlog_rows(_predlog_early)
+        except Exception:
+            live_predlog_rows = 0
+    else:
+        live_predlog_rows = 0
+
+    alpha_status = _load_alpha_status(alpha_tape_df, alpha_summary_json,
+                                       live_realized_rows=live_predlog_rows)
     alpha_positions_latest = _extract_alpha_positions(alpha_positions_df)
 
     # Compute regime-recalibrated probability for the current live row
@@ -1324,9 +1363,10 @@ def main(cfg: Part3Config = CFG) -> None:
         # labels are revealed (2020-2026). Operators reading this field incorrectly
         # concluded 381 live predictions had been evaluated. Renamed to make the
         # distinction unambiguous. prediction_log_realized_rows is the live count.
-        "alpha_tape_historical_realized_dates": alpha_status["realized_dates"],
-        "realized_dates": alpha_status["realized_dates"],  # kept for backward-compat; deprecated
-        "realized_dates_note": "Backtest tape rows only — NOT live realized predictions. See prediction_log_realized_rows for live count.",
+        "alpha_tape_historical_realized_dates": alpha_status.get("backtest_realized_dates", alpha_status["realized_dates"]),
+        "realized_dates": alpha_status.get("backtest_realized_dates", alpha_status["realized_dates"]),  # backtest count; kept for backward-compat
+        "live_realized_dates": alpha_status["realized_dates"],  # FIX (F1): LIVE rows used for promotion
+        "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=live prediction-log rows (used for promotion gate).",
         "budget_mult": alpha_status["budget_mult"],
         "drift_rate": alpha_status["drift_rate"],
         "quality_ok": alpha_status["quality_ok"],
