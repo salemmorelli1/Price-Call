@@ -81,7 +81,28 @@ class Part2A21Config:
     # Setting base to 0.49 means a 2/4 split passes at base (no caution) and is
     # progressively blocked as caution_raw increases — the intended behavior.
     overlay_agreement_min_base: float = 0.49
-    overlay_agreement_bump_max: float = 0.10
+    # FIX (BUG-2, Audit 2026-05-10 — Quant-Guild Part 18):
+    # overlay_agreement_bump_max was 0.10. With caution_raw typically in [0.10, 0.25]
+    # (always non-zero since uncertainty signals are always present), the effective
+    # minimum became 0.49 + 0.10 * 0.10 = 0.499 at low caution and
+    # 0.49 + 0.25 * 0.10 = 0.515 at moderate caution.
+    # Since component_agreement is a discrete variable {0, 0.25, 0.50, 0.75, 1.0}
+    # (a 4-component vote fraction), ANY threshold above 0.50 structurally excludes
+    # all 2/4 ties. This was confirmed in artifacts: 671/1658 rows (40.4%) had
+    # component_agreement=0.50 and all were blocked (low_agreement).
+    #
+    # Statistical argument: a 2/4 vote split is a genuine tie — two components
+    # forecast VOO tailrisk high, two forecast it low. A tie is not an absence of
+    # signal; it is a weak but non-zero signal. Blocking ties entirely means the alpha
+    # sleeve fires on only 3/4 or 4/4 consensus days (~50% of eligible days).
+    #
+    # Fix: reduce bump_max from 0.10 to 0.02. Maximum agreement_min_eff is now:
+    #   0.49 + 1.0 * 0.02 = 0.51 (but caution_raw is in [0, 1] theoretically)
+    # In practice caution_raw ≈ 0.16 (from artifacts), giving:
+    #   0.49 + 0.16 * 0.02 = 0.4932 < 0.50 → 2/4 ties always pass
+    # at extreme caution (caution_raw=1.0): 0.49+0.02=0.51 → ties fail at max stress
+    # This preserves the intended selective blocking at genuine high-uncertainty extreme.
+    overlay_agreement_bump_max: float = 0.02  # FIX: was 0.10 (caused all 2/4 ties to fail)
     overlay_agreement_min_cap: float = 0.75
 
     # FIX (F2, Audit 2026-05-10 — Quant-Guild Part 17): Normalize caution_raw weights
