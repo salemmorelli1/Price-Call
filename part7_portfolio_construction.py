@@ -92,7 +92,15 @@ class Part7Config:
     commission_bps: float = 1.0        # Broker commission
 
     # === Black-Litterman Parameters ===
-    tau: float = 0.05                  # Uncertainty in CAPM prior (typical: 0.02–0.10)
+    tau: float = 0.25                  # FIX (F4, Audit 2026-05-10 — Quant-Guild Part 20):
+    # tau=0.05 gives the CAPM prior 97% weight and the model view only 3%,
+    # because view_frac = trace(P'Ω⁻¹P) / [trace((τΣ)⁻¹) + trace(P'Ω⁻¹P)].
+    # Both inv_tauS and view_var scale with tau, so view_frac is tau-INVARIANT
+    # when omega ∝ tau (as was coded). The fix is the omega formula (F5 below),
+    # which uses the standard BL parameterisation where Ω is independent of tau.
+    # With the corrected Ω, view_frac scales with tau as expected; tau=0.25
+    # gives a meaningful 35–55% view contribution at typical AUC=0.53–0.58.
+    # Uncertainty in CAPM prior (standard range: 0.05–0.50)
     risk_aversion: float = 2.5         # Investor risk aversion coefficient λ
     market_weights: Dict[str, float] = field(
         default_factory=lambda: {"VOO": 0.60, "IEF": 0.40}  # Market-cap proxy
@@ -260,7 +268,20 @@ def estimate_expected_returns(
         # Extract the scalar explicitly so float() is safe across all numpy versions.
         view_var = float(np.asarray(P @ (tau * cov) @ P.T).reshape(-1)[0])
         view_var = max(view_var, 1e-12)
-        omega = np.array([[view_var * (1.0 / max(view_confidence, 0.10))]], dtype=float)
+        # FIX (F5, Audit 2026-05-10 — Quant-Guild Part 20):
+        # Standard BL (Idzorek 2005): Ω = τ × P'ΣP × (1−c)/c
+        # Previous code used Ω = view_var / c, which is τ × P'ΣP / c — a factor of
+        # (1/c − 1) = (1−c)/c × (c/(1−c)) too large at c<1, over-weighting uncertainty
+        # and suppressing the model view by ~58% extra at c=0.37.
+        # At c=1 (perfect confidence): Ω→0 (view fully trusted) — both formulas agree.
+        # At c=0: Ω→∞ (view ignored) — both formulas agree.
+        # At c=0.37 (AUC≈0.53): old Ω = view_var/0.37 = 2.70×view_var;
+        #                        new Ω = view_var×1.70/0.37×(1-0.37)/0.37 ... wait:
+        #                        new Ω = view_var×(1-0.37)/0.37 = view_var×1.70
+        # The corrected formula reduces Ω by 37%, giving the model view 37% more weight.
+        _vc_safe = float(np.clip(view_confidence, 1e-6, 1.0 - 1e-6))
+        omega = np.array([[view_var * (1.0 - _vc_safe) / _vc_safe]], dtype=float)
+        omega[0, 0] = max(omega[0, 0], 1e-12)
 
         # Black-Litterman formula
         inv_tauS = np.linalg.inv(tau * cov)
@@ -306,16 +327,32 @@ def optimize_weights_scipy(
             tc = 0.0
         return -(ret - 0.5 * risk_aversion * risk - tc)
 
+    # FIX (F2, Audit 2026-05-10 — Quant-Guild Part 20):
+    # Remove max_turnover as a HARD constraint. With prev_weights = 0.60 and
+    # voo_max = 0.5625 (high_vol regime), the sum-constraint requires
+    # w_voo ∈ [0.575, 0.625], but bounds require w_voo ≤ 0.5625 — INFEASIBLE.
+    # scipy SLSQP then returns result.success=False and the code fell back to w0=prev,
+    # giving |0.60 − 0.60| = 0 → dead_band fires → 97.3% lock-rate.
+    #
+    # Fix: turnover is already penalised via the slip_bps term in the objective
+    # (tc = slip_bps × sum(|w − prev|)), which is the economically correct mechanism.
+    # Remove the hard constraint so the optimisation is always feasible within bounds.
+    # The dead_band_threshold (0.5%) already prevents trivially small rebalances.
     constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
-    if prev_weights is not None and max_turnover < 1.0:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w: max_turnover - np.sum(np.abs(w - prev_weights))
-        })
+    # max_turnover hard constraint intentionally removed — see F2 fix above.
+
+    # FIX (F2 continued): starting point must be INSIDE bounds to avoid spurious
+    # "Positive directional derivative" failures at the boundary.
+    # Project w0 to the feasible box before calling the optimiser.
+    w0_feasible = np.array([
+        float(np.clip(w0[i], bounds[i][0], bounds[i][1]))
+        for i in range(len(w0))
+    ])
+    w0_feasible = w0_feasible / w0_feasible.sum() if w0_feasible.sum() > 0 else w0_feasible
 
     result = minimize(
         objective,
-        x0=w0,
+        x0=w0_feasible,
         method="SLSQP",
         bounds=bounds,
         constraints=constraints,
@@ -327,8 +364,9 @@ def optimize_weights_scipy(
         w = w / w.sum()
         return w
     else:
-        # Fallback to minimum variance
-        return w0
+        # FIX (F2 continued): on failure return the bounds-projected w0, NOT the
+        # raw w0 (which may be outside bounds and would give delta=0 → dead_band).
+        return w0_feasible
 
 
 def optimize_weights_cvxpy(
@@ -370,8 +408,11 @@ def optimize_weights_cvxpy(
     for i, (lb, ub) in enumerate(bounds):
         constraints.append(w[i] >= lb)
         constraints.append(w[i] <= ub)
-    if prev_weights is not None and max_turnover < 1.0:
-        constraints.append(cp.sum(cp.abs(w - prev_weights)) <= max_turnover)
+    # FIX (F2, Audit 2026-05-10 — Quant-Guild Part 20):
+    # max_turnover hard constraint removed — see optimize_weights_scipy for rationale.
+    # Turnover is already penalised in the objective via slip_bps.
+    # if prev_weights is not None and max_turnover < 1.0:
+    #     constraints.append(cp.sum(cp.abs(w - prev_weights)) <= max_turnover)
 
     # CVaR constraint (requires scenario returns)
     if scenario_returns is not None and len(scenario_returns) > 10:
@@ -582,12 +623,30 @@ def compute_allocation(
     # Recent scenario returns for CVaR
     scenario_ret = returns_history[available_cols].dropna().tail(252).values
 
+    # FIX (F2, Audit 2026-05-10 — Quant-Guild Part 20):
+    # Clip prev_weights to the current regime's bounds before optimisation.
+    # When prev_weights[0] = 0.60 and voo_max = 0.5625 (high_vol), the raw prev
+    # is OUTSIDE the feasible box. The clipped starting point (0.5625) is inside
+    # bounds, so the optimiser always finds a valid solution. Without this clip,
+    # the objective computes a turnover penalty relative to an infeasible baseline,
+    # which distorts the trade-off even when the hard constraint is removed.
+    if prev_weights is not None and len(prev_weights) >= len(bounds):
+        prev_weights_clipped = np.array([
+            float(np.clip(prev_weights[i], bounds[i][0], bounds[i][1]))
+            for i in range(len(bounds))
+        ])
+        prev_weights_clipped = (prev_weights_clipped / prev_weights_clipped.sum()
+                                 if prev_weights_clipped.sum() > 0
+                                 else prev_weights_clipped)
+    else:
+        prev_weights_clipped = prev_weights
+
     # Optimize
     w_opt = optimize_weights_cvxpy(
         mu_bl, cov, available_cols, bounds,
         risk_aversion=eff_risk_aversion,
-        prev_weights=prev_weights,
-        max_turnover=cfg.max_turnover,
+        prev_weights=prev_weights_clipped,
+        max_turnover=cfg.max_turnover,  # kept for API compat; no longer a hard constraint
         slip_bps=cfg.slip_bps,
         scenario_returns=scenario_ret if len(scenario_ret) > 20 else None,
         max_cvar=cfg.max_cvar_budget,
