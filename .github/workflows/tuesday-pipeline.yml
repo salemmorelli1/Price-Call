@@ -93,6 +93,20 @@ jobs:
           git checkout "origin/${GITHUB_REF_NAME}" -- \
             artifacts_part9/live_attribution_report.json \
             2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+          # FIX (BUG-4, Audit 2026-05-11 — Quant-Guild Part 23):
+          # execution_cost_tape.csv is a daily-accumulating artifact (Part 8
+          # read-then-append). If the previous run's push was partial or the
+          # checkout is behind remote, Part 8 would start from a stale or
+          # empty tape, losing historical execution cost rows. Explicitly
+          # restoring it from origin (same as prediction_log) guarantees Part 8
+          # always appends to the full committed history.
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part8/execution_cost_tape.csv \
+            2>/dev/null || echo "execution_cost_tape.csv not on remote yet — starting fresh."
+          # Also restore signal_log.csv (Part 10 trading bot accumulates this daily).
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part10_bot/signal_log.csv \
+            2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
 
       # ── Gate key consistency guard ─────────────────────────────────────
       # REQUIRED: the gate step writes exactly one output key (currently
