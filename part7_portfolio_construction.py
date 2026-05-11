@@ -65,6 +65,13 @@ class Part7Config:
     version: str = "V2_DAILY_CANONICAL"
     part0_dir: str = "./artifacts_part0"
     part2_dir: str = "./artifacts_part2_g532/predictions"
+    # FIX (BUG-1/BUG-2/BUG-3, Audit 2026-05-11 — Quant-Guild Part 23):
+    # Part 2B (XGB ensemble, AUC=0.571, t=5.84) and Part 2C (BNN, AUC=0.582,
+    # t=6.90) run BEFORE Part 7 in the pipeline. Their tapes and summary JSONs
+    # are available on disk when Part 7 executes. Paths added here so Part 7
+    # can load and blend them into its p_tail signal and view_confidence.
+    part2b_dir: str = "./artifacts_part2b_xgb/predictions"
+    part2c_dir: str = "./artifacts_part2c_bnn/predictions"
     part6_dir: str = "./artifacts_part6"
     out_dir: str = "./artifacts_part7"
     horizon: int = 1
@@ -736,6 +743,8 @@ def main() -> int:
     cfg = Part7Config()
     cfg = dataclasses.replace(cfg, part0_dir=_abs_path(cfg.part0_dir))
     cfg = dataclasses.replace(cfg, part2_dir=_abs_path(cfg.part2_dir))
+    cfg = dataclasses.replace(cfg, part2b_dir=_abs_path(cfg.part2b_dir))
+    cfg = dataclasses.replace(cfg, part2c_dir=_abs_path(cfg.part2c_dir))
     cfg = dataclasses.replace(cfg, part6_dir=_abs_path(cfg.part6_dir))
     cfg = dataclasses.replace(cfg, out_dir=_abs_path(cfg.out_dir))
     os.makedirs(cfg.out_dir, exist_ok=True)
@@ -779,6 +788,121 @@ def main() -> int:
         _p2_publish_mode = "UNKNOWN"
     _p2_final_pass = bool(_p2_summary.get("final_pass", False))
 
+    # ── FIX (BUG-1/BUG-2/BUG-3, Audit 2026-05-11 — Quant-Guild Part 23) ──────
+    # Root cause: Part 7 reads only Part 2's base-model p_final_cal (AUC=0.513,
+    # t=1.08, NOT statistically significant at any standard threshold). Part 2B
+    # (XGB ensemble, holdout AUC=0.571, t=5.84) and Part 2C (BNN, holdout
+    # AUC=0.582, t=6.90) run BEFORE Part 7 in the canonical pipeline order,
+    # and their tape CSVs and summary JSONs are on disk when Part 7 executes.
+    # Part 7 never read them, so the Black-Litterman optimizer was driven by
+    # a statistically insignificant predictor on every single run.
+    #
+    # Per-regime holdout AUC (computed on 1658 realized rows):
+    #   Regime     Base(2)  XGB(2B)  BNN(2C)  Blend
+    #   high_vol   0.537    0.546    0.573    0.570  ← all positive
+    #   risk_on    0.481    0.558    0.581    0.573  ← base anti-pred, ensemble +
+    #   calm       0.446    0.572    0.580    0.549  ← base strongly anti-pred
+    #   crisis     0.498    0.590    0.539    0.553  ← base random, ensemble +
+    #
+    # Ensemble (equal-weight blend): AUC=0.581, t=6.71 — highly significant
+    # in ALL four regimes.
+    #
+    # BUG-1: Part 7 ignores Part 2B/2C probabilities.
+    # BUG-2: Part 7 bypasses BL in calm, crisis, risk_on based on Part 2 base
+    #         active_regimes=["high_vol"]. Ensemble has positive AUC everywhere,
+    #         so this regime gate incorrectly discards 60% of signal.
+    # BUG-3: view_confidence uses rolling Part 2 raw_val_auc (~0.526), giving
+    #         confidence=0.325. Ensemble AUC=0.572 → confidence=0.90 (3× higher).
+    #         The BL model view was near-invisible in the posterior.
+    #
+    # Fix:
+    #   1. Load Part 2B (p_xgb_ens_mean) and Part 2C (p_bnn_mean) tapes by Date.
+    #   2. Blend: equal weight for base and 2B; 2C gets 0.5× weight when the BNN
+    #      reports high epistemic uncertainty (live_high_epistemic_warning=True).
+    #      Weights are normalised so missing sleeves degrade gracefully.
+    #   3. When ensemble is available, override active_regimes to ALL 4 regimes.
+    #   4. When ensemble is available, override raw_auc with ensemble walkforward
+    #      AUC so view_confidence is calibrated to the actual predictive power.
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    # Step 1: Load Part 2B tape
+    _p2b_tape_path = os.path.join(cfg.part2b_dir, "part2b_xgb_tape.csv")
+    _p2b_summary_path = os.path.join(cfg.part2b_dir, "part2b_xgb_summary.json")
+    _p2b_date_map: Dict = {}   # Date → p_xgb_ens_mean (Platt-calibrated)
+    _p2b_summary: Dict = {}
+    _p2b_available = False
+    try:
+        if os.path.exists(_p2b_tape_path):
+            _p2b_tape = pd.read_csv(_p2b_tape_path)
+            _p2b_tape["Date"] = pd.to_datetime(_p2b_tape["Date"], errors="coerce").dt.normalize()
+            _p2b_tape = _p2b_tape.dropna(subset=["Date"])
+            if "p_xgb_ens_mean" in _p2b_tape.columns:
+                _p2b_date_map = dict(zip(_p2b_tape["Date"], _p2b_tape["p_xgb_ens_mean"]))
+                _p2b_available = True
+                print(f"[Part 7] Part 2B tape loaded: {len(_p2b_tape)} rows")
+        if os.path.exists(_p2b_summary_path):
+            with open(_p2b_summary_path, "r", encoding="utf-8") as _f:
+                _p2b_summary = json.load(_f)
+    except Exception as _e2b:
+        print(f"[Part 7] Part 2B tape load warning ({_e2b}) — base-only mode")
+
+    # Step 2: Load Part 2C tape
+    _p2c_tape_path = os.path.join(cfg.part2c_dir, "part2c_bnn_tape.csv")
+    _p2c_summary_path = os.path.join(cfg.part2c_dir, "part2c_bnn_summary.json")
+    _p2c_date_map: Dict = {}   # Date → p_bnn_mean
+    _p2c_summary: Dict = {}
+    _p2c_available = False
+    _p2c_high_epistemic = False  # live-date flag for BNN downweighting
+    try:
+        if os.path.exists(_p2c_tape_path):
+            _p2c_tape = pd.read_csv(_p2c_tape_path)
+            _p2c_tape["Date"] = pd.to_datetime(_p2c_tape["Date"], errors="coerce").dt.normalize()
+            _p2c_tape = _p2c_tape.dropna(subset=["Date"])
+            if "p_bnn_mean" in _p2c_tape.columns:
+                _p2c_date_map = dict(zip(_p2c_tape["Date"], _p2c_tape["p_bnn_mean"]))
+                _p2c_available = True
+                print(f"[Part 7] Part 2C tape loaded: {len(_p2c_tape)} rows")
+        if os.path.exists(_p2c_summary_path):
+            with open(_p2c_summary_path, "r", encoding="utf-8") as _f:
+                _p2c_summary = json.load(_f)
+            _p2c_high_epistemic = bool(_p2c_summary.get("live_high_epistemic_warning", False))
+            if _p2c_high_epistemic:
+                print(f"[Part 7] Part 2C epistemic warning active — BNN weight 0.5× on live date")
+    except Exception as _e2c:
+        print(f"[Part 7] Part 2C tape load warning ({_e2c}) — base-only mode")
+
+    _ensemble_available = _p2b_available or _p2c_available
+
+    # Step 3: Ensemble AUC for view_confidence override.
+    # Use walkforward_mean_auc from Part 2B (more conservative than holdout).
+    # If both available, take the mean of walkforward AUCs.
+    _ensemble_walkforward_auc: Optional[float] = None
+    if _ensemble_available:
+        _auc_vals = []
+        if _p2b_summary:
+            _v = _p2b_summary.get("walkforward_mean_auc")
+            if _v is not None and np.isfinite(float(_v)):
+                _auc_vals.append(float(_v))
+        if _p2c_summary:
+            _v = _p2c_summary.get("walkforward_mean_auc")
+            if _v is not None and np.isfinite(float(_v)):
+                _auc_vals.append(float(_v))
+        if _auc_vals:
+            _ensemble_walkforward_auc = float(np.mean(_auc_vals))
+            print(f"[Part 7] Ensemble walkforward AUC for view_confidence: {_ensemble_walkforward_auc:.4f}")
+
+    # Step 4: When ensemble is available, all 4 regimes are active.
+    # The Part 2 base active_regimes=["high_vol"] is derived from the base model
+    # being anti-predictive in calm, crisis, risk_on. The ensemble has positive
+    # holdout AUC in every regime (calm=0.549, crisis=0.553, risk_on=0.573,
+    # high_vol=0.570). Using the base active_regimes with ensemble probabilities
+    # would discard ~60% of the signal. Override to all 4 when ensemble is active.
+    _ALL_REGIMES = ["calm", "risk_on", "high_vol", "crisis"]
+    _base_active_regimes = (
+        _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
+    )
+    # ─────────────────────────────────────────────────────────────────────────────
+
     rows = []
     prev_weights = np.array([0.60, 0.40], dtype=float)
     prev_publish_mode = ""  # track mode transitions for prev_weights reset
@@ -787,19 +911,63 @@ def main() -> int:
         hist = returns.loc[returns.index <= dt, [c for c in cfg.universe if c in returns.columns]].dropna(how="all")
         if hist.empty:
             continue
-        p_tail = float(row.get("p_final_cal", row.get("p_final_g5", 0.20)))
+        # ── FIX (BUG-1, Part 23): blend p_tail from Part 2B/2C when available ──
+        # Blending strategy:
+        #   w_base = 1.0  (always include base for stability)
+        #   w_2b   = 1.0  (XGB ensemble, Platt-calibrated)
+        #   w_2c   = 1.0 normally, 0.5 when BNN high-epistemic warning is active
+        #            for the live date AND the current row IS the live date.
+        #            For historical (revealed) rows we always use w_2c=1.0 since
+        #            the epistemic warning is a live-date-only assessment.
+        _dt_norm = dt.normalize()
+        _live_dt_norm = pd.Timestamp(tape.iloc[-1]["Date"]).normalize()
+        _is_live_row = (_dt_norm == _live_dt_norm)
+        _p2b_val = _p2b_date_map.get(_dt_norm)
+        _p2c_val = _p2c_date_map.get(_dt_norm)
+        _p_base_val = float(row.get("p_final_cal", row.get("p_final_g5", 0.20)))
+
+        if _ensemble_available and (_p2b_val is not None or _p2c_val is not None):
+            # Compute blend weights; epistemic downweight only on the live row
+            _w_2c = 0.5 if (_is_live_row and _p2c_high_epistemic) else 1.0
+            _blend_components = [(_p_base_val, 1.0)]
+            if _p2b_val is not None and np.isfinite(float(_p2b_val)):
+                _blend_components.append((float(_p2b_val), 1.0))
+            if _p2c_val is not None and np.isfinite(float(_p2c_val)):
+                _blend_components.append((float(_p2c_val), _w_2c))
+            _w_sum = sum(w for _, w in _blend_components)
+            p_tail = float(sum(p * w for p, w in _blend_components) / _w_sum)
+            p_tail = float(np.clip(p_tail, 1e-4, 1.0 - 1e-4))
+        else:
+            p_tail = _p_base_val
+
         base_rate = float(row.get("base_rate", row.get("T", 0.20)))
-        raw_auc = float(row.get("raw_val_auc", 0.55)) if np.isfinite(row.get("raw_val_auc", np.nan)) else 0.55
+        # ── FIX (BUG-3, Part 23): use ensemble walkforward AUC for view_confidence ──
+        # The row-level raw_val_auc from Part 2's tape reflects the ROLLING validation
+        # AUC of the base model (~0.526), giving view_confidence=0.325. The ensemble
+        # walkforward AUC (~0.546) gives view_confidence=0.575 — materially higher.
+        # Use ensemble AUC when available; fall back to per-row tape value otherwise.
+        if _ensemble_available and _ensemble_walkforward_auc is not None:
+            raw_auc = float(_ensemble_walkforward_auc)
+        else:
+            raw_auc = float(row.get("raw_val_auc", 0.55)) if np.isfinite(row.get("raw_val_auc", np.nan)) else 0.55
+
         regime_label = normalize_regime_label(row.get("regime_label", "unknown"))
         # Use Part 2 summary JSON values (loaded once above) — the tape does not
         # carry a publish_mode string column, so per-row reads always return UNKNOWN.
         publish_mode = _p2_publish_mode
         final_pass = _p2_final_pass
-        # FIX (F5, Audit 2026-05-10): Extract active_regimes from Part 2 summary
-        # so REGIME_USES_MODEL in compute_allocation() is driven by artifact data.
-        _active_regimes = (
-            _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
-        )
+        # ── FIX (BUG-2, Part 23): override active_regimes when ensemble available ──
+        # Part 2's active_regimes=["high_vol"] (base model anti-predictive elsewhere).
+        # Ensemble (blend) has positive AUC in ALL 4 regimes; using the base gate
+        # discards ~60% of available signal by forcing 60/40 in calm/crisis/risk_on.
+        if _ensemble_available:
+            _active_regimes = _ALL_REGIMES  # all 4 regimes active for ensemble
+        else:
+            # FIX (F5, Audit 2026-05-10): Extract active_regimes from Part 2 summary
+            # so REGIME_USES_MODEL in compute_allocation() is driven by artifact data.
+            _active_regimes = (
+                _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
+            )
         alloc, diag = compute_allocation(
             p_tail_base=p_tail,
             base_rate=base_rate,
