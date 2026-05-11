@@ -1249,12 +1249,106 @@ def main(cfg: Part3Config = CFG) -> None:
     else:
         live_predlog_rows = 0
 
+    # ── FIX (BUG-1, Audit 2026-05-11 — Quant-Guild Part 21): Ensemble probability blend ──
+    # Part 2B (XGBoost ensemble, holdout AUC=0.571, t=2.34) and Part 2C (BNN, holdout
+    # AUC=0.584, t=2.82) are statistically significant. Part 2 base (AUC=0.513, t=0.49)
+    # is not. The Part 20 fix incorrectly placed the blend in Part 2, which runs BEFORE
+    # Part 2B and 2C in the pipeline order. That caused the blend code to never execute
+    # (confirmed: all 1658 rows had p_final_g5_source="base_plus_soft_caution_overlay_532",
+    # not "base_only" — the latter would appear had the block started).
+    #
+    # Correct location: Part 3 runs AFTER Part 2B and 2C, making it the natural fusion
+    # layer. The blend loads the CURRENT run's Part 2B and 2C tapes to find the live
+    # date's probabilities. If either sleeve is unavailable, the blend falls back
+    # gracefully to the base-only probability.
+    #
+    # Epistemic caution (Finding-3): when Part 2C reports live_high_epistemic_warning=True
+    # (BNN uncertainty > 1.5× training distribution), the Part 2C component is downweighted
+    # by 50% in the blend to dampen its influence when the model is extrapolating.
+    _p2b_blend_p: Optional[float] = None
+    _p2c_blend_p: Optional[float] = None
+    _blend_source: str = "base_only"
+    _live_high_epistemic: bool = False
+    _p2c_epist_ratio: float = 1.0
+
+    # Load Part 2B probability for the live date
+    _p2b_root = root / "artifacts_part2b_xgb"
+    _p2b_tape_path = _p2b_root / "part2b_xgb_tape.csv"
+    _p2b_summary_path = _p2b_root / "part2b_xgb_summary.json"
+    try:
+        if _p2b_tape_path.exists():
+            _p2b_tape = pd.read_csv(_p2b_tape_path)
+            _p2b_tape["Date"] = pd.to_datetime(_p2b_tape["Date"], errors="coerce").dt.normalize()
+            _p2b_tape = _p2b_tape.dropna(subset=["Date"]).set_index("Date")
+            _live_dt = pd.Timestamp(decision_date).normalize()
+            if "p_xgb_ens_mean" in _p2b_tape.columns and _live_dt in _p2b_tape.index:
+                _p2b_blend_p = float(_p2b_tape.loc[_live_dt, "p_xgb_ens_mean"])
+                if not math.isfinite(_p2b_blend_p):
+                    _p2b_blend_p = None
+            print(f"[Part 3] Blend: Part 2B XGB tape loaded ({len(_p2b_tape)} rows) | live p={_p2b_blend_p}")
+        else:
+            print(f"[Part 3] Blend: Part 2B tape not found at {_p2b_tape_path}")
+    except Exception as _e2b:
+        print(f"[Part 3] Blend: Part 2B tape load failed ({_e2b}) — skipping 2B")
+
+    # Load Part 2C probability for the live date; check epistemic warning
+    _p2c_root = root / "artifacts_part2c_bnn"
+    _p2c_tape_path = _p2c_root / "part2c_bnn_tape.csv"
+    _p2c_summary_path = _p2c_root / "part2c_bnn_summary.json"
+    try:
+        if _p2c_summary_path.exists():
+            _p2c_summary = _read_json(_p2c_summary_path)
+            _live_high_epistemic = bool(_p2c_summary.get("live_high_epistemic_warning", False))
+            _p2c_epist_ratio = float(_p2c_summary.get("live_epist_ratio", 1.0) or 1.0)
+            if _live_high_epistemic:
+                print(f"[Part 3] Blend: Part 2C HIGH epistemic warning (ratio={_p2c_epist_ratio:.3f}) — downweighting 2C by 50%")
+        if _p2c_tape_path.exists():
+            _p2c_tape = pd.read_csv(_p2c_tape_path)
+            _p2c_tape["Date"] = pd.to_datetime(_p2c_tape["Date"], errors="coerce").dt.normalize()
+            _p2c_tape = _p2c_tape.dropna(subset=["Date"]).set_index("Date")
+            _live_dt = pd.Timestamp(decision_date).normalize()
+            if "p_bnn_mean" in _p2c_tape.columns and _live_dt in _p2c_tape.index:
+                _p2c_blend_p = float(_p2c_tape.loc[_live_dt, "p_bnn_mean"])
+                if not math.isfinite(_p2c_blend_p):
+                    _p2c_blend_p = None
+            print(f"[Part 3] Blend: Part 2C BNN tape loaded ({len(_p2c_tape)} rows) | live p={_p2c_blend_p}")
+        else:
+            print(f"[Part 3] Blend: Part 2C tape not found at {_p2c_tape_path}")
+    except Exception as _e2c:
+        print(f"[Part 3] Blend: Part 2C tape load failed ({_e2c}) — skipping 2C")
+
+    # Compute blended probability for the live row
+    # Equal weighting (1/3 each) unless epistemic warning fires → 2C gets weight 0.5
+    # The blend modifies p_raw, which flows into p_regime_recal and prediction_log.
+    _p_base = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
+    if _p_base is not None and math.isfinite(_p_base):
+        _w_base, _w_2b, _w_2c = 1.0, 1.0, (0.5 if _live_high_epistemic else 1.0)
+        _vals = [(p, w) for p, w in [(_p_base, _w_base), (_p2b_blend_p, _w_2b), (_p2c_blend_p, _w_2c)]
+                 if p is not None and math.isfinite(p)]
+        if len(_vals) > 1:
+            _w_sum = sum(w for _, w in _vals)
+            _p_blended = sum(p * w for p, w in _vals) / _w_sum
+            _p_blended = float(max(1e-4, min(1.0 - 1e-4, _p_blended)))
+            _sources = ["base"]
+            if _p2b_blend_p is not None: _sources.append("2b_xgb")
+            if _p2c_blend_p is not None:
+                _sources.append("2c_bnn" + ("_downwt" if _live_high_epistemic else ""))
+            _blend_source = "+".join(_sources)
+            print(f"[Part 3] Blend: {_blend_source} | p_base={_p_base:.4f} → p_blended={_p_blended:.4f}")
+            # Override p_raw so the blended value flows into p_regime_recal and prediction_log
+            p_raw = _p_blended
+        else:
+            print(f"[Part 3] Blend: Only base available for live date — p unchanged ({_p_base:.4f})")
+            _blend_source = "base_only"
+    else:
+        _blend_source = "base_only_null_input"
+
     alpha_status = _load_alpha_status(alpha_tape_df, alpha_summary_json,
                                        live_realized_rows=live_predlog_rows)
     alpha_positions_latest = _extract_alpha_positions(alpha_positions_df)
 
     # Compute regime-recalibrated probability for the current live row
-    p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
+    # p_raw is now the blended probability (or base-only if blend unavailable)
     current_regime = str(_row_value(defense_row, ["regime_label"], "unknown"))
     p_regime_recal: Optional[float] = _apply_regime_platt(p_raw, current_regime, platt_params)
 
@@ -1403,7 +1497,13 @@ def main(cfg: Part3Config = CFG) -> None:
         # Regime-conditional Platt recalibration
         "platt_scaling_active": platt_active,
         "current_regime": current_regime,
-        "p_final_cal_raw": p_raw,
+        "p_final_cal_raw": _p_base,
+        "p_final_cal_blended": p_raw if _blend_source != "base_only" else None,
+        "p_blend_source": _blend_source,
+        "p_blend_2b": _p2b_blend_p,
+        "p_blend_2c": _p2c_blend_p,
+        "p_2c_live_high_epistemic_warning": _live_high_epistemic,
+        "p_2c_epist_ratio": _p2c_epist_ratio,
         "p_regime_recal": p_regime_recal,
         "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
         # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
