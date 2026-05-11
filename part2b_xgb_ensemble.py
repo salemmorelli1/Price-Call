@@ -737,16 +737,75 @@ def main() -> int:
         "y_true":                y.values,
         "in_holdout":            holdout_mask.astype(int),
     })
+    # ── FIX (BUG-1, Audit 2026-05-11 — Quant-Guild Part 22): Live date append ──
+    # Root cause: the tape was built from X (inner join of X_features with
+    # y_labels_revealed). y_labels_revealed only contains rows with confirmed
+    # realized y labels — the current live date (today) is never in it because
+    # the return hasn't been observed yet. So the tape always ends at the LAST
+    # REVEALED date (e.g. 2026-05-08), never the actual live date (2026-05-11).
+    #
+    # Consequence: Part 3's blend code searches for today's date in this tape,
+    # doesn't find it, and silently falls back to "base_only" — the blend NEVER
+    # fires on any production run. Evidence: part3_summary.json shows
+    # p_blend_source="base_only" and p_final_cal_blended=null on every run.
+    #
+    # Additionally, the old "live prediction" block used X.values[-1:] (the last
+    # REVEALED row = 2026-05-08 features) for today's inference, not today's
+    # actual features. This made live_p_xgb_ens_mean in the summary JSON stale
+    # by 1 trading day on every run.
+    #
+    # Fix: after building the revealed-only tape, check whether X_full has a
+    # later date (the actual live date). If so, compute a fresh prediction from
+    # today's features, append that row to the tape (y_true=NaN, in_holdout=0),
+    # and use those values as the live predictions in the summary JSON.
+    _live_date_full = X_full.index.max()
+    _last_revealed_date = X.index.max()
+    _has_live_row = (_live_date_full > _last_revealed_date)
+
+    if _has_live_row:
+        # Compute live prediction from actual live features (today's date)
+        _x_live_feat = X_full.loc[[_live_date_full], [c for c in cfg.feature_cols if c in X_full.columns]].values.astype(np.float32)
+        _x_live_sc = scaler.transform(_x_live_feat)
+        _p_live_mean_raw, _p_live_std = predict_ensemble(models, _x_live_sc)
+        _p_live_mean = _apply_platt(global_platt, _p_live_mean_raw)
+        _live_overlay_on = int(_p_live_std[0] > epist_threshold)
+        # Append live row to tape so Part 3 blend can find today's date
+        _live_row_df = pd.DataFrame({
+            "Date":               [_live_date_full],
+            "p_xgb_ens_mean":     [float(_p_live_mean[0])],
+            "p_xgb_ens_mean_raw": [float(_p_live_mean_raw[0])],
+            "p_xgb_ens_std":      [float(_p_live_std[0])],
+            "xgb_overlay_on":     [_live_overlay_on],
+            "y_true":             [np.nan],   # not yet realized
+            "in_holdout":         [0],
+        })
+        tape_out = pd.concat([tape_out, _live_row_df], ignore_index=True)
+        # Use the actual live date values in the summary JSON
+        p_live_mean_raw_val  = float(_p_live_mean_raw[0])
+        p_live_mean_val      = float(_p_live_mean[0])
+        p_live_std_val       = float(_p_live_std[0])
+        live_overlay_on      = _live_overlay_on
+        _live_print_date     = _live_date_full.date()
+    else:
+        # Fallback: revealed tape already ends at the live date (unexpected in production)
+        _x_live_sc = scaler.transform(X.values[-1:].astype(np.float32))
+        _p_live_mean_raw, _p_live_std = predict_ensemble(models, _x_live_sc)
+        _p_live_mean = _apply_platt(global_platt, _p_live_mean_raw)
+        p_live_mean_raw_val  = float(_p_live_mean_raw[0])
+        p_live_mean_val      = float(_p_live_mean[0])
+        p_live_std_val       = float(_p_live_std[0])
+        live_overlay_on      = int(_p_live_std[0] > epist_threshold)
+        _live_print_date     = X.index[-1].date()
+
+    # Assign to the names used below for the summary JSON
+    p_live_mean_raw = np.array([p_live_mean_raw_val])
+    p_live_mean     = np.array([p_live_mean_val])
+    p_live_std      = np.array([p_live_std_val])
+
     tape_out_path = Path(out_dir) / "part2b_xgb_tape.csv"
     tape_out.to_csv(tape_out_path, index=False)
 
-    # ── Live prediction (latest row) ──────────────────────────────────────
-    x_live_sc = scaler.transform(X.values[-1:].astype(np.float32))
-    p_live_mean_raw, p_live_std = predict_ensemble(models, x_live_sc)
-    p_live_mean = _apply_platt(global_platt, p_live_mean_raw)
-    live_overlay_on = int(p_live_std[0] > epist_threshold)
-
-    print(f"\nLive prediction ({X.index[-1].date()}):")
+    print(f"\nLive prediction ({_live_print_date}):")
     print(f"  p_xgb_ens_mean (calibrated)={p_live_mean[0]:.4f}")
     print(f"  p_xgb_ens_mean (raw)={p_live_mean_raw[0]:.4f}")
     print(f"  p_xgb_ens_std={p_live_std[0]:.5f}")
