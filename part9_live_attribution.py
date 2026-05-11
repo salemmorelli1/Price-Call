@@ -600,11 +600,13 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         # p_regime_recal is regime-conditional Platt-scaled and is the best-calibrated
         # probability estimate the system produces. The original code exclusively used
         # p_final_cal, leaving the recalibration entirely unused in statistical inference.
+        _using_recal = False
         if "p_regime_recal" in realized.columns:
             recal_series = pd.to_numeric(realized["p_regime_recal"], errors="coerce")
             if recal_series.notna().mean() >= 0.5:
                 pred_p = recal_series.values
-                print("[Part 9] Using p_regime_recal (Platt-scaled) for live statistics.")
+                _using_recal = True
+                print("[Part 9] Using p_regime_recal (Platt-scaled + blended) for live statistics.")
             else:
                 pred_p = pred_p_raw
         else:
@@ -622,6 +624,7 @@ def generate_live_report(cfg: Part9Config) -> Dict:
             # Report the median threshold across live rows for transparency
             live_stats["tail_threshold"] = float(np.median(thr_series.values))
             live_stats["base_rate"] = base_rate
+            live_stats["probability_source"] = "p_regime_recal" if _using_recal else "p_final_cal"
             active_rets = -spread_real[m] * np.sign(pred_p[m] - base_rate)
             if len(active_rets) >= 2:
                 live_stats["mean_active_return"] = float(np.mean(active_rets))
@@ -658,6 +661,28 @@ def generate_live_report(cfg: Part9Config) -> Dict:
                 "ece": ece_score(y_live[m], pred_p[m]),
                 "brier": float(np.mean((y_live[m] - pred_p[m]) ** 2)),
             }
+
+            # FIX (BUG-8, Audit 2026-05-11 — Quant-Guild Part 24):
+            # Add base-model comparison track so ensemble value-add can be measured live.
+            # When p_regime_recal is the primary signal, also evaluate p_final_cal (raw base)
+            # against the same y_live labels. This gives the AUC/accuracy of the raw base
+            # model in isolation, making it possible to attribute: how much of the live AUC
+            # comes from the base model vs. the blend + Platt recalibration.
+            # Without this, it is impossible to verify the ensemble is adding value once
+            # live data accumulates — you could have high p_regime_recal AUC entirely due
+            # to the base model, with the blend/recal contributing noise.
+            if _using_recal:
+                m_raw = np.isfinite(pred_p_raw) & np.isfinite(y_live)
+                if m_raw.sum() >= 2:
+                    base_stats = t_stat_sign_accuracy(y_live[m_raw], pred_p_raw[m_raw], base_rate)
+                    base_stats["tail_threshold"] = float(np.median(thr_series.values))
+                    base_stats["base_rate"] = base_rate
+                    base_stats["probability_source"] = "p_final_cal"
+                    report["classification_stats_live_base_model"] = base_stats
+                    print(
+                        f"[Part 9] Base model (p_final_cal) live AUC={base_stats.get('auc', np.nan):.4f} | "
+                        f"Blended+Platt (p_regime_recal) live AUC={live_stats.get('auc', np.nan):.4f}"
+                    )
 
     if os.path.exists(cfg.part2_tape_path):
         tape = pd.read_csv(cfg.part2_tape_path)
