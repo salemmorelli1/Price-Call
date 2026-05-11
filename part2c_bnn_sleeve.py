@@ -858,7 +858,10 @@ def main() -> int:
     # compute BNN predictions for that date and append to the tape so Part 3
     # can find today's date in the tape when blending.
     if _has_live_row:
-        _live_sc = scaler.transform(live_row)  # live_row was set to X_full live features above
+        # FIX (BUG-4, Audit 2026-05-11 — Quant-Guild Part 24):
+        # Removed dead code: `_live_sc = scaler.transform(live_row)` was computed
+        # but never used. predict_live() calls scaler.transform internally.
+        # The dead line wasted a forward-pass through the scaler and was confusing.
         _live_res = predict_live(models, scaler, live_row, cfg, epist_threshold=epist_threshold)
         _live_tape_row = pd.DataFrame({
             "Date":            [_live_date_full],
