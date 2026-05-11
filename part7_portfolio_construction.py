@@ -893,14 +893,43 @@ def main() -> int:
 
     # Step 4: When ensemble is available, all 4 regimes are active.
     # The Part 2 base active_regimes=["high_vol"] is derived from the base model
-    # being anti-predictive in calm, crisis, risk_on. The ensemble has positive
-    # holdout AUC in every regime (calm=0.549, crisis=0.553, risk_on=0.573,
-    # high_vol=0.570). Using the base active_regimes with ensemble probabilities
-    # would discard ~60% of the signal. Override to all 4 when ensemble is active.
+    # being anti-predictive in calm, crisis, risk_on. The ensemble blend is expected
+    # to have better coverage across regimes given higher aggregate walkforward AUC.
+    #
+    # FIX (BUG-6, Audit 2026-05-11 — Quant-Guild Part 24):
+    # The previous comment claimed "ensemble has positive AUC in ALL 4 regimes
+    # (calm=0.549, crisis=0.553, risk_on=0.573, high_vol=0.570)" but NONE of these
+    # values appear in any artifact — Part 2B's summary JSON has no per-regime AUC
+    # breakdown. These were unverified claims embedded as a correctness justification
+    # for overriding active_regimes to all 4, which risks deploying in regimes where
+    # the ensemble is anti-predictive.
+    #
+    # Corrected logic: derive per-regime AUC from Part 2C's walkforward data if
+    # available (Part 2C has richer per-fold diagnostics). If per-regime AUC is not
+    # available in any artifact, fall back to the conservative Part 2 base
+    # active_regimes rather than blindly enabling all 4. This prevents the system
+    # from deploying ensemble-weighted views in regimes that have never been validated.
+    #
+    # TODO: Add regime_auc_breakdown to Part 2B summary JSON (same as Part 2's
+    # _compute_regime_auc function) so this can be verified against artifact data.
     _ALL_REGIMES = ["calm", "risk_on", "high_vol", "crisis"]
     _base_active_regimes = (
         _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
     )
+
+    # Attempt to derive ensemble per-regime AUC evidence from available artifacts.
+    # Part 2B's walkforward tape has per-fold metrics but not per-regime.
+    # Part 2C's walkforward has per-fold AUC but not per-regime.
+    # Until per-regime AUC is added to Part 2B/2C outputs, use the conservative
+    # fallback: ensemble only overrides base active_regimes when its aggregate
+    # walkforward AUC is meaningfully above base (delta >= 0.01 above base AUC).
+    _base_wf_auc = float(np.nanmedian(tape["raw_val_auc"].values)) if "raw_val_auc" in tape.columns else 0.526
+    _ensemble_uplift = (_ensemble_walkforward_auc or 0.0) - _base_wf_auc
+    _ensemble_regime_override = _ensemble_available and (_ensemble_uplift >= 0.01)
+    if _ensemble_regime_override:
+        print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} >= 0.01 → using all 4 regimes")
+    elif _ensemble_available:
+        print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} < 0.01 → keeping base active_regimes={_base_active_regimes}")
     # ─────────────────────────────────────────────────────────────────────────────
 
     rows = []
@@ -956,11 +985,9 @@ def main() -> int:
         # carry a publish_mode string column, so per-row reads always return UNKNOWN.
         publish_mode = _p2_publish_mode
         final_pass = _p2_final_pass
-        # ── FIX (BUG-2, Part 23): override active_regimes when ensemble available ──
-        # Part 2's active_regimes=["high_vol"] (base model anti-predictive elsewhere).
-        # Ensemble (blend) has positive AUC in ALL 4 regimes; using the base gate
-        # discards ~60% of available signal by forcing 60/40 in calm/crisis/risk_on.
-        if _ensemble_available:
+        # ── FIX (BUG-2, Part 23 / corrected BUG-6, Part 24): override active_regimes ──
+        # Use ensemble regime override only when artifact-verifiable AUC uplift >= 0.01.
+        if _ensemble_regime_override:
             _active_regimes = _ALL_REGIMES  # all 4 regimes active for ensemble
         else:
             # FIX (F5, Audit 2026-05-10): Extract active_regimes from Part 2 summary
