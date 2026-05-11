@@ -874,6 +874,22 @@ def main() -> int:
                 or holdout_ece <= float(p2_summary.get("classification_base", {}).get("ece", np.nan)) + 0.05
             )
         ),
+        # FIX (BUG-9, Audit 2026-05-11 — Quant-Guild Part 24):
+        # Add explicit walkforward calibration warning. The holdout ECE (0.013) is
+        # measured on all 1658 OOS rows after fitting global Platt on those same rows —
+        # a mild in-sample effect. Walkforward ECE (0.181) is the honest estimate from
+        # time-ordered CV folds. The 13.5× gap (wf/holdout) indicates the global Platt
+        # a=0.159 (near-flat slope) overfits the full OOS period distribution. In
+        # individual time folds the raw probabilities are not well-compressed, so ECE
+        # is high. This warning surfaces in part3_governance.py's blend quality gate:
+        # wf_ece >= 0.15 → blend weight for Part 2B reduced to 0.25.
+        # The gate_validation_passed flag is NOT changed by walkforward ECE because the
+        # module's purpose is uncertainty quantification (spread-signal), not calibration.
+        # However operators and Part 3 must be aware of the calibration limitation.
+        "walkforward_calibration_warning": bool(
+            float(wf_df["ece"].mean()) >= 0.10
+        ),
+        "walkforward_calibration_warning_threshold": 0.10,
         "live_p_xgb_ens_mean":     float(p_live_mean[0]),
         "live_p_xgb_ens_mean_raw": float(p_live_mean_raw[0]),
         "live_p_xgb_ens_std":      float(p_live_std[0]),
