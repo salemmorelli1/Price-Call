@@ -798,8 +798,27 @@ def main() -> int:
     print(f"  AUC={holdout_auc:.4f} | Brier={holdout_brier:.4f} | "
           f"ECE={holdout_ece:.4f} | utility={holdout_util:.4f}")
 
-    # ── Live inference on latest feature row ──────────────────────────────
-    live_row = X_all[-1:]
+    # ── FIX (BUG-1, Audit 2026-05-11 — Quant-Guild Part 22): Live date append ──
+    # Root cause (same as Part 2B): X is built from y_labels_revealed inner join,
+    # so the live date is never in X or in the tape. Part 3's blend always falls
+    # back to "base_only" because it can't find today's date in the tape.
+    # Also, X_all[-1:] was giving the last REVEALED date's features, not today's.
+    #
+    # Fix: check whether X_full has a later date than the last revealed row.
+    # If so, compute the live prediction from today's features and append a row
+    # with y_true=NaN to the tape so Part 3 can find it.
+    _live_date_full = X_full.index.max()
+    _last_revealed_date = X.index.max()
+    _has_live_row = (_live_date_full > _last_revealed_date)
+
+    if _has_live_row:
+        _x_live_feat = X_full.loc[[_live_date_full], [c for c in cfg.feature_cols if c in X_full.columns]].values.astype(np.float32)
+        live_row = _x_live_feat  # override: use actual live date features
+        _live_print_date = _live_date_full.date()
+    else:
+        live_row = X_all[-1:]    # fallback: last revealed row
+        _live_print_date = X.index[-1].date()
+
     # FIX (Reviewer finding, Audit 2026-04-21): pass epist_threshold directly
     # so predict_live() is self-consistent. The prior pattern called
     # predict_live() with no threshold (returning bnn_overlay_on = int(epist > 0.0))
@@ -810,7 +829,7 @@ def main() -> int:
                                epist_threshold=epist_threshold)
     live_result["bnn_epist_threshold"] = float(epist_threshold)
 
-    print(f"\nLive prediction (latest row {X.index[-1].date()}):")
+    print(f"\nLive prediction (latest row {_live_print_date}):")
     for k, v in live_result.items():
         print(f"  {k}: {v}")
 
@@ -835,6 +854,23 @@ def main() -> int:
         "in_holdout":        holdout_mask.astype(int),
     })
     tape_path = Path(out_dir) / "part2c_bnn_tape.csv"
+    # FIX (BUG-1 continued): if X_full has a live date not in the revealed set,
+    # compute BNN predictions for that date and append to the tape so Part 3
+    # can find today's date in the tape when blending.
+    if _has_live_row:
+        _live_sc = scaler.transform(live_row)  # live_row was set to X_full live features above
+        _live_res = predict_live(models, scaler, live_row, cfg, epist_threshold=epist_threshold)
+        _live_tape_row = pd.DataFrame({
+            "Date":            [_live_date_full],
+            "p_bnn_mean":      [_live_res["p_bnn_mean"]],
+            "p_bnn_epistemic": [_live_res["p_bnn_epistemic"]],
+            "p_bnn_aleatoric": [_live_res["p_bnn_aleatoric"]],
+            "p_bnn_total_std": [_live_res["p_bnn_total_std"]],
+            "bnn_overlay_on":  [_live_res["bnn_overlay_on"]],
+            "y_true":          [np.nan],
+            "in_holdout":      [0],
+        })
+        tape = pd.concat([tape, _live_tape_row], ignore_index=True)
     tape.to_csv(tape_path, index=False)
 
     # ── Summary JSON ──────────────────────────────────────────────────────
