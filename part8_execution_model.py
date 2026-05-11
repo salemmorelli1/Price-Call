@@ -172,7 +172,13 @@ class Part8Config:
     twap_long_pct_adv: float = 0.20
 
     # Dead-band filter — skip rebalance if Δweight is too small to justify TC.
-    min_rebalance_threshold: float = 0.02
+    # FIX (BUG-2, Audit 2026-05-11 — Quant-Guild Part 21):
+    # Part 7 was updated to min_rebalance_threshold=0.005 in Part 20.
+    # Part 8 had an independent copy at 0.02. With yesterday's w_voo=0.473
+    # and today's target w_voo=0.462, delta=1.1% clears Part 7's 0.5% gate
+    # but not Part 8's 2.0% gate, causing n_trades=0 for valid rebalances.
+    # Synchronized to 0.005 to match Part 7.
+    min_rebalance_threshold: float = 0.005  # FIX: was 0.02 — synchronized with Part 7
 
     # Annual TC drag warning threshold.
     max_annual_tc_drag_bps: float = 50.0
