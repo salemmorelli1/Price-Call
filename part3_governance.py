@@ -1272,7 +1272,8 @@ def main(cfg: Part3Config = CFG) -> None:
     _p2c_epist_ratio: float = 1.0
 
     # Load Part 2B probability for the live date
-    _p2b_root = root / "artifacts_part2b_xgb"
+    # FIX (BUG-A, Quant-Guild Part 21 run): tapes live in the `predictions/` subdirectory
+    _p2b_root = root / "artifacts_part2b_xgb" / "predictions"
     _p2b_tape_path = _p2b_root / "part2b_xgb_tape.csv"
     _p2b_summary_path = _p2b_root / "part2b_xgb_summary.json"
     try:
@@ -1292,7 +1293,8 @@ def main(cfg: Part3Config = CFG) -> None:
         print(f"[Part 3] Blend: Part 2B tape load failed ({_e2b}) — skipping 2B")
 
     # Load Part 2C probability for the live date; check epistemic warning
-    _p2c_root = root / "artifacts_part2c_bnn"
+    # FIX (BUG-A): tapes live in the `predictions/` subdirectory
+    _p2c_root = root / "artifacts_part2c_bnn" / "predictions"
     _p2c_tape_path = _p2c_root / "part2c_bnn_tape.csv"
     _p2c_summary_path = _p2c_root / "part2c_bnn_summary.json"
     try:
@@ -1320,6 +1322,11 @@ def main(cfg: Part3Config = CFG) -> None:
     # Compute blended probability for the live row
     # Equal weighting (1/3 each) unless epistemic warning fires → 2C gets weight 0.5
     # The blend modifies p_raw, which flows into p_regime_recal and prediction_log.
+    # FIX (BUG-B, Quant-Guild Part 21 run): initialize p_raw unconditionally here
+    # so the variable is always bound when _apply_regime_platt() consumes it below.
+    # The previous code only assigned p_raw inside conditional branches, leaving it
+    # unbound when _p_base was None (UnboundLocalError on line ~1353).
+    p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     _p_base = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     if _p_base is not None and math.isfinite(_p_base):
         _w_base, _w_2b, _w_2c = 1.0, 1.0, (0.5 if _live_high_epistemic else 1.0)
