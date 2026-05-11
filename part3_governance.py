@@ -907,10 +907,22 @@ def _compute_ir_from_returns(values: Optional[pd.Series]) -> Optional[float]:
     s = pd.to_numeric(values, errors="coerce").dropna()
     if s.empty:
         return None
-    std = float(s.std(ddof=0))
-    if std <= 0:
+    # FIX (BUG-3, Audit 2026-05-11 — Quant-Guild Part 24):
+    # Use ddof=1 (sample std) not ddof=0 (population std). With n=5 defense
+    # events, ddof=0 overstates the IR by sqrt(5/4)=1.12 (12%). Industry
+    # convention for IR is always sample std with ddof=1.
+    std = float(s.std(ddof=1))
+    # Guard: ddof=1 on n=1 gives NaN; treat as undefined (return None).
+    if not math.isfinite(std) or std <= 0:
         return None
-    return float(s.mean() / std)
+    # FIX (BUG-2, Audit 2026-05-11 — Quant-Guild Part 24):
+    # Annualize the IR. The original code returned mean/std (daily IR) with no
+    # sqrt(252) factor. Part 2's _annualized_ir multiplies by sqrt(252/H) at H=1.
+    # Without this, defense_ir and fused_ir are ~1/15.87 of the correct annualized
+    # value — approximately 0.04 instead of 0.69 for a typical defense IR of 0.69.
+    # At H=1 daily: annualized_factor = sqrt(252).
+    _ANNUALIZE_H1 = math.sqrt(252.0)
+    return float(s.mean() / std * _ANNUALIZE_H1)
 
 
 def _extract_performance_metrics(defense_df: pd.DataFrame, alpha_summary_json: Dict[str, Any], alpha_status: Dict[str, Any]) -> Dict[str, Optional[float]]:
@@ -1348,6 +1360,34 @@ def main(cfg: Part3Config = CFG) -> None:
 
     # Compute blended probability for the live row
     # Equal weighting (1/3 each) unless epistemic warning fires → 2C gets weight 0.5
+    # FIX (BUG-5, Audit 2026-05-11 — Quant-Guild Part 24):
+    # Part 2B has walkforward_mean_ece=0.181 vs holdout_ece=0.013 (13.5× gap).
+    # The global Platt fit (a=0.159, near-flat slope) overfits the holdout period;
+    # in time-ordered CV, calibrated probabilities degrade severely. A model whose
+    # walkforward ECE exceeds 0.10 should receive reduced blend weight to prevent
+    # a poorly calibrated component from dominating the ensemble mean.
+    #
+    # Weight schedule (applied to Part 2B only; Part 2C has its own epistemic gate):
+    #   walkforward_ece < 0.10: w_2b = 1.0  (normal)
+    #   0.10 <= wf_ece < 0.15:  w_2b = 0.5  (caution)
+    #   wf_ece >= 0.15:         w_2b = 0.25 (poor calibration, minimal weight)
+    _p2b_wf_ece: float = 1.0  # default: no downweight
+    if _p2b_summary_path.exists():
+        try:
+            _p2b_wf_ece_raw = _read_json(_p2b_summary_path).get("walkforward_mean_ece", None)
+            if _p2b_wf_ece_raw is not None and math.isfinite(float(_p2b_wf_ece_raw)):
+                _p2b_wf_ece_val = float(_p2b_wf_ece_raw)
+                if _p2b_wf_ece_val >= 0.15:
+                    _p2b_wf_ece = 0.25
+                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.15 — downweighting 2B to 0.25")
+                elif _p2b_wf_ece_val >= 0.10:
+                    _p2b_wf_ece = 0.50
+                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.10 — downweighting 2B to 0.50")
+                else:
+                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} — full weight 1.0")
+        except Exception as _ece_e:
+            print(f"[Part 3] Blend: could not read Part 2B walkforward ECE ({_ece_e}) — using w_2b=1.0")
+
     # The blend modifies p_raw, which flows into p_regime_recal and prediction_log.
     # FIX (BUG-B, Quant-Guild Part 21 run): initialize p_raw unconditionally here
     # so the variable is always bound when _apply_regime_platt() consumes it below.
@@ -1356,7 +1396,7 @@ def main(cfg: Part3Config = CFG) -> None:
     p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     _p_base = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     if _p_base is not None and math.isfinite(_p_base):
-        _w_base, _w_2b, _w_2c = 1.0, 1.0, (0.5 if _live_high_epistemic else 1.0)
+        _w_base, _w_2b, _w_2c = 1.0, _p2b_wf_ece, (0.5 if _live_high_epistemic else 1.0)
         _vals = [(p, w) for p, w in [(_p_base, _w_base), (_p2b_blend_p, _w_2b), (_p2c_blend_p, _w_2c)]
                  if p is not None and math.isfinite(p)]
         if len(_vals) > 1:
@@ -1510,7 +1550,12 @@ def main(cfg: Part3Config = CFG) -> None:
         "alpha_fusion_is_live": perf["alpha_fusion_is_live"],
         # prediction_log_realized_pct: fraction of live predictions with realized prices
         "prediction_log_realized_pct": (
-            round(realized_rows / max(len(predlog_df), 1), 4) if "predlog_df" in dir() else 0.0
+            # FIX (BUG-7, Audit 2026-05-11 — Quant-Guild Part 24):
+            # The prior expression `"predlog_df" in dir()` is non-idiomatic.
+            # dir() inside a function returns the local symbol table, which DOES
+            # include predlog_df after _upsert_prediction_log assigns it. But
+            # the pattern is fragile and misleading. Use a direct is not None check.
+            round(realized_rows / max(len(predlog_df), 1), 4) if predlog_df is not None else 0.0
         ),
         "defense_ir_net": perf["defense_ir"],
         "fused_ir_net": perf["fused_ir"],
