@@ -65,6 +65,24 @@ jobs:
           git checkout "origin/${GITHUB_REF_NAME}" -- \
             artifacts_part9/live_attribution_report.json \
             2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+          # FIX (BUG-1, Audit 2026-05-11 — Quant-Guild Part 24):
+          # tuesday-pipeline.yml received this fix (BUG-4, Part 23) but daily-backfill.yml
+          # was not updated in sync. Both workflows share concurrency group pricecall-production
+          # and can each check out a stale workspace snapshot. Without restoring these
+          # accumulating artifacts here, a backfill run that follows a partial or mis-sequenced
+          # Tuesday run can silently overwrite the committed history of these files with an
+          # older or empty version, losing Part 8 execution cost history and Part 10 signal
+          # history irreversibly.
+          #
+          # execution_cost_tape.csv: Part 8 reads-then-appends each daily run.
+          # signal_log.csv:          Part 10 trading bot accumulates trade signals daily.
+          # Both must be restored from origin before any run touches them.
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part8/execution_cost_tape.csv \
+            2>/dev/null || echo "execution_cost_tape.csv not on remote yet — starting fresh."
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part10_bot/signal_log.csv \
+            2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
 
       - name: Run backfill
         run: python backfill_realized.py
