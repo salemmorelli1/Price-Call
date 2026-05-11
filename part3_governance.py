@@ -1286,6 +1286,22 @@ def main(cfg: Part3Config = CFG) -> None:
                 _p2b_blend_p = float(_p2b_tape.loc[_live_dt, "p_xgb_ens_mean"])
                 if not math.isfinite(_p2b_blend_p):
                     _p2b_blend_p = None
+            # FIX (BUG-2, Audit 2026-05-11 — Quant-Guild Part 22):
+            # If the live date is not in the tape (can happen when Part 2B didn't
+            # append the live row yet, or on a re-run), fall back to the summary
+            # JSON's live_p_xgb_ens_mean field. This is defense-in-depth: once
+            # BUG-1 is fixed in part2b_xgb_ensemble.py the tape should always
+            # contain the live row, but the fallback prevents silent base_only
+            # degradation if the tape ever lags for any reason.
+            if _p2b_blend_p is None and _p2b_summary_path.exists():
+                try:
+                    _p2b_sum = _read_json(_p2b_summary_path)
+                    _fb_p = _p2b_sum.get("live_p_xgb_ens_mean")
+                    if _fb_p is not None and math.isfinite(float(_fb_p)):
+                        _p2b_blend_p = float(_fb_p)
+                        print(f"[Part 3] Blend: Part 2B live p from summary JSON fallback: {_p2b_blend_p:.4f}")
+                except Exception as _fb_e:
+                    print(f"[Part 3] Blend: Part 2B summary JSON fallback failed ({_fb_e})")
             print(f"[Part 3] Blend: Part 2B XGB tape loaded ({len(_p2b_tape)} rows) | live p={_p2b_blend_p}")
         else:
             print(f"[Part 3] Blend: Part 2B tape not found at {_p2b_tape_path}")
@@ -1313,6 +1329,17 @@ def main(cfg: Part3Config = CFG) -> None:
                 _p2c_blend_p = float(_p2c_tape.loc[_live_dt, "p_bnn_mean"])
                 if not math.isfinite(_p2c_blend_p):
                     _p2c_blend_p = None
+            # FIX (BUG-2, Audit 2026-05-11 — Quant-Guild Part 22):
+            # Same fallback as Part 2B: if live date not in tape, read from summary JSON.
+            if _p2c_blend_p is None and _p2c_summary_path.exists():
+                try:
+                    _p2c_sum_fb = _read_json(_p2c_summary_path)
+                    _fb_p_c = _p2c_sum_fb.get("live_p_bnn_mean")
+                    if _fb_p_c is not None and math.isfinite(float(_fb_p_c)):
+                        _p2c_blend_p = float(_fb_p_c)
+                        print(f"[Part 3] Blend: Part 2C live p from summary JSON fallback: {_p2c_blend_p:.4f}")
+                except Exception as _fb_e_c:
+                    print(f"[Part 3] Blend: Part 2C summary JSON fallback failed ({_fb_e_c})")
             print(f"[Part 3] Blend: Part 2C BNN tape loaded ({len(_p2c_tape)} rows) | live p={_p2c_blend_p}")
         else:
             print(f"[Part 3] Blend: Part 2C tape not found at {_p2c_tape_path}")
