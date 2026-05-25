@@ -960,9 +960,61 @@ def _format_float(x: Optional[float], digits: int = 3) -> str:
     return "NA" if x is None else f"{x:.{digits}f}"
 
 
+def _json_safe_p3(obj: Any) -> Any:
+    """Convert NaN/Inf/numpy scalars to JSON-safe Python types.
+
+    FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25):
+    json.dump's default= hook is never called for Python float (natively serializable),
+    so the old 'default=str' approach let NaN floats through as the literal token NaN
+    (invalid RFC 8259 JSON). numpy types were serialized as strings ("42" not 42).
+    Pre-processing the entire dict before json.dump is the correct fix.
+    """
+    import math as _math
+    if obj is None or isinstance(obj, bool):
+        return obj
+    if isinstance(obj, float):
+        return None if (not _math.isfinite(obj)) else obj
+    try:
+        import numpy as _np
+        if isinstance(obj, _np.bool_):
+            return bool(obj)
+        if isinstance(obj, _np.integer):
+            return int(obj)
+        if isinstance(obj, _np.floating):
+            v = float(obj)
+            return None if (not _math.isfinite(v)) else v
+        if isinstance(obj, _np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass
+    try:
+        import pandas as _pd
+        if isinstance(obj, _pd.Timestamp):
+            return str(obj)
+        if obj is _pd.NaT or (hasattr(_pd, "NA") and obj is _pd.NA):
+            return None
+    except ImportError:
+        pass
+    return obj
+
+
+def _deep_clean_for_json_p3(obj: Any) -> Any:
+    """Recursively walk dict/list and apply _json_safe_p3 to every leaf value."""
+    if isinstance(obj, dict):
+        return {k: _deep_clean_for_json_p3(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_deep_clean_for_json_p3(v) for v in obj]
+    return _json_safe_p3(obj)
+
+
 def _write_json(path: Path, obj: Dict[str, Any]) -> None:
+    # FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25):
+    # Pre-clean the entire dict with _deep_clean_for_json_p3 before json.dump.
+    # Without this, NaN floats serialize as the literal token NaN (invalid RFC 8259),
+    # and numpy types (np.int64, np.float64) serialize as strings via default=str.
+    cleaned = _deep_clean_for_json_p3(obj)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, default=str)
+        json.dump(cleaned, f, indent=2)
 
 
 # ============================================================
@@ -1299,25 +1351,42 @@ def main(cfg: Part3Config = CFG) -> None:
                 if not math.isfinite(_p2b_blend_p):
                     _p2b_blend_p = None
             # FIX (BUG-2, Audit 2026-05-11 — Quant-Guild Part 22):
-            # If the live date is not in the tape (can happen when Part 2B didn't
-            # append the live row yet, or on a re-run), fall back to the summary
-            # JSON's live_p_xgb_ens_mean field. This is defense-in-depth: once
-            # BUG-1 is fixed in part2b_xgb_ensemble.py the tape should always
-            # contain the live row, but the fallback prevents silent base_only
-            # degradation if the tape ever lags for any reason.
-            if _p2b_blend_p is None and _p2b_summary_path.exists():
+            # If the live date is not in the tape, fall back to the summary JSON's
+            # live_p_xgb_ens_mean field.  The summary JSON is loaded here and cached
+            # in _p2b_summary_cached so the ECE weight block below does NOT re-read it.
+            # (BUG-9, Audit 2026-05-12 — Quant-Guild Part 25: the prior code issued
+            # two separate _read_json calls on the same file — once here and once in
+            # the ECE weight block ~80 lines later.  A single read + cache is correct.)
+            if _p2b_summary_path.exists():
                 try:
-                    _p2b_sum = _read_json(_p2b_summary_path)
-                    _fb_p = _p2b_sum.get("live_p_xgb_ens_mean")
-                    if _fb_p is not None and math.isfinite(float(_fb_p)):
-                        _p2b_blend_p = float(_fb_p)
-                        print(f"[Part 3] Blend: Part 2B live p from summary JSON fallback: {_p2b_blend_p:.4f}")
-                except Exception as _fb_e:
-                    print(f"[Part 3] Blend: Part 2B summary JSON fallback failed ({_fb_e})")
+                    _p2b_summary_cached: Dict[str, Any] = _read_json(_p2b_summary_path)
+                except Exception as _cache_e:
+                    _p2b_summary_cached = {}
+                    print(f"[Part 3] Blend: Part 2B summary JSON load failed ({_cache_e})")
+            else:
+                _p2b_summary_cached = {}
+            if _p2b_blend_p is None and _p2b_summary_cached:
+                _fb_p = _p2b_summary_cached.get("live_p_xgb_ens_mean")
+                if _fb_p is not None and math.isfinite(float(_fb_p)):
+                    _p2b_blend_p = float(_fb_p)
+                    print(f"[Part 3] Blend: Part 2B live p from summary JSON fallback: {_p2b_blend_p:.4f}")
             print(f"[Part 3] Blend: Part 2B XGB tape loaded ({len(_p2b_tape)} rows) | live p={_p2b_blend_p}")
         else:
-            print(f"[Part 3] Blend: Part 2B tape not found at {_p2b_tape_path}")
+            # Tape absent — still try to load the summary JSON for ECE weight and fallback p
+            _p2b_summary_cached = {}
+            if _p2b_summary_path.exists():
+                try:
+                    _p2b_summary_cached = _read_json(_p2b_summary_path)
+                    _fb_p2 = _p2b_summary_cached.get("live_p_xgb_ens_mean")
+                    if _fb_p2 is not None and math.isfinite(float(_fb_p2)):
+                        _p2b_blend_p = float(_fb_p2)
+                        print(f"[Part 3] Blend: Part 2B (tape absent) live p from summary JSON: {_p2b_blend_p:.4f}")
+                except Exception as _fb_abs:
+                    print(f"[Part 3] Blend: Part 2B summary JSON load failed ({_fb_abs})")
+            else:
+                print(f"[Part 3] Blend: Part 2B tape not found at {_p2b_tape_path}")
     except Exception as _e2b:
+        _p2b_summary_cached = {}
         print(f"[Part 3] Blend: Part 2B tape load failed ({_e2b}) — skipping 2B")
 
     # Load Part 2C probability for the live date; check epistemic warning
@@ -1358,6 +1427,47 @@ def main(cfg: Part3Config = CFG) -> None:
     except Exception as _e2c:
         print(f"[Part 3] Blend: Part 2C tape load failed ({_e2c}) — skipping 2C")
 
+    # ── FIX (BUG-2/BUG-3, Audit 2026-05-12 — Quant-Guild Part 25): Part 2C quality gates ──
+    # Gate 1: gate_validation_passed.  Part 2C must pass the same ECE calibration ceiling
+    # as Part 2B (holdout_ece <= base_ece + 0.05).  If Part 2C reports
+    # gate_validation_passed=False, exclude it from the blend entirely.
+    # Current state: holdout_ece=0.0767 > ceiling 0.0645 → gate FAILS → excluded.
+    #
+    # Gate 2: directional mean-bias.  A model whose mean probability is more than 30%
+    # below the base_rate systematically pulls the blend bearish relative to the base
+    # model on every single production day — a silent hidden bias.  Gate: if
+    # mean_bias_ratio < 0.70 (i.e. E[p_bnn] < 70% of base_rate), exclude from blend.
+    # Current state: mean_bias_ratio = 0.609 → bias_flag=True → excluded.
+    #
+    # Both gates are non-blocking: if the Part 2C summary JSON is absent or missing
+    # the fields, the default is permissive (include), to avoid breaking cold-start.
+    _p2c_gate_ok: bool = True        # gate_validation_passed
+    _p2c_bias_ok: bool = True        # directional mean-bias
+    _p2c_gate_reason: str = ""
+    if _p2c_summary_path.exists():
+        try:
+            _p2c_sum_gate = _read_json(_p2c_summary_path)
+            # Gate 1
+            _gvp = _p2c_sum_gate.get("gate_validation_passed")
+            if _gvp is not None:
+                _p2c_gate_ok = bool(_gvp)
+            if not _p2c_gate_ok:
+                _p2c_gate_reason = f"gate_validation_passed=False (holdout_ece={_p2c_sum_gate.get('holdout_ece','?')})"
+            # Gate 2
+            _mbf = _p2c_sum_gate.get("mean_bias_flag")
+            if _mbf is not None:
+                _p2c_bias_ok = not bool(_mbf)
+            if not _p2c_bias_ok:
+                _p2c_gate_reason += (
+                    f" | mean_bias_flag=True"
+                    f" (mean_bias_ratio={_p2c_sum_gate.get('mean_bias_ratio','?')})"
+                )
+        except Exception as _gate_e:
+            print(f"[Part 3] Blend: Part 2C gate check failed ({_gate_e}) — using permissive default")
+    if not _p2c_gate_ok or not _p2c_bias_ok:
+        print(f"[Part 3] Blend: Part 2C EXCLUDED from blend. Reason: {_p2c_gate_reason}")
+        _p2c_blend_p = None
+
     # Compute blended probability for the live row
     # Equal weighting (1/3 each) unless epistemic warning fires → 2C gets weight 0.5
     # FIX (BUG-5, Audit 2026-05-11 — Quant-Guild Part 24):
@@ -1372,21 +1482,24 @@ def main(cfg: Part3Config = CFG) -> None:
     #   0.10 <= wf_ece < 0.15:  w_2b = 0.5  (caution)
     #   wf_ece >= 0.15:         w_2b = 0.25 (poor calibration, minimal weight)
     _p2b_wf_ece: float = 1.0  # default: no downweight
-    if _p2b_summary_path.exists():
-        try:
-            _p2b_wf_ece_raw = _read_json(_p2b_summary_path).get("walkforward_mean_ece", None)
-            if _p2b_wf_ece_raw is not None and math.isfinite(float(_p2b_wf_ece_raw)):
-                _p2b_wf_ece_val = float(_p2b_wf_ece_raw)
-                if _p2b_wf_ece_val >= 0.15:
-                    _p2b_wf_ece = 0.25
-                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.15 — downweighting 2B to 0.25")
-                elif _p2b_wf_ece_val >= 0.10:
-                    _p2b_wf_ece = 0.50
-                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.10 — downweighting 2B to 0.50")
-                else:
-                    print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} — full weight 1.0")
-        except Exception as _ece_e:
-            print(f"[Part 3] Blend: could not read Part 2B walkforward ECE ({_ece_e}) — using w_2b=1.0")
+    # FIX (BUG-9, Audit 2026-05-12 — Quant-Guild Part 25):
+    # Use the cached _p2b_summary_cached dict loaded in the tape-loading block above.
+    # The prior code called _read_json(_p2b_summary_path) a second time here, wasting
+    # I/O and creating a stale-data risk window between the two reads on concurrent runs.
+    try:
+        _p2b_wf_ece_raw = _p2b_summary_cached.get("walkforward_mean_ece", None) if _p2b_summary_cached else None
+        if _p2b_wf_ece_raw is not None and math.isfinite(float(_p2b_wf_ece_raw)):
+            _p2b_wf_ece_val = float(_p2b_wf_ece_raw)
+            if _p2b_wf_ece_val >= 0.15:
+                _p2b_wf_ece = 0.25
+                print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.15 — downweighting 2B to 0.25")
+            elif _p2b_wf_ece_val >= 0.10:
+                _p2b_wf_ece = 0.50
+                print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} ≥ 0.10 — downweighting 2B to 0.50")
+            else:
+                print(f"[Part 3] Blend: Part 2B walkforward ECE={_p2b_wf_ece_val:.4f} — full weight 1.0")
+    except Exception as _ece_e:
+        print(f"[Part 3] Blend: could not read Part 2B walkforward ECE ({_ece_e}) — using w_2b=1.0")
 
     # The blend modifies p_raw, which flows into p_regime_recal and prediction_log.
     # FIX (BUG-B, Quant-Guild Part 21 run): initialize p_raw unconditionally here
