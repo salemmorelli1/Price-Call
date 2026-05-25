@@ -255,6 +255,46 @@ def check_part2c(r: Results, root: Path):
                 r.add("Part 2C", "live epistemic <= total_std",
                       ep_live <= tot_live + 1e-9,
                       f"epist={ep_live:.4f} total={tot_live:.4f}")
+
+            # FIX (F1, Quant-Guild Part 27 Audit): verify tape live row p_bnn_mean is
+            # bias-corrected and consistent with the summary's live_p_bnn_mean.
+            # Pre-fix: _live_res from a second predict_live() call was appended to the
+            # tape WITHOUT applying bias_correction_factor, so tape p_bnn_mean was the
+            # raw uncorrected value.  Post-fix: the tape live row uses `live_result`
+            # which was already corrected.  This check verifies that consistency holds.
+            p_bnn_live_from_tape = None
+            # The live row is the last row with in_holdout=0 and y_true=NaN
+            if "in_holdout" in tape.columns and "p_bnn_mean" in tape.columns:
+                live_candidates = tape[
+                    (pd.to_numeric(tape["in_holdout"], errors="coerce") == 0) &
+                    pd.to_numeric(tape["y_true"], errors="coerce").isna()
+                ]
+                if len(live_candidates) > 0:
+                    p_bnn_live_from_tape = float(
+                        pd.to_numeric(live_candidates["p_bnn_mean"], errors="coerce").iloc[-1]
+                    )
+
+            summary_live_p = _fv(p2c, "live_p_bnn_mean")
+            bias_cf = _fv(p2c, "bias_correction_factor")
+            if (p_bnn_live_from_tape is not None
+                    and summary_live_p is not None
+                    and bias_cf is not None):
+                try:
+                    tape_p = float(p_bnn_live_from_tape)
+                    summ_p = float(summary_live_p)
+                    cf = float(bias_cf)
+                    # Tape live row should match the bias-corrected summary value.
+                    # Allow 1e-4 tolerance for float rounding in CSV serialisation.
+                    tape_matches_summary = abs(tape_p - summ_p) < 1e-4
+                    r.add(
+                        "Part 2C",
+                        "tape live p_bnn_mean == summary live_p_bnn_mean (bias correction applied)",
+                        tape_matches_summary,
+                        f"tape={tape_p:.6f}  summary={summ_p:.6f}  bias_cf={cf:.4f}  "
+                        f"delta={abs(tape_p-summ_p):.6f} (expect < 1e-4)",
+                    )
+                except (TypeError, ValueError):
+                    pass  # non-numeric fields — skip silently
     else:
         r.add("Part 2C", "p_bnn_aleatoric column present", False, "column missing from tape")
 
