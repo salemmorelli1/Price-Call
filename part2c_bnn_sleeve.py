@@ -920,18 +920,25 @@ def main() -> int:
     # compute BNN predictions for that date and append to the tape so Part 3
     # can find today's date in the tape when blending.
     if _has_live_row:
-        # FIX (BUG-4, Audit 2026-05-11 — Quant-Guild Part 24):
-        # Removed dead code: `_live_sc = scaler.transform(live_row)` was computed
-        # but never used. predict_live() calls scaler.transform internally.
-        # The dead line wasted a forward-pass through the scaler and was confusing.
-        _live_res = predict_live(models, scaler, live_row, cfg, epist_threshold=epist_threshold)
+        # FIX (F1, Quant-Guild Part 27 Audit):
+        # The previous code made a SECOND call to predict_live() here to obtain
+        # _live_res for the tape row. That second call returned the RAW (uncorrected)
+        # BNN probability. The bias_correction_factor was applied only to
+        # `live_result` (the first call, used for the summary JSON) at lines above,
+        # NOT to this second `_live_res` call. Result: the tape live row stored the
+        # uncorrected p_bnn_mean (e.g. 0.0738) while the summary reported the
+        # corrected value (e.g. 0.1117, factor=1.537). Part 3 reads from the tape
+        # for blending → received uncorrected probability → blend understated by
+        # ~76 bps relative to what the summary claimed. The fix eliminates the
+        # duplicate predict_live() call entirely: the tape live row now uses
+        # `live_result` which is already bias-corrected and threshold-consistent.
         _live_tape_row = pd.DataFrame({
             "Date":            [_live_date_full],
-            "p_bnn_mean":      [_live_res["p_bnn_mean"]],
-            "p_bnn_epistemic": [_live_res["p_bnn_epistemic"]],
-            "p_bnn_aleatoric": [_live_res["p_bnn_aleatoric"]],
-            "p_bnn_total_std": [_live_res["p_bnn_total_std"]],
-            "bnn_overlay_on":  [_live_res["bnn_overlay_on"]],
+            "p_bnn_mean":      [live_result["p_bnn_mean"]],       # FIX: bias-corrected
+            "p_bnn_epistemic": [live_result["p_bnn_epistemic"]],
+            "p_bnn_aleatoric": [live_result["p_bnn_aleatoric"]],
+            "p_bnn_total_std": [live_result["p_bnn_total_std"]],
+            "bnn_overlay_on":  [live_result["bnn_overlay_on"]],
             "y_true":          [np.nan],
             "in_holdout":      [0],
         })
