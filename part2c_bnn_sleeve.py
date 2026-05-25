@@ -958,6 +958,44 @@ def main() -> int:
         "xgb_baseline_ece": baseline_ece if np.isfinite(baseline_ece) else None,
         "uncertainty_backend_valid": uncertainty_backend_valid,
         "production_candidate": production_candidate,
+        # ── FIX (BUG-2, Audit 2026-05-12 — Quant-Guild Part 25): gate_validation_passed ──
+        # Adds an ECE calibration gate equivalent to Part 2B's gate_validation_passed.
+        # Gate: holdout_ece <= base_ece + 0.05  (same ceiling as Part 2B).
+        # This field is consumed by Part 3 and Part 7 blend code to exclude Part 2C
+        # when its calibration is too poor to contribute signal to the blend.
+        #
+        # Current values (2026-05-11 run):
+        #   holdout_ece = 0.0767, base_ece = 0.0145, ceiling = 0.0645
+        #   gate_validation_passed = False  (0.0767 > 0.0645)
+        #
+        # Rationale: including a 7.7%-ECE component in a blend with a 1.4%-ECE base
+        # increases the ensemble ECE rather than decreasing it.  The gate prevents
+        # this quality degradation from silently persisting.
+        "gate_validation_passed": bool(
+            uncertainty_backend_valid and
+            np.isfinite(holdout_auc) and
+            np.isfinite(holdout_ece) and
+            (
+                not np.isfinite(baseline_ece)
+                or holdout_ece <= baseline_ece + 0.05
+            )
+        ),
+        # ── FIX (BUG-4, Audit 2026-05-12 — Quant-Guild Part 25): mean-bias diagnostic ──
+        # E[p_bnn] over the holdout period should ≈ base_rate for a well-calibrated model.
+        # Current: E[p_bnn] = 0.126, base_rate = 0.206, mean_bias_ratio = 0.609.
+        # A ratio below 0.70 (bias_flag=True) means the model systematically underestimates
+        # tail risk by more than 30%, which pulls the blend bearish relative to the base model.
+        # Surfacing this here lets Part 3 and Part 7 detect and gate the systematic bias.
+        "holdout_mean_p_bnn": float(np.mean(p_h_mean)) if len(p_h_mean) else None,
+        "holdout_mean_base_rate": float(np.mean(y_hold_arr)) if len(y_hold_arr) else None,
+        "mean_bias_ratio": (
+            float(float(np.mean(p_h_mean)) / max(float(np.mean(y_hold_arr)), 1e-6))
+            if len(p_h_mean) and len(y_hold_arr) else None
+        ),
+        "mean_bias_flag": bool(
+            len(p_h_mean) and len(y_hold_arr) and
+            float(np.mean(p_h_mean)) < 0.70 * float(np.mean(y_hold_arr))
+        ),
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
 
