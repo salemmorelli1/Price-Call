@@ -1114,16 +1114,37 @@ def _fit_regime_platt_scaling(
             lr.fit(X, y)
             a = float(lr.coef_[0][0])
             b = float(lr.intercept_[0])
+
+            # FIX (Finding 1, Quant-Guild Part 26): Do NOT store per-regime Platt
+            # params when a < 0. When a < 0, the transform INVERTS the signal:
+            # higher raw p_final_cal → lower recalibrated probability. This is the
+            # opposite of the intended behavior for a defense signal.
+            #
+            # Empirical evidence (2026-05-25 run):
+            #   calm    a=-0.741 → p(0.20)->0.151, p(0.30)->0.109  (signal INVERTED, HARMFUL)
+            #   crisis  a=-0.199 → p(0.20)->0.271, p(0.30)->0.252  (signal INVERTED)
+            #   risk_on a=-0.079 → p(0.20)->0.197, p(0.30)->0.191  (signal INVERTED)
+            #   high_vol a=+1.425 → correct direction (amplified, not inverted)
+            #
+            # Applying inverted Platt in production: recalibrated probability DECREASES
+            # when the model is more confident of a tail event. This reduces the defense
+            # signal precisely when it should be elevated. 59.2% of all rows (calm 36.4%
+            # + crisis 18.5% + risk_on 4.3%) were receiving an inverted correction.
+            #
+            # Fix: when a < 0, skip this regime's params. _apply_regime_platt falls
+            # through to _global (a=0.357 > 0, correct direction). The _global fit
+            # uses all 1668 rows and produces a reliable non-inverted calibration.
+            if a < 0:
+                print(
+                    f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)} "
+                    f"-- a<0 ANTI-PREDICTIVE: EXCLUDED. _global fallback will apply."
+                )
+                params_n[regime] = len(sub)   # track n for diagnostics only
+                continue                       # do NOT store params[regime] = (a, b)
+
             params[regime] = (a, b)
             params_n[regime] = len(sub)
-            # FIX (Finding 10, Audit 2026-05-10 — Quant-Guild Part 19):
-            # Warn when Platt coefficient a < 0 (signal inversion detected).
-            # a < 0 means the model is anti-predictive in this regime (AUC < 0.5):
-            # higher raw p_final_cal → lower recalibrated probability. This is
-            # statistically valid (calm AUC=0.446 in the current model), but operators
-            # must be aware that the Platt transform inverts the signal direction.
-            _inv_warn = " ⚠️ a<0 SIGNAL INVERSION — AUC<0.5 in this regime" if a < 0 else ""
-            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}{_inv_warn}")
+            print(f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)}")
 
         # Global fallback (all regimes combined)
         p_all = merged["p_final_cal"].clip(0.01, 0.99).values
@@ -1698,6 +1719,13 @@ def main(cfg: Part3Config = CFG) -> None:
         "p_2c_epist_ratio": _p2c_epist_ratio,
         "p_regime_recal": p_regime_recal,
         "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
+        # FIX (Finding 1, Quant-Guild Part 26): report which regimes were excluded
+        # because their fitted Platt a<0 (anti-predictive, would invert the signal).
+        # These regimes receive _global Platt params at inference time.
+        "platt_inverted_regimes_excluded": sorted([
+            regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
+            if regime not in platt_params and regime not in [k for k in platt_params if k.startswith("_")]
+        ]),
         # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
         "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
     }
