@@ -344,6 +344,25 @@ class Part2Gen53Config:
     # that was FAIL_CLOSED must accumulate 3 total to re-enter NORMAL.
     DEPLOY_DOWNSIDE_RECENT_COUNT_MIN: int = 0
 
+    # FIX (Finding 2, Quant-Guild Part 26): Regime-conditional deploy guard.
+    # Empirical regime AUC (full holdout 2020-2026):
+    #   calm    AUC=0.461  (anti-predictive, base_rate=0.152)
+    #   crisis  AUC=0.464  (anti-predictive, base_rate=0.269 — but high_risk_state governs crisis defense)
+    #   high_vol AUC=0.570 (predictive — all 3 historical deploy events occurred here)
+    #   risk_on AUC=0.381  (strongly anti-predictive, base_rate=0.197)
+    #
+    # In calm and risk_on, deploying the defense sleeve when the model is anti-predictive
+    # guarantees negative expected value. The PASSIVE_REGIMES_NO_DEPLOY set gates
+    # deploy_downside=0 regardless of other conditions in these regimes.
+    #
+    # Crisis is NOT included: high_risk_state fires on crisis regime directly (Platt F1 fix
+    # in Part 26 routes crisis through _global params), and crisis base_rate=0.269 > threshold.
+    # The passive defense via high_risk_state (regime score = 1.0) remains operative.
+    #
+    # Statistical basis: 0 of 3 historical deploy events occurred in calm or risk_on.
+    # Expected value of deploying in anti-predictive regime is negative by construction.
+    PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("calm", "risk_on")
+
     DEF_TRIGGER_LOOKBACK: int = 52
     DEF_TRIGGER_MIN_HISTORY: int = 26
     DEF_TRIGGER_Q: float = 0.56
@@ -1450,6 +1469,18 @@ def _governance_mapping(
         and agree_ok
         and ((not drift_alarm) or high_risk_state)
     )
+    # FIX (Finding 2, Quant-Guild Part 26): Regime-conditional deploy guard.
+    # Block deploy_downside when the current regime is in PASSIVE_REGIMES_NO_DEPLOY
+    # (calm, risk_on). These regimes have empirical AUC < 0.5 on the full holdout:
+    #   calm    AUC=0.461 — higher model p → fewer actual tail events (anti-predictive)
+    #   risk_on AUC=0.381 — strongest anti-predictive signal in the regime set
+    # Deploying a defense in an anti-predictive regime has strictly negative expected
+    # value. All 3 historical deploy_downside events occurred in high_vol (AUC=0.570).
+    # Note: high_risk_state still fires in calm/risk_on when p_final_cal >= HIGH_RISK_ABS_P,
+    # which provides passive position-sizing awareness without a full deploy.
+    _passive_deploy_regimes = {r.lower() for r in getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on'))}
+    if str(regime_label).lower() in _passive_deploy_regimes and not high_risk_state:
+        deploy_downside = 0
     deploy_upside = 0
 
     max_under = cfg.HIGH_RISK_MAX_UNDERWEIGHT if high_risk_state else cfg.BASE_MAX_UNDERWEIGHT
@@ -2495,6 +2526,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "drift_alarm_rate": drift_alarm_rate,
         "deploy_downside_rate": float(deploy_gate["rate"]),
         "deploy_downside_count_total": int(deploy_gate["total_count"]),
+        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on'))),  # F2, Part 26
         "deploy_downside_count_recent": int(deploy_gate["recent_count"]),
         "deploy_downside_recent_lookback": int(cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK),
         "deploy_downside_rate_min": float(cfg.DEPLOY_DOWNSIDE_RATE_MIN),
