@@ -653,7 +653,56 @@ def main() -> int:
 
     gate_validated = print_comparison(wf_df, p2_summary)
 
-    # ── Compute walk-forward-derived epistemic threshold ──────────────────
+    # ── FIX (BUG-5, Audit 2026-05-12 — Quant-Guild Part 25): per-regime AUC breakdown ──
+    # Part 7's _ensemble_regime_override can never correctly decide which regimes to use
+    # without per-regime AUC from Part 2B.  Without this data, Part 7 falls back to the
+    # BASE model's active_regimes=['crisis','high_vol'], perpetually blocking ensemble
+    # deployment in risk_on (where ensemble clearly has better signal).
+    # Method: join Part 2B holdout tape with Part 2 tape on Date, then AUC per regime.
+    _regime_auc_2b: Dict = {}
+    try:
+        tape_p2_path = Path(p2_dir) / "g532_final_consensus_tape.csv"
+        if tape_p2_path.exists():
+            _tape_p2 = pd.read_csv(tape_p2_path)
+            _tape_p2["Date"] = pd.to_datetime(_tape_p2["Date"], errors="coerce").dt.normalize()
+            _tape_p2 = _tape_p2.dropna(subset=["Date"])
+            if "regime_label" in _tape_p2.columns:
+                _tape_2b_tmp = tape_out.copy()
+                _tape_2b_tmp["Date"] = pd.to_datetime(_tape_2b_tmp["Date"], errors="coerce").dt.normalize()
+                _merged = _tape_2b_tmp.merge(_tape_p2[["Date", "regime_label"]], on="Date", how="left")
+                _holdout_sub = _merged[(_merged["in_holdout"] == 1) & _merged["y_true"].notna()].copy()
+                _active_regimes_2b: List[str] = []
+                _passive_regimes_2b: List[str] = []
+                for _regime in sorted(_holdout_sub["regime_label"].dropna().unique()):
+                    _sub = _holdout_sub[_holdout_sub["regime_label"] == _regime].copy()
+                    if len(_sub) < 30:
+                        continue
+                    _y_r = _sub["y_true"].values.astype(float)
+                    _p_r = np.clip(_sub["p_xgb_ens_mean"].values, 1e-6, 1.0 - 1e-6)
+                    if len(np.unique(_y_r)) < 2:
+                        continue
+                    _auc_r = float(roc_auc_score(_y_r, _p_r))
+                    _regime_auc_2b[str(_regime)] = {
+                        "n": int(len(_sub)),
+                        "auc": round(_auc_r, 6),
+                        "base_rate": round(float(_y_r.mean()), 6),
+                        "brier": round(float(brier_score_loss(_y_r, _p_r)), 6),
+                        "ece": round(float(_ece(_y_r, _p_r)), 6),
+                    }
+                    if _auc_r > 0.50:
+                        _active_regimes_2b.append(str(_regime))
+                    else:
+                        _passive_regimes_2b.append(str(_regime))
+                _regime_auc_2b["active_regimes"] = sorted(_active_regimes_2b)
+                _regime_auc_2b["passive_regimes"] = sorted(_passive_regimes_2b)
+                print(f"\n[Part 2B] Per-regime AUC breakdown:")
+                for _r, _s in _regime_auc_2b.items():
+                    if isinstance(_s, dict):
+                        print(f"  {_r:12s}: n={_s['n']:4d}, auc={_s['auc']:.4f}, {'ACTIVE' if _s['auc']>0.5 else 'passive'}")
+                print(f"  Active regimes: {_regime_auc_2b.get('active_regimes', [])}")
+    except Exception as _rae:
+        print(f"[Part 2B] Per-regime AUC computation failed ({_rae}) — skipping")
+
     # IMPORTANT: the threshold must come from the row-level spread
     # distribution, not from the distribution of fold-level mean spreads.
     all_spreads = wf_eval_df["p_xgb_ens_std"].dropna().values
@@ -918,6 +967,12 @@ def main() -> int:
         ),
         "platt_calibration_applied": True,
         "platt_calibration_mode":    "global_oos",  # V3: global OOS (was per_fold_train in V2)
+        # FIX (BUG-5, Audit 2026-05-12 — Quant-Guild Part 25):
+        # Per-regime AUC breakdown — analogous to Part 2's regime_auc_breakdown.
+        # Consumed by Part 7's _ensemble_regime_override logic to determine which
+        # regimes should use the BL optimizer with the ensemble signal.
+        # Empty dict if Part 2 tape was unavailable or regime join failed.
+        "regime_auc_breakdown": _regime_auc_2b if _regime_auc_2b else {},
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
 
