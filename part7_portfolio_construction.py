@@ -860,6 +860,12 @@ def main() -> int:
             _p2c_tape = _p2c_tape.dropna(subset=["Date"])
             if "p_bnn_mean" in _p2c_tape.columns:
                 _p2c_date_map = dict(zip(_p2c_tape["Date"], _p2c_tape["p_bnn_mean"]))
+                # FIX (BUG-7, Audit 2026-05-12 — Quant-Guild Part 25):
+                # Load per-row bnn_overlay_on flag for per-row epistemic downweighting.
+                if "bnn_overlay_on" in _p2c_tape.columns:
+                    _p2c_overlay_date_map: Dict = dict(zip(_p2c_tape["Date"], _p2c_tape["bnn_overlay_on"]))
+                else:
+                    _p2c_overlay_date_map = {}
                 _p2c_available = True
                 print(f"[Part 7] Part 2C tape loaded: {len(_p2c_tape)} rows")
         if os.path.exists(_p2c_summary_path):
@@ -870,6 +876,46 @@ def main() -> int:
                 print(f"[Part 7] Part 2C epistemic warning active — BNN weight 0.5× on live date")
     except Exception as _e2c:
         print(f"[Part 7] Part 2C tape load warning ({_e2c}) — base-only mode")
+
+    # ── FIX (BUG-2/BUG-3, Audit 2026-05-12 — Quant-Guild Part 25): Part 2C quality gates ──
+    # Same two gates as Part 3's blend code to ensure portfolio construction and governance
+    # operate on the same probability signal.
+    # Gate 1: gate_validation_passed  (ECE calibration ceiling: base_ece + 0.05)
+    # Gate 2: mean_bias_flag  (E[p_bnn] < 70% of base_rate → systematic downward bias)
+    if _p2c_available and _p2c_summary:
+        _p2c_excluded_reason_7 = []
+        _p2c_gvp_7 = _p2c_summary.get("gate_validation_passed")
+        if _p2c_gvp_7 is not None and not bool(_p2c_gvp_7):
+            _p2c_excluded_reason_7.append(
+                f"gate_validation_passed=False"
+            )
+        _p2c_mbf_7 = _p2c_summary.get("mean_bias_flag")
+        if _p2c_mbf_7 is not None and bool(_p2c_mbf_7):
+            _p2c_excluded_reason_7.append(f"mean_bias_flag=True")
+        if _p2c_excluded_reason_7:
+            print(f"[Part 7] Part 2C EXCLUDED from blend: {'; '.join(_p2c_excluded_reason_7)}")
+            _p2c_available = False
+            _p2c_date_map = {}
+            _p2c_overlay_date_map = {}
+
+    # ── FIX (BUG-1, Audit 2026-05-12 — Quant-Guild Part 25): Synchronize Part 2B weight ──
+    # Part 3's blend applies walkforward ECE-based downweighting to Part 2B.
+    # Previously Part 7 hardcoded w_2b=1.0, creating an inconsistency where portfolio
+    # construction and governance used different blend weights for the same Part 2B signal.
+    # Synchronized: same weight schedule as Part 3 (wf_ece>=0.15→0.25, >=0.10→0.50, else 1.0).
+    _p2b_blend_weight: float = 1.0
+    if _p2b_summary:
+        _p2b_wf_ece_7 = _p2b_summary.get("walkforward_mean_ece")
+        if _p2b_wf_ece_7 is not None:
+            _v7 = float(_p2b_wf_ece_7)
+            if _v7 >= 0.15:
+                _p2b_blend_weight = 0.25
+                print(f"[Part 7] Part 2B walkforward ECE={_v7:.4f} ≥ 0.15 → w_2b=0.25")
+            elif _v7 >= 0.10:
+                _p2b_blend_weight = 0.50
+                print(f"[Part 7] Part 2B walkforward ECE={_v7:.4f} ≥ 0.10 → w_2b=0.50")
+            else:
+                print(f"[Part 7] Part 2B walkforward ECE={_v7:.4f} → w_2b=1.0 (normal)")
 
     _ensemble_available = _p2b_available or _p2c_available
 
@@ -917,19 +963,37 @@ def main() -> int:
         _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
     )
 
-    # Attempt to derive ensemble per-regime AUC evidence from available artifacts.
-    # Part 2B's walkforward tape has per-fold metrics but not per-regime.
-    # Part 2C's walkforward has per-fold AUC but not per-regime.
-    # Until per-regime AUC is added to Part 2B/2C outputs, use the conservative
-    # fallback: ensemble only overrides base active_regimes when its aggregate
-    # walkforward AUC is meaningfully above base (delta >= 0.01 above base AUC).
-    _base_wf_auc = float(np.nanmedian(tape["raw_val_auc"].values)) if "raw_val_auc" in tape.columns else 0.526
+    # FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25):
+    # Now that Part 2B computes per-regime AUC (added in this session's BUG-5 fix),
+    # use it directly for the ensemble regime override decision.
+    # Priority: Part 2B regime_auc_breakdown → fallback to aggregate uplift gate.
+    #
+    # If Part 2B's per-regime AUC is available, compute the ensemble active_regimes as
+    # the union of regimes where EITHER the base model OR the ensemble has AUC > 0.50.
+    # This captures regimes where the ensemble lifts signal even when the base is poor.
+    _p2b_active_regimes: List[str] = (
+        _p2b_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
+        if _p2b_summary else []
+    )
+    _ensemble_active_regimes: List[str] = sorted(
+        set(_base_active_regimes) | set(_p2b_active_regimes)
+    ) if _p2b_active_regimes else []
+
+    _base_wf_auc = float(_p2_summary.get("raw_val_auc_median", 0.526) or 0.526)
     _ensemble_uplift = (_ensemble_walkforward_auc or 0.0) - _base_wf_auc
-    _ensemble_regime_override = _ensemble_available and (_ensemble_uplift >= 0.01)
-    if _ensemble_regime_override:
-        print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} >= 0.01 → using all 4 regimes")
-    elif _ensemble_available:
-        print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} < 0.01 → keeping base active_regimes={_base_active_regimes}")
+
+    if _ensemble_active_regimes:
+        # Per-regime evidence available from Part 2B — use it directly.
+        _ensemble_regime_override = _ensemble_available and bool(_ensemble_active_regimes)
+        if _ensemble_regime_override:
+            print(f"[Part 7] Ensemble per-regime AUC available → active_regimes={_ensemble_active_regimes}")
+    else:
+        # Fallback: aggregate uplift gate (conservative).
+        _ensemble_regime_override = _ensemble_available and (_ensemble_uplift >= 0.01)
+        if _ensemble_regime_override:
+            print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} >= 0.01 → using all 4 regimes")
+        elif _ensemble_available:
+            print(f"[Part 7] Ensemble walkforward AUC uplift={_ensemble_uplift:.4f} < 0.01 → keeping base active_regimes={_base_active_regimes}")
     # ─────────────────────────────────────────────────────────────────────────────
 
     rows = []
@@ -956,11 +1020,20 @@ def main() -> int:
         _p_base_val = float(row.get("p_final_cal", row.get("p_final_g5", 0.20)))
 
         if _ensemble_available and (_p2b_val is not None or _p2c_val is not None):
-            # Compute blend weights; epistemic downweight only on the live row
-            _w_2c = 0.5 if (_is_live_row and _p2c_high_epistemic) else 1.0
+            # FIX (BUG-1, Audit 2026-05-12 — Quant-Guild Part 25):
+            # Use _p2b_blend_weight (ECE-based, computed above) instead of hardcoded 1.0.
+            # Synchronizes Part 7's blend with Part 3's blend for consistent governance.
+            #
+            # FIX (BUG-7, Audit 2026-05-12 — Quant-Guild Part 25):
+            # Apply Part 2C epistemic downweight on ALL rows using per-row bnn_overlay_on
+            # flag from the tape, not just the live row.  Previously only the live row
+            # received the 0.5× downweight; all historical rows used 1.0 even when the BNN
+            # was in high-uncertainty mode on those dates.
+            _p2c_overlay_this_row = bool(_p2c_overlay_date_map.get(_dt_norm, 0)) if "_p2c_overlay_date_map" in dir() else False
+            _w_2c = 0.5 if _p2c_overlay_this_row else 1.0
             _blend_components = [(_p_base_val, 1.0)]
             if _p2b_val is not None and np.isfinite(float(_p2b_val)):
-                _blend_components.append((float(_p2b_val), 1.0))
+                _blend_components.append((float(_p2b_val), _p2b_blend_weight))  # FIX: was 1.0
             if _p2c_val is not None and np.isfinite(float(_p2c_val)):
                 _blend_components.append((float(_p2c_val), _w_2c))
             _w_sum = sum(w for _, w in _blend_components)
@@ -985,13 +1058,16 @@ def main() -> int:
         # carry a publish_mode string column, so per-row reads always return UNKNOWN.
         publish_mode = _p2_publish_mode
         final_pass = _p2_final_pass
-        # ── FIX (BUG-2, Part 23 / corrected BUG-6, Part 24): override active_regimes ──
-        # Use ensemble regime override only when artifact-verifiable AUC uplift >= 0.01.
-        if _ensemble_regime_override:
-            _active_regimes = _ALL_REGIMES  # all 4 regimes active for ensemble
+        # ── FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25): active_regimes ──
+        # Use ensemble per-regime AUC (from Part 2B regime_auc_breakdown) when available.
+        # This resolves the prior deadlock where _ensemble_regime_override=False due to
+        # aggregate uplift < 0.01, causing the ensemble signal to be wasted in risk_on.
+        if _ensemble_regime_override and _ensemble_active_regimes:
+            _active_regimes = _ensemble_active_regimes  # evidence-based from Part 2B
+        elif _ensemble_regime_override:
+            _active_regimes = _ALL_REGIMES  # fallback when per-regime data absent
         else:
-            # FIX (F5, Audit 2026-05-10): Extract active_regimes from Part 2 summary
-            # so REGIME_USES_MODEL in compute_allocation() is driven by artifact data.
+            # No ensemble override: use Part 2 base active_regimes.
             _active_regimes = (
                 _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
             )
