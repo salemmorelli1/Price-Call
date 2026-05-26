@@ -1,0 +1,202 @@
+{
+  "part": "part2",
+  "version": "GEN5_PART2_GEN532_SOFT_CAUTION_OVERLAY",
+  "schema_version": "part2.g5.phase3_2.schema1",
+  "horizon": "1",
+  "holdout_start": "2020-01-01",
+  "rows_rebalance": "1670",
+  "rows_realized": "1669",
+  "rows_audit": "1669",
+  "model_feature_count": "14",
+  "forbidden_feature_count": "22",
+  "forbidden_features_excluded": [
+    "Date",
+    "bench_60_40",
+    "calendar_name",
+    "decision_is_tuesday",
+    "decision_weekday",
+    "excess_ret",
+    "fwd_ief",
+    "fwd_ief_reg",
+    "fwd_spread",
+    "fwd_voo",
+    "fwd_voo_reg",
+    "is_revealed_master",
+    "master_row_num",
+    "px_ief_fwd",
+    "px_ief_t",
+    "px_voo_fwd",
+    "px_voo_t",
+    "row_num_in_calendar",
+    "target_date",
+    "y_avail",
+    "y_rel_tail_voo_vs_ief",
+    "y_voo"
+  ],
+  "script_version": "GEN5_PART2_G532_DAILY_CANONICAL_V2",
+  "contract_profile": "live_locked_14",
+  "expected_model_feature_count": "14",
+  "expected_forbidden_count": "22",
+  "contract_missing_locked": [],
+  "contract_missing_optional": [
+    "bench_excess_voo_minus_ief",
+    "bench_ief",
+    "bench_voo"
+  ],
+  "contract_extra_locked": [],
+  "classification_base": {
+    "auc": 0.5182774284499542,
+    "pr": 0.21686447270657438,
+    "lift": 1.1451370015593674,
+    "brier": 0.16083371361286672,
+    "ece": 0.010378987353966291
+  },
+  "classification_dist": {
+    "auc": 0.5087046029224194,
+    "pr": 0.21654191878415097,
+    "lift": 1.1451370015593674,
+    "brier": 0.17489283874561062,
+    "ece": 0.10929614659747723
+  },
+  "classification_final_used": {
+    "auc": 0.5182774284499542,
+    "pr": 0.21686447270657438,
+    "lift": 1.1451370015593674,
+    "brier": 0.16083371361286672,
+    "ece": 0.010378987353966291
+  },
+  "distributional_diagnostics": {
+    "raw_coverage": 0.8142600359496704,
+    "conf_coverage": 0.8909526662672259,
+    "median_rmse": 0.014089906694440015
+  },
+  "calibration_gate_on_rate": 0.9640718562874252,
+  "high_risk_state_rate": 0.14131736526946106,
+  "drift_base_ece": 0.010378987353966291,
+  "drift_base_brier": 0.16083371361286672,
+  "drift_alarm_rate": 0.09580838323353294,
+  "deploy_downside_rate": 0.0029940119760479044,
+  "deploy_downside_count_total": "5",
+  "passive_regimes_no_deploy": [
+    "calm",
+    "risk_on"
+  ],
+  "deploy_downside_count_recent": "0",
+  "deploy_downside_recent_lookback": "252",
+  "deploy_downside_rate_min": 0.002,
+  "deploy_downside_rate_max": 0.3,
+  "deploy_downside_enter_count_min": "3",
+  "deploy_downside_stay_count_min": "2",
+  "deploy_downside_recent_count_min": "0",
+  "deploy_downside_gate_enter": "1",
+  "deploy_downside_gate_stay": "0",
+  "deploy_downside_gate_pass": true,
+  "deploy_downside_gate_reason": "enter_normal_count_gate",
+  "prior_publish_mode_for_hysteresis": "",
+  "defense_trigger_mean": 0.10270197844399612,
+  "defense_trigger_threshold_median": 0.11249999999999999,
+  "deploy_upside_rate": 0.0,
+  "raw_val_auc_median": 0.5359856479527227,
+  "final_pass_auc_source": "rolling_median",
+  "final_pass_auc_value": 0.5359856479527227,
+  "active_ret_net_mean": 6.888059247940449e-07,
+  "active_ret_net_ir": 0.0009502462376189685,
+  "strategy_ret_net_ir": 0.6896047235085337,
+  "negative_benchmark_active_mean": 0.0060827071245483175,
+  "negative_benchmark_hit_rate": 0.7724795640326976,
+  "downside_capture_ratio": -0.12218248005212509,
+  "avg_abs_active_weight_raw": 0.0003293413173652695,
+  "avg_abs_active_weight_capped": 0.0003293413173652695,
+  "shuffle_auc_median": 0.5044452131290834,
+  "suspicious_perf_flag": false,
+  "regime_auc_breakdown": {
+    "calm": {
+      "n": "351",
+      "auc": 0.532407,
+      "base_rate": 0.179487,
+      "brier": 0.147957,
+      "ece": 0.027582
+    },
+    "crisis": {
+      "n": "188",
+      "auc": 0.476883,
+      "base_rate": 0.244681,
+      "brier": 0.186505,
+      "ece": 0.036667
+    },
+    "high_vol": {
+      "n": "633",
+      "auc": 0.53749,
+      "base_rate": 0.21485,
+      "brier": 0.168497,
+      "ece": 0.008899
+    },
+    "risk_on": {
+      "n": "497",
+      "auc": 0.497133,
+      "base_rate": 0.181087,
+      "brier": 0.150457,
+      "ece": 0.027986
+    },
+    "active_regimes": [
+      "calm",
+      "high_vol"
+    ],
+    "passive_regimes": [
+      "crisis",
+      "risk_on"
+    ]
+  },
+  "stress_panel": {
+    "slippage_5_0bps": {
+      "active_mean": 9.524368415106392e-07,
+      "active_ir": 0.0013139368914410567,
+      "strategy_ir": 0.6901522209179433
+    },
+    "slippage_7_5bps": {
+      "active_mean": 8.20621383152342e-07,
+      "active_ir": 0.001132091781846799,
+      "strategy_ir": 0.6898784923952938
+    },
+    "slippage_10_0bps": {
+      "active_mean": 6.888059247940449e-07,
+      "active_ir": 0.0009502462376189685,
+      "strategy_ir": 0.6896047235085337
+    }
+  },
+  "tail_event_threshold": -0.015,
+  "part1_version_consumed": "V20_P1_DAILY",
+  "environment": {
+    "utc_run_ts": "2026-05-26T23:10:33.905385+00:00",
+    "python": "3.12.13",
+    "platform": "Linux-6.17.0-1013-azure-x86_64-with-glibc2.39",
+    "pandas": "3.0.3",
+    "numpy": "2.4.6",
+    "script_path": "part2_predictor.py",
+    "script_sha256": "3ee0c6ce108368a679b95f88a8beb2d7811d9e90c1d04ab134e81a74cae49078"
+  },
+  "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
+  "clearance_logic_version": "deploy_count_hysteresis_v1",
+  "dist_overlay_on_rate": 0.15209580838323353,
+  "dist_trust_mean": 0.7524696578400892,
+  "dist_overlay_strength_mean": 0.14827912559214165,
+  "active_ir_final_pass_min": 0.04,
+  "active_ir_fail_closed_min": 0.04,
+  "conditional_active_ir": null,
+  "conditional_active_ir_min": -0.5,
+  "conditional_active_ir_min_n": "10",
+  "conditional_active_ir_floor_fail_closed": -1.5,
+  "effective_drift_ece_max": 0.17,
+  "effective_drift_brier_max": 0.22,
+  "effective_final_pass_drift_rate_max": 0.4,
+  "effective_fail_closed_drift_rate": 0.4,
+  "effective_fail_closed_cal_gate": 0.85,
+  "predictive_quality_ok": true,
+  "final_pass": true,
+  "out_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv",
+  "publish_mode": "NORMAL",
+  "output_hashes": {
+    "consensus_tape_sha256": "0b765e0f9644feaab18a63165a6aba09441c7ef3072233c70d536082ac873fdf",
+    "summary_payload_sha256": "8589b4dac267b3b1124e60b8b8dced8ba7038850cee202bda35997da14d270ca"
+  }
+}
