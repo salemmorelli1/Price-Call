@@ -945,6 +945,68 @@ def main() -> int:
         tape = pd.concat([tape, _live_tape_row], ignore_index=True)
     tape.to_csv(tape_path, index=False)
 
+    # ── FIX (F-1, Quant-Guild Part 29): per-regime AUC breakdown ──────────
+    # Part 7 needs per-regime AUC evidence from Part 2C to determine which
+    # regimes the BL optimizer should activate. Without this field, Part 7's
+    # _p2c_active_regimes = [] and all regime extension logic collapses to the
+    # base model's narrow active_regimes = [calm, high_vol], leaving crisis and
+    # risk_on as regime_gated_prior even when Part 2C has AUC > 0.56 there.
+    #
+    # Method: join Part 2C tape (holdout rows) with Part 2's consensus tape
+    # regime_label column. The Part 2 tape carries Part 6 HMM labels through
+    # to every date, making it the authoritative regime source here.
+    _regime_auc_2c: Dict = {}
+    try:
+        _tape_p2_for_regime_path = Path(p2_dir) / "g532_final_consensus_tape.csv"
+        if _tape_p2_for_regime_path.exists():
+            _tape_p2_r = pd.read_csv(_tape_p2_for_regime_path)
+            _tape_p2_r["Date"] = pd.to_datetime(_tape_p2_r["Date"], errors="coerce").dt.normalize()
+            _tape_p2_r = _tape_p2_r.dropna(subset=["Date"])
+            if "regime_label" in _tape_p2_r.columns:
+                _tape_2c_r = tape.copy()
+                _tape_2c_r["Date"] = pd.to_datetime(_tape_2c_r["Date"], errors="coerce").dt.normalize()
+                _merged_2c = _tape_2c_r.merge(
+                    _tape_p2_r[["Date", "regime_label"]], on="Date", how="left"
+                )
+                _holdout_2c = _merged_2c[
+                    (_merged_2c["in_holdout"] == 1) & _merged_2c["y_true"].notna()
+                ].copy()
+                _active_2c: List[str] = []
+                _passive_2c: List[str] = []
+                for _regime_2c in sorted(_holdout_2c["regime_label"].dropna().unique()):
+                    _sub_2c = _holdout_2c[_holdout_2c["regime_label"] == _regime_2c]
+                    if len(_sub_2c) < 30:
+                        continue
+                    _y_2c = _sub_2c["y_true"].values.astype(float)
+                    _p_2c = np.clip(_sub_2c["p_bnn_mean"].values, 1e-6, 1.0 - 1e-6)
+                    if len(np.unique(_y_2c)) < 2:
+                        continue
+                    _auc_2c = float(roc_auc_score(_y_2c, _p_2c))
+                    _brier_2c = float(brier_score_loss(_y_2c, _p_2c))
+                    _regime_auc_2c[str(_regime_2c)] = {
+                        "n": int(len(_sub_2c)),
+                        "auc": round(_auc_2c, 6),
+                        "base_rate": round(float(_y_2c.mean()), 6),
+                        "brier": round(_brier_2c, 6),
+                        "ece": round(float(_ece(_y_2c, _p_2c)), 6),
+                    }
+                    if _auc_2c > 0.50:
+                        _active_2c.append(str(_regime_2c))
+                    else:
+                        _passive_2c.append(str(_regime_2c))
+                _regime_auc_2c["active_regimes"] = sorted(_active_2c)
+                _regime_auc_2c["passive_regimes"] = sorted(_passive_2c)
+                print("\n[Part 2C] Per-regime AUC breakdown (from holdout tape):")
+                for _r2c, _s2c in _regime_auc_2c.items():
+                    if isinstance(_s2c, dict):
+                        print(f"  {_r2c:12s}: n={_s2c['n']:4d}, auc={_s2c['auc']:.4f}, "
+                              f"{'ACTIVE' if _s2c['auc'] > 0.5 else 'passive'}")
+                print(f"  Active regimes: {_regime_auc_2c.get('active_regimes', [])}")
+        else:
+            print(f"[Part 2C] Per-regime AUC: Part 2 tape not found — skipping.")
+    except Exception as _rae_2c:
+        print(f"[Part 2C] Per-regime AUC computation failed ({_rae_2c}) — skipping.")
+
     # ── Summary JSON ──────────────────────────────────────────────────────
     baseline_auc = float(p2_summary.get("classification_base", {}).get("auc", np.nan))
     baseline_ece = float(p2_summary.get("classification_base", {}).get("ece", np.nan))
@@ -1051,10 +1113,20 @@ def main() -> int:
         ),
         # ── FIX (BUG-4, Audit 2026-05-12 — Quant-Guild Part 25): mean-bias diagnostic ──
         # E[p_bnn] over the holdout period should ≈ base_rate for a well-calibrated model.
-        # Current: E[p_bnn] = 0.126, base_rate = 0.206, mean_bias_ratio = 0.609.
         # A ratio below 0.70 (bias_flag=True) means the model systematically underestimates
         # tail risk by more than 30%, which pulls the blend bearish relative to the base model.
         # Surfacing this here lets Part 3 and Part 7 detect and gate the systematic bias.
+        #
+        # FIX (F-4, Quant-Guild Part 29): add holdout_mean_p_bnn_pre_correction to
+        # eliminate the apparent contradiction between mean_bias_ratio=1.0 and
+        # bias_correction_factor > 1.0. The stored holdout_mean_p_bnn is the
+        # POST-correction mean (= base_rate after correction → ratio = 1.0 by
+        # construction). The bias_correction_factor = base_rate / pre_correction_mean.
+        # A reader computing base_rate / holdout_mean_p_bnn from the JSON would get 1.0,
+        # not 1.5475, making the factor appear contradictory. holdout_mean_p_bnn_pre_correction
+        # makes the full correction chain auditable:
+        #   pre_correction_mean * bias_correction_factor = post_correction_mean ≈ base_rate.
+        "holdout_mean_p_bnn_pre_correction": float(_holdout_mean_p),
         "holdout_mean_p_bnn": float(np.mean(p_h_mean)) if len(p_h_mean) else None,
         "holdout_mean_base_rate": float(np.mean(y_hold_arr)) if len(y_hold_arr) else None,
         "mean_bias_ratio": (
@@ -1067,7 +1139,15 @@ def main() -> int:
         ),
         # FIX (Finding 3, Quant-Guild Part 26): expose the applied bias correction
         # factor so Part 3's gate check can verify mean_bias_ratio after correction.
+        # bias_correction_factor = holdout_mean_base_rate / holdout_mean_p_bnn_pre_correction.
+        # holdout_mean_p_bnn is the post-correction value. mean_bias_ratio is computed
+        # from the post-correction p_h_mean, so it equals 1.0 when correction is perfect.
         "bias_correction_factor": float(bias_correction_factor),
+        # FIX (F-1, Quant-Guild Part 29): per-regime AUC breakdown.
+        # Consumed by Part 7's _p2c_active_regimes to extend BL optimizer to all
+        # regimes where Part 2C has AUC > 0.50. Without this field, Part 7 has no
+        # per-regime evidence from 2C and cannot activate BL in crisis/risk_on.
+        "regime_auc_breakdown": _regime_auc_2c,
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1091,3 +1171,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+
