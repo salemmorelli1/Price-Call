@@ -1,0 +1,98 @@
+{
+  "part": "PART2C_BNN",
+  "version": "V1_DEEP_ENSEMBLE_MC_DROPOUT",
+  "backend": "pytorch",
+  "n_ensemble": 10,
+  "n_mc_samples": 100,
+  "hidden_dims": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.2,
+  "weight_decay": 0.01,
+  "n_features": 14,
+  "feature_cols": [
+    "voo_vol10",
+    "excess_vol10",
+    "vix_mom5",
+    "alpha_credit_spread",
+    "alpha_credit_accel",
+    "alpha_vix_term",
+    "alpha_breadth",
+    "alpha_tech_relative",
+    "stress_score_raw",
+    "stress_score_change5",
+    "vix_z21",
+    "credit_spread_z21",
+    "breadth_z21",
+    "tech_relative_z21"
+  ],
+  "holdout_start": "2020-01-01",
+  "n_training_rows": 2394,
+  "n_holdout_rows": 1669,
+  "holdout_auc": 0.5863008794110407,
+  "holdout_brier": 0.159596249461174,
+  "holdout_ece": 0.028100389056465735,
+  "holdout_decision_utility": -0.5181058495821727,
+  "walkforward_mean_auc": 0.5547646661127673,
+  "walkforward_mean_brier": 0.16657262401921408,
+  "walkforward_mean_ece": 0.0666790037667231,
+  "walkforward_mean_utility": -0.5339713710946551,
+  "epist_overlay_threshold_75pct": 0.05032169073820114,
+  "n_walkforward_eval_rows": 3528,
+  "row_level_mean_epist": 0.04019054397940636,
+  "live_p_bnn_mean": 0.10224391804375509,
+  "live_p_bnn_epistemic": 0.07085134088993073,
+  "live_bnn_overlay_on": 1,
+  "live_epist_ratio": 1.408,
+  "live_high_epistemic_warning": false,
+  "xgb_baseline_auc": 0.5165902123565083,
+  "xgb_baseline_ece": 0.011294763060136064,
+  "uncertainty_backend_valid": true,
+  "production_candidate": true,
+  "gate_validation_passed": true,
+  "holdout_mean_p_bnn_pre_correction": 0.13631732761859894,
+  "holdout_mean_p_bnn": 0.20071901381015778,
+  "holdout_mean_base_rate": 0.20071899890899658,
+  "mean_bias_ratio": 1.0000000742389175,
+  "mean_bias_flag": false,
+  "bias_correction_factor": 1.472439362005295,
+  "regime_auc_breakdown": {
+    "calm": {
+      "n": 351,
+      "auc": 0.603285,
+      "base_rate": 0.179487,
+      "brier": 0.145214,
+      "ece": 0.038328
+    },
+    "crisis": {
+      "n": 188,
+      "auc": 0.558941,
+      "base_rate": 0.244681,
+      "brier": 0.190057,
+      "ece": 0.083047
+    },
+    "high_vol": {
+      "n": 633,
+      "auc": 0.562788,
+      "base_rate": 0.21485,
+      "brier": 0.170305,
+      "ece": 0.04414
+    },
+    "risk_on": {
+      "n": 497,
+      "auc": 0.600491,
+      "base_rate": 0.181087,
+      "brier": 0.14511,
+      "ece": 0.028244
+    },
+    "active_regimes": [
+      "calm",
+      "crisis",
+      "high_vol",
+      "risk_on"
+    ],
+    "passive_regimes": []
+  },
+  "built_at": "2026-05-26T10:27:26.373438+00:00"
+}
