@@ -1500,13 +1500,12 @@ def main(cfg: Part3Config = CFG) -> None:
     # Gate 1: gate_validation_passed.  Part 2C must pass the same ECE calibration ceiling
     # as Part 2B (holdout_ece <= base_ece + 0.05).  If Part 2C reports
     # gate_validation_passed=False, exclude it from the blend entirely.
-    # Current state: holdout_ece=0.0767 > ceiling 0.0645 → gate FAILS → excluded.
-    #
-    # Gate 2: directional mean-bias.  A model whose mean probability is more than 30%
-    # below the base_rate systematically pulls the blend bearish relative to the base
-    # model on every single production day — a silent hidden bias.  Gate: if
-    # mean_bias_ratio < 0.70 (i.e. E[p_bnn] < 70% of base_rate), exclude from blend.
-    # Current state: mean_bias_ratio = 0.609 → bias_flag=True → excluded.
+    # Current state (2026-05-26): holdout_ece=0.0285 ≤ ceiling 0.0626 → gate PASSES.
+    # NOTE (F-3, Quant-Guild Part 29): an earlier comment stated holdout_ece=0.0767
+    # and gate FAILS. That referred to a prior code version. The current artifact
+    # (part2c_bnn_summary.json) shows gate_validation_passed=True. Part 2C IS
+    # included in the blend when the epistemic and bias gates also pass (see below).
+    # Update this comment after any retraining run that changes holdout_ece.
     #
     # Both gates are non-blocking: if the Part 2C summary JSON is absent or missing
     # the fields, the default is permissive (include), to avoid breaking cold-start.
