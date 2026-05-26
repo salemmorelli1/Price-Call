@@ -250,14 +250,33 @@ def _decision_utility(
     # "any prediction that exceeds the unconditional frequency of tail events."
     # 7/14 Part 2C folds returned NaN utility because BNN probabilities rarely
     # exceed 0.25; using base_rate as default eliminates those spurious NaN values.
+    #
+    # FIX (F3, Quant-Guild Part 30): calibrated utility replaces raw hits-misses.
+    # PROBLEM: old formula: utility = (hits - misses) / n_acted = 2*precision - 1
+    # With base_rate=0.21, even a perfect model at the threshold yields
+    #   utility ≈ 2*0.21 - 1 = -0.58 (structurally negative for any AUC ~ 0.55).
+    # All 14 walkforward folds for both Part 2B and Part 2C returned negative utility,
+    # making the metric completely uninformative for model selection.
+    #
+    # CORRECT formula: weight false-alarm cost by the base-rate odds ratio so that
+    # a random model (precision = base_rate) yields utility = 0.
+    #   loss_weight = base_rate / (1 - base_rate)
+    #   utility = (hits - misses * loss_weight) / n_acted
+    #
+    # Derivation: for a random model, E[hits]=base_rate*n, E[misses]=(1-base_rate)*n.
+    # Setting E[hits] - E[misses]*w = 0 gives w = base_rate/(1-base_rate).
+    # Positive utility now means: the model's precision at the threshold
+    # exceeds the base rate — a meaningful, attainable signal.
     if threshold is None:
         threshold = float(base_rate)
     acted = p_pred > threshold
     if acted.sum() == 0:
         return float("nan")
-    hits   = (y_true[acted] == 1).sum()
-    misses = (y_true[acted] == 0).sum()
-    return float((hits - misses) / acted.sum())
+    hits   = float((y_true[acted] == 1).sum())
+    misses = float((y_true[acted] == 0).sum())
+    # Calibrate: a random model at base_rate yields utility = 0
+    loss_weight = float(base_rate) / max(1.0 - float(base_rate), 1e-9)
+    return float((hits - misses * loss_weight) / acted.sum())
 
 
 def _spread_signal_correlation(
