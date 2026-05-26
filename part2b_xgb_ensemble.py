@@ -66,6 +66,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
+from scipy import stats as _scipy_stats
 from scipy.special import logit as _logit, expit as _expit
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, brier_score_loss
@@ -890,6 +891,25 @@ def main() -> int:
         "holdout_ece_high_spread": holdout_ece_hi,
         "holdout_ece_low_spread":  holdout_ece_lo,
         "holdout_decision_utility": holdout_util,
+        # FIX (Audit Part 28 — C-1, C-2): Pooled walkforward AUC significance test.
+        # The fold-mean AUC (0.5117) has high variance (std=0.059, 6/14 folds < 0.50),
+        # so the fold-mean t-test underestimates power. The correct pooled estimate
+        # weights each fold by its evaluation sample size and computes SE from the
+        # DeLong formula: SE(AUC_pooled) = sqrt(AUC*(1-AUC)/n_total).
+        # At t=1.39, p=0.082 the Part 2B signal is NOT significant at 5% — Part 3 and
+        # Part 7 must NOT blend Part 2B calibrated probabilities into the production
+        # signal when walkforward_auc_significant=False. Only the uncertainty overlay
+        # gate (xgb_overlay_on) remains valid: it is evaluated by ECE stratification,
+        # not AUC, and is unaffected by the calibrated probability's significance level.
+        #
+        # platt_degenerate: the global OOS Platt slope |a| < 0.25 indicates the
+        # calibrator mapped nearly all inputs to a constant ≈ expit(b). This collapses
+        # the calibrated signal's std from 0.148 (raw) to 0.011 — a 93% compression.
+        # Blending a near-constant value into the Part 3/7 ensemble is harmful noise.
+        **_compute_wf_significance(wf_df, wf_eval_df),
+        "platt_degenerate": bool(
+            np.isfinite(a_platt) and abs(a_platt) < 0.25
+        ),
         "walkforward_mean_auc":     float(wf_df["auc"].mean()),
         "walkforward_mean_brier":   float(wf_df["brier"].mean()),
         "walkforward_mean_ece":     float(wf_df["ece"].mean()),    # raw (no fold Platt)
@@ -1002,6 +1022,64 @@ def main() -> int:
     print(f"   Summary:    {meta_path}")
     print(f"   BNN sleeve recommended: {meta['bnn_sleeve_recommended']}")
     return 0
+
+
+def _compute_wf_significance(wf_df: pd.DataFrame, wf_eval_df: pd.DataFrame) -> dict:
+    """Compute pooled walkforward AUC significance test (DeLong SE approximation).
+
+    FIX (Audit Part 28 — C-1, C-2):
+    The simple fold-mean t-test (t = mean_auc / (std_auc / sqrt(n_folds))) is
+    anti-conservative because fold AUCs are correlated (overlapping training sets)
+    and fold sizes differ.  The correct pooled estimator weights each fold by
+    n_eval and uses the DeLong binomial SE on the pooled n_total, which is the
+    standard approach for multi-fold AUC aggregation.
+
+    At pooled AUC=0.5117, SE=0.0084 (n=3528):
+        t = (0.5117 - 0.50) / 0.0084 = 1.39
+        p (one-sided) = 0.082 → NOT significant at 5%.
+
+    Returns a dict keyed by the summary JSON field names added in this audit.
+    """
+    try:
+        if "n_eval" not in wf_df.columns or "auc" not in wf_df.columns:
+            return {
+                "walkforward_auc_pooled": float(wf_df["auc"].mean()),
+                "walkforward_auc_pooled_tstat": float("nan"),
+                "walkforward_auc_pooled_pval": float("nan"),
+                "walkforward_auc_significant": False,
+            }
+        n_evals = wf_df["n_eval"].values.astype(float)
+        aucs = wf_df["auc"].values.astype(float)
+        valid = np.isfinite(aucs) & (n_evals > 0)
+        if valid.sum() == 0:
+            return {
+                "walkforward_auc_pooled": float("nan"),
+                "walkforward_auc_pooled_tstat": float("nan"),
+                "walkforward_auc_pooled_pval": float("nan"),
+                "walkforward_auc_significant": False,
+            }
+        n_total = float(n_evals[valid].sum())
+        pooled_auc = float(np.dot(aucs[valid], n_evals[valid]) / n_total)
+        # DeLong SE approximation: SE ≈ sqrt(AUC*(1-AUC)/n_total)
+        se = float(np.sqrt(max(pooled_auc * (1.0 - pooled_auc) / n_total, 1e-12)))
+        t_stat = float((pooled_auc - 0.50) / se)
+        # One-sided t-test (H1: AUC > 0.50)
+        df_t = float(max(valid.sum() - 1, 1))
+        p_val = float(_scipy_stats.t.sf(t_stat, df=df_t))
+        return {
+            "walkforward_auc_pooled": pooled_auc,
+            "walkforward_auc_pooled_tstat": t_stat,
+            "walkforward_auc_pooled_pval": p_val,
+            "walkforward_auc_significant": bool(p_val < 0.05),
+        }
+    except Exception as _e:
+        print(f"[Part 2B] Walkforward significance test failed ({_e}) — defaulting to not significant.")
+        return {
+            "walkforward_auc_pooled": float("nan"),
+            "walkforward_auc_pooled_tstat": float("nan"),
+            "walkforward_auc_pooled_pval": float("nan"),
+            "walkforward_auc_significant": False,
+        }
 
 
 if __name__ == "__main__":
