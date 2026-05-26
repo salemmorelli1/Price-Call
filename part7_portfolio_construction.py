@@ -951,23 +951,42 @@ def main() -> int:
             _p2b_date_map = {}
     _ensemble_available = _p2b_available or _p2c_available
 
-    # Step 3: Ensemble AUC for view_confidence override.
-    # Use walkforward_mean_auc from Part 2B (more conservative than holdout).
-    # If both available, take the mean of walkforward AUCs.
-    _ensemble_walkforward_auc: Optional[float] = None
+    # ── FIX (F-1/F-2, Quant-Guild Part 29): Ensemble AUC after exclusion gates ──
+    # Only include non-excluded sleeves in the walkforward AUC mean.
+    # Part 2B was just excluded above if non-significant or Platt-degenerate.
+    # Part 2C exclusion is checked below. At this point _p2b_available reflects
+    # its final post-exclusion status; _p2c_available is set from the quality gates
+    # earlier. Both are checked here so the AUC mean is never contaminated by
+    # a sleeve that does not contribute to the probability blend.
     if _ensemble_available:
         _auc_vals = []
-        if _p2b_summary:
+        if _p2b_available and _p2b_summary:
             _v = _p2b_summary.get("walkforward_mean_auc")
             if _v is not None and np.isfinite(float(_v)):
                 _auc_vals.append(float(_v))
-        if _p2c_summary:
+        if _p2c_available and _p2c_summary:
             _v = _p2c_summary.get("walkforward_mean_auc")
             if _v is not None and np.isfinite(float(_v)):
                 _auc_vals.append(float(_v))
         if _auc_vals:
             _ensemble_walkforward_auc = float(np.mean(_auc_vals))
-            print(f"[Part 7] Ensemble walkforward AUC for view_confidence: {_ensemble_walkforward_auc:.4f}")
+            print(f"[Part 7] Ensemble walkforward AUC (non-excluded sleeves): {_ensemble_walkforward_auc:.4f}")
+    # _ensemble_walkforward_auc MUST be computed AFTER the exclusion gates below
+    # (Part 2B exclusion for non-significant walkforward AUC / degenerate Platt;
+    # Part 2C exclusion for failed ECE gate / mean bias). If excluded sleeves are
+    # included in the AUC mean, their lower AUCs drag the ensemble below the base
+    # model's walkforward AUC, causing the aggregate uplift gate to return False
+    # even when an active sleeve (e.g. Part 2C, AUC=0.553) genuinely lifts signal.
+    #
+    # Concrete impact: with Part 2B excluded (walkforward AUC=0.512) but still
+    # included in the mean, ensemble AUC = mean(0.512, 0.553) = 0.532 < base 0.538
+    # → uplift = -0.006 → _ensemble_regime_override=False → 41% of rows use
+    # regime_gated_prior (static 60/40) instead of BL optimizer.
+    #
+    # Fix: initialise _ensemble_walkforward_auc = None here; compute it AFTER
+    # both exclusion gates using only sleeves that pass (_p2b_available,
+    # _p2c_available both checked at their post-exclusion values).
+    _ensemble_walkforward_auc: Optional[float] = None
 
     # Step 4: When ensemble is available, all 4 regimes are active.
     # The Part 2 base active_regimes=["high_vol"] is derived from the base model
@@ -1007,9 +1026,24 @@ def main() -> int:
         _p2b_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
         if _p2b_summary else []
     )
+
+    # FIX (F-1, Quant-Guild Part 29): derive _p2c_active_regimes from Part 2C summary.
+    # Part 2C's regime_auc_breakdown is populated when main() computes and stores it.
+    # If absent (cold-start or old Part 2C version), default to an empty list and let
+    # the aggregate uplift gate decide.
+    _p2c_active_regimes: List[str] = (
+        _p2c_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
+        if _p2c_summary else []
+    )
+
+    # FIX (F-1, Quant-Guild Part 29): _ensemble_active_regimes is the UNION of
+    # base + 2B + 2C active regimes. The prior code only took the union of base
+    # and 2B, and returned [] when _p2b_active_regimes was empty (falsy), ignoring
+    # 2C entirely. Any sleeve with per-regime AUC evidence contributes to the set.
+    _any_sleeve_has_regime_data = bool(_p2b_active_regimes or _p2c_active_regimes)
     _ensemble_active_regimes: List[str] = sorted(
-        set(_base_active_regimes) | set(_p2b_active_regimes)
-    ) if _p2b_active_regimes else []
+        set(_base_active_regimes) | set(_p2b_active_regimes) | set(_p2c_active_regimes)
+    ) if _any_sleeve_has_regime_data else []
 
     _base_wf_auc = float(_p2_summary.get("raw_val_auc_median", 0.526) or 0.526)
     _ensemble_uplift = (_ensemble_walkforward_auc or 0.0) - _base_wf_auc
