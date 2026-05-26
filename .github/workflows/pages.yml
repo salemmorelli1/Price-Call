@@ -10,6 +10,11 @@ permissions:
   pages: write
   id-token: write
 
+# Node.js 24 is required starting June 2, 2026. Set it explicitly now so the
+# workflow does not break when GitHub forces the transition on that date.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -22,8 +27,15 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      # enablement: true tells the action to enable Pages via the API when it
+      # is not already enabled, rather than just checking and failing.  Without
+      # this flag the action makes a GET-only API call; if Pages has never been
+      # activated on the repo (or the API returns a non-200 status for any
+      # reason) the step fails immediately with "Get Pages site failed".
       - name: Set up Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Prepare site
         run: |
