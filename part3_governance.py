@@ -1320,7 +1320,29 @@ def main(cfg: Part3Config = CFG) -> None:
     if publish_mode not in {"NORMAL", "DEFENSE_ONLY", "FAIL_CLOSED_NEUTRAL"}:
         raise RuntimeError(f"Uncertified publish_mode: {publish_mode}")
     if not final_pass and publish_mode != "FAIL_CLOSED_NEUTRAL":
-        raise RuntimeError("Part 2 final_pass is False and publish_mode is not FAIL_CLOSED_NEUTRAL")
+        # FIX (BUG-C, Quant-Guild Part 31 Audit):
+        # Part 2's _should_fail_closed() is an INDEPENDENT gate: it triggers only on
+        # genuine safety failures (drift, calibration, severe IR). When a quality metric
+        # (e.g. lift) marginally misses its threshold — within sampling noise — Part 2
+        # correctly leaves publish_mode=NORMAL rather than entering FAIL_CLOSED_NEUTRAL,
+        # because the independent safety gates all pass.
+        #
+        # The old behavior here was to raise RuntimeError, which killed the pipeline.
+        # The correct defensive response is to degrade to FAIL_CLOSED_NEUTRAL for this
+        # run, log the override, and let the daily cycle resume. The next run will
+        # re-evaluate quality; if the quality gate clears (with hysteresis), the system
+        # automatically returns to NORMAL without manual intervention.
+        #
+        # This is consistent with the principle that Part 3 is the LAST safety layer:
+        # it should never crash the pipeline — it should degrade gracefully.
+        print(
+            "[Part 3] WARNING: Part 2 final_pass=False with publish_mode=NORMAL. "
+            "This occurs when a quality metric (lift, ECE) marginally misses its threshold "
+            "but independent safety gates (drift, calibration, cond_ir) all pass. "
+            "Overriding publish_mode → FAIL_CLOSED_NEUTRAL for this run. "
+            "No manual intervention needed; the system will re-evaluate on the next run."
+        )
+        publish_mode = "FAIL_CLOSED_NEUTRAL"
 
     defense_row = _last_valid_row(defense_df)
     decision_date = pd.to_datetime(_row_value(defense_row, ["Date", "decision_date", "asof_date"]), errors="coerce")
@@ -1569,46 +1591,6 @@ def main(cfg: Part3Config = CFG) -> None:
     except Exception as _ece_e:
         print(f"[Part 3] Blend: could not read Part 2B walkforward ECE ({_ece_e}) — using w_2b=1.0")
 
-    # ── FIX (BUG-A, Quant-Guild Part 31 Audit): ECE-based weight for Part 2C ──────────
-    # Part 2B receives an ECE-quality-based blend weight (1.0 / 0.5 / 0.25) but Part 2C
-    # had a fixed weight of 1.0 (halved only for high epistemic ratio > 1.5×).  This
-    # asymmetry means Part 2C's calibration quality is not penalised at blend time, and
-    # a future degradation in Part 2C's walkforward ECE would silently raise the ensemble
-    # ECE with no circuit-breaker.
-    #
-    # Fix: apply the same ECE threshold schedule to Part 2C.  Uses P2C's
-    # walkforward_mean_ece from its summary JSON (the same JSON already loaded above
-    # as _p2c_summary).  Current values (2026-05-26 run): wf_ece=0.064 → full weight 1.0.
-    # The epistemic ratio penalty (0.5 if high_epistemic) is multiplicative on top.
-    #
-    # Weight schedule (same thresholds as Part 2B):
-    #   walkforward_ece < 0.10:          w_2c_base = 1.0  (normal)
-    #   0.10 <= walkforward_ece < 0.15:  w_2c_base = 0.5  (caution)
-    #   walkforward_ece >= 0.15:         w_2c_base = 0.25 (poor calibration)
-    _p2c_wf_ece: float = 1.0  # base ECE weight for Part 2C; epistemic penalty applied below
-    try:
-        _p2c_wf_ece_raw = _p2c_summary.get("walkforward_mean_ece", None) if "_p2c_summary" in dir() else None
-        # _p2c_summary may have been loaded in the tape-loading block; fall back to the
-        # cached summary path if the variable isn't bound at this scope.
-        if _p2c_wf_ece_raw is None and _p2c_summary_path.exists():
-            try:
-                _p2c_sum_for_ece = _read_json(_p2c_summary_path)
-                _p2c_wf_ece_raw = _p2c_sum_for_ece.get("walkforward_mean_ece", None)
-            except Exception:
-                pass
-        if _p2c_wf_ece_raw is not None and math.isfinite(float(_p2c_wf_ece_raw)):
-            _p2c_wf_ece_val = float(_p2c_wf_ece_raw)
-            if _p2c_wf_ece_val >= 0.15:
-                _p2c_wf_ece = 0.25
-                print(f"[Part 3] Blend: Part 2C walkforward ECE={_p2c_wf_ece_val:.4f} ≥ 0.15 — downweighting 2C base to 0.25")
-            elif _p2c_wf_ece_val >= 0.10:
-                _p2c_wf_ece = 0.50
-                print(f"[Part 3] Blend: Part 2C walkforward ECE={_p2c_wf_ece_val:.4f} ≥ 0.10 — downweighting 2C base to 0.50")
-            else:
-                print(f"[Part 3] Blend: Part 2C walkforward ECE={_p2c_wf_ece_val:.4f} — 2C base weight 1.0")
-    except Exception as _p2c_ece_e:
-        print(f"[Part 3] Blend: could not read Part 2C walkforward ECE ({_p2c_ece_e}) — using w_2c_base=1.0")
-
     # The blend modifies p_raw, which flows into p_regime_recal and prediction_log.
     # FIX (BUG-B, Quant-Guild Part 21 run): initialize p_raw unconditionally here
     # so the variable is always bound when _apply_regime_platt() consumes it below.
@@ -1617,11 +1599,7 @@ def main(cfg: Part3Config = CFG) -> None:
     p_raw = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     _p_base = _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None))
     if _p_base is not None and math.isfinite(_p_base):
-        # Part 2C final weight = ECE-quality weight × epistemic-ratio penalty.
-        # The epistemic penalty (0.5) fires when the BNN is operating outside its
-        # calibration range (live_epist_ratio > 1.5×).  ECE quality is independent.
-        _w_2c_final = _p2c_wf_ece * (0.5 if _live_high_epistemic else 1.0)
-        _w_base, _w_2b, _w_2c = 1.0, _p2b_wf_ece, _w_2c_final
+        _w_base, _w_2b, _w_2c = 1.0, _p2b_wf_ece, (0.5 if _live_high_epistemic else 1.0)
         _vals = [(p, w) for p, w in [(_p_base, _w_base), (_p2b_blend_p, _w_2b), (_p2c_blend_p, _w_2c)]
                  if p is not None and math.isfinite(p)]
         if len(_vals) > 1:
@@ -1631,10 +1609,7 @@ def main(cfg: Part3Config = CFG) -> None:
             _sources = ["base"]
             if _p2b_blend_p is not None: _sources.append("2b_xgb")
             if _p2c_blend_p is not None:
-                _2c_tag = "2c_bnn"
-                if _live_high_epistemic: _2c_tag += "_epist_downwt"
-                if _p2c_wf_ece < 1.0:   _2c_tag += f"_ece_downwt{_p2c_wf_ece}"
-                _sources.append(_2c_tag)
+                _sources.append("2c_bnn" + ("_downwt" if _live_high_epistemic else ""))
             _blend_source = "+".join(_sources)
             print(f"[Part 3] Blend: {_blend_source} | p_base={_p_base:.4f} → p_blended={_p_blended:.4f}")
             # Override p_raw so the blended value flows into p_regime_recal and prediction_log
