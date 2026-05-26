@@ -371,12 +371,9 @@ def _decision_utility(
     loss_scale: float = 1.0,
 ) -> float:
     """
-    Simple defense decision utility.
+    Calibrated defense decision utility.
     When p_pred > threshold, we act defensively (reduce VOO).
-    Utility = sum over rows where we act defensively:
-        +win_scale  if y_true == 1 (tail event occurred, defense was right)
-        -loss_scale if y_true == 0 (no tail, defense was opportunity cost)
-    Normalised by number of decisions made.
+    Utility = (hits*win_scale - misses*loss_scale_calibrated) / n_acted
 
     FIX (Finding 27, Audit 2026-04-21):
     The prior threshold=0.25 was hardcoded regardless of base_rate (~0.211).
@@ -385,15 +382,38 @@ def _decision_utility(
     unconditional frequency of tail events." This eliminates the NaN utility values
     that appeared in 7/14 BNN walkforward folds when BNN probabilities rarely
     exceeded 0.25.
+
+    FIX (F3, Quant-Guild Part 30): calibrated utility replaces raw hits-misses.
+    PROBLEM: old formula with win_scale=loss_scale=1 gives utility = 2*precision-1.
+    With base_rate=0.21, even a perfect model yields utility ≈ -0.58 structurally.
+    All 14 walkforward folds for both Part 2B and Part 2C returned negative utility,
+    making the metric completely uninformative for model selection.
+
+    CORRECT: weight the false-alarm cost by the base-rate odds ratio so a random
+    model (precision = base_rate) yields utility = 0:
+        calibrated_loss_scale = (1-base_rate) / base_rate  ... no.
+    Derivation: E[hits]=base_rate*n, E[misses]=(1-base_rate)*n for random.
+    Setting E[hits]*ws - E[misses]*ls = 0:
+        base_rate * ws = (1-base_rate) * ls  → ls = ws * base_rate/(1-base_rate)
+    With win_scale=1: loss_scale_calibrated = base_rate / (1-base_rate).
+    Positive utility → model precision at threshold beats base rate.
+    win_scale and loss_scale parameters are preserved for API compatibility but
+    the effective loss_scale is overridden by calibration unless explicitly set > 1.
     """
     if threshold is None:
         threshold = float(base_rate)
     acted = p_pred > threshold
     if acted.sum() == 0:
         return float("nan")
-    hits = (y_true[acted] == 1).sum()
-    misses = (y_true[acted] == 0).sum()
-    utility = (hits * win_scale - misses * loss_scale) / acted.sum()
+    hits = float((y_true[acted] == 1).sum())
+    misses = float((y_true[acted] == 0).sum())
+    # Calibrate loss_scale so random model yields utility=0.
+    # If caller explicitly provides loss_scale != 1.0, honour it (API compat).
+    if loss_scale == 1.0:
+        loss_scale_eff = float(base_rate) / max(1.0 - float(base_rate), 1e-9)
+    else:
+        loss_scale_eff = float(loss_scale)
+    utility = (hits * float(win_scale) - misses * loss_scale_eff) / acted.sum()
     return float(utility)
 
 
