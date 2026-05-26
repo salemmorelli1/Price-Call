@@ -853,6 +853,14 @@ def main() -> int:
     _p2c_summary: Dict = {}
     _p2c_available = False
     _p2c_high_epistemic = False  # live-date flag for BNN downweighting
+    # FIX (Audit Part 28 — C-4): Initialize _p2c_overlay_date_map unconditionally
+    # BEFORE the try block. The prior code only assigned it inside
+    # `if "bnn_overlay_on" in _p2c_tape.columns`, leaving it unbound when
+    # that column was absent. The downstream blend loop then used `'_p2c_overlay_date_map'
+    # in dir()` (fragile; relies on CPython local-symbol-table ordering) to detect the
+    # missing variable. Pre-initialization to {} is correct: absent values default to 0
+    # (no overlay) via the `.get(..., 0)` call in the blend loop.
+    _p2c_overlay_date_map: Dict = {}
     try:
         if os.path.exists(_p2c_tape_path):
             _p2c_tape = pd.read_csv(_p2c_tape_path)
@@ -917,6 +925,30 @@ def main() -> int:
             else:
                 print(f"[Part 7] Part 2B walkforward ECE={_v7:.4f} → w_2b=1.0 (normal)")
 
+    _ensemble_available = _p2b_available or _p2c_available
+
+    # FIX (Audit Part 28 — C-1, C-2): Gate Part 2B from the probability blend when
+    # its pooled walkforward AUC is not statistically significant (p >= 0.05) or its
+    # global Platt calibration is degenerate (|a| < 0.25 → signal collapsed 93%).
+    # Mirrors the identical gate in Part 3 (part3_governance.py). Both layers must use
+    # the same criteria so the portfolio construction and governance signals are consistent.
+    if _p2b_available and _p2b_summary:
+        _p2b_wf_sig_7 = bool(_p2b_summary.get("walkforward_auc_significant", True))  # permissive default
+        _p2b_pd_7 = bool(_p2b_summary.get("platt_degenerate", False))
+        if not _p2b_wf_sig_7 or _p2b_pd_7:
+            _excl7: list = []
+            if not _p2b_wf_sig_7:
+                _excl7.append(
+                    f"walkforward_auc NOT significant "
+                    f"(pooled_p={_p2b_summary.get('walkforward_auc_pooled_pval','?')})"
+                )
+            if _p2b_pd_7:
+                _excl7.append(
+                    f"Platt degenerate (|a|={abs(float(_p2b_summary.get('platt_global_a', 0))):.3f} < 0.25)"
+                )
+            print(f"[Part 7] Part 2B EXCLUDED from probability blend: {'; '.join(_excl7)}")
+            _p2b_available = False
+            _p2b_date_map = {}
     _ensemble_available = _p2b_available or _p2c_available
 
     # Step 3: Ensemble AUC for view_confidence override.
@@ -1029,7 +1061,7 @@ def main() -> int:
             # flag from the tape, not just the live row.  Previously only the live row
             # received the 0.5× downweight; all historical rows used 1.0 even when the BNN
             # was in high-uncertainty mode on those dates.
-            _p2c_overlay_this_row = bool(_p2c_overlay_date_map.get(_dt_norm, 0)) if "_p2c_overlay_date_map" in dir() else False
+            _p2c_overlay_this_row = bool(_p2c_overlay_date_map.get(_dt_norm, 0))
             _w_2c = 0.5 if _p2c_overlay_this_row else 1.0
             _blend_components = [(_p_base_val, 1.0)]
             if _p2b_val is not None and np.isfinite(float(_p2b_val)):
