@@ -248,12 +248,27 @@ def _predict_torch(
     models: List["_BayesianMLP"],
     X: np.ndarray,
     n_mc: int,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Returns (mean, epistemic_std, aleatoric_std) for each row.
+    Returns (mean, epistemic_std, aleatoric_std, mc_dropout_std) for each row.
 
-    epistemic_std  = std across ensemble members  (model uncertainty)
-    aleatoric_std  = mean of within-model MC std  (data noise)
+    epistemic_std  = std across ensemble member means  (inter-model uncertainty)
+    aleatoric_std  = sqrt(p*(1-p))  (Bernoulli irreducible noise — canonical,
+                     matches sklearn path so total_std is on the same scale in
+                     both backends and the epist_overlay_threshold remains valid)
+    mc_dropout_std = mean of within-model MC std  (intra-model dropout uncertainty,
+                     stored as a diagnostic field; NOT used in total_std)
+
+    FIX (BUG-B, Quant-Guild Part 31 Audit):
+    Prior code computed aleatoric = member_stds.mean(axis=0)  (MC dropout std ≈ 0.03–0.11).
+    The sklearn fallback computed aleatoric = sqrt(p*(1-p))   (Bernoulli bound ≈ 0.13–0.50).
+    These are fundamentally different quantities on incompatible scales, so:
+      (a) total_std was backend-dependent (torch: ~0.06–0.15, sklearn: ~0.14–0.52), and
+      (b) if the system ever fell back to sklearn, the epist_overlay_threshold_75pct —
+          calibrated on the small torch values — would be rendered meaningless.
+    Fix: both paths now compute aleatoric = sqrt(p*(1-p)) (true Bernoulli irreducible noise),
+    ensuring cross-backend consistency.  The MC dropout std is separately preserved as
+    mc_dropout_std for diagnostics and does not flow into total_std.
     """
     X_t = torch.tensor(X, dtype=torch.float32)
     all_member_means = []
@@ -283,10 +298,14 @@ def _predict_torch(
     member_means = np.stack(all_member_means)   # (n_ensemble, N)
     member_stds  = np.stack(all_member_stds)    # (n_ensemble, N)
 
-    mean         = member_means.mean(axis=0)
-    epistemic    = member_means.std(axis=0)      # disagreement across models
-    aleatoric    = member_stds.mean(axis=0)      # average within-model noise
-    return mean, epistemic, aleatoric
+    mean           = member_means.mean(axis=0)
+    epistemic      = member_means.std(axis=0)     # inter-model disagreement
+    mc_dropout_std = member_stds.mean(axis=0)     # intra-model MC noise (diagnostic only)
+    # Canonical aleatoric: Bernoulli irreducible noise = sqrt(p*(1-p)).
+    # This matches the sklearn path exactly, ensuring total_std is on the same
+    # scale across both backends and preserving threshold calibration validity.
+    aleatoric      = np.sqrt(np.clip(mean * (1.0 - mean), 0.0, 0.25))
+    return mean, epistemic, aleatoric, mc_dropout_std
 
 
 # ============================================================
@@ -470,7 +489,7 @@ def walk_forward_eval(
                 _train_torch_model(X_tr, y_tr, cfg, seed=42 + j)
                 for j in range(cfg.n_ensemble)
             ]
-            p_mean, p_epist, p_aleat = _predict_torch(models, X_ev, cfg.n_mc_samples)
+            p_mean, p_epist, p_aleat, _ = _predict_torch(models, X_ev, cfg.n_mc_samples)
         else:
             models = [
                 _train_sklearn_model(X_tr, y_tr, cfg, seed=42 + j)
@@ -568,15 +587,17 @@ def predict_live(
     """
     x_scaled = scaler.transform(x_live.reshape(1, -1))
     if HAVE_TORCH:
-        mean, epist, aleat = _predict_torch(models, x_scaled, cfg.n_mc_samples)
+        mean, epist, aleat, mc_dropout_std = _predict_torch(models, x_scaled, cfg.n_mc_samples)
     else:
         mean, epist, aleat = _predict_sklearn(models, x_scaled)
+        mc_dropout_std = np.zeros_like(mean)  # sklearn has no MC dropout
     total = float(np.sqrt(epist[0] ** 2 + aleat[0] ** 2))
     return {
-        "p_bnn_mean":       float(mean[0]),
-        "p_bnn_epistemic":  float(epist[0]),
-        "p_bnn_aleatoric":  float(aleat[0]),
-        "p_bnn_total_std":  total,
+        "p_bnn_mean":           float(mean[0]),
+        "p_bnn_epistemic":      float(epist[0]),
+        "p_bnn_aleatoric":      float(aleat[0]),
+        "p_bnn_mc_dropout_std": float(mc_dropout_std[0]),  # diagnostic only
+        "p_bnn_total_std":      total,
         # FIX (Reviewer finding, Audit 2026-04-21): use the caller-supplied
         # epist_threshold rather than the placeholder > 0.0. The default 0.0
         # keeps old behaviour for any call that omits the argument, but the
@@ -804,7 +825,7 @@ def main() -> int:
     # Score holdout
     if HAVE_TORCH:
         X_hold_sc = scaler.transform(X_hold_arr)
-        p_h_mean, p_h_epist, p_h_aleat = _predict_torch(models, X_hold_sc, cfg.n_mc_samples)
+        p_h_mean, p_h_epist, p_h_aleat, _ = _predict_torch(models, X_hold_sc, cfg.n_mc_samples)
     else:
         X_hold_sc = scaler.transform(X_hold_arr)
         p_h_mean, p_h_epist, p_h_aleat = _predict_sklearn(models, X_hold_sc)
@@ -914,26 +935,30 @@ def main() -> int:
     # ── Build full tape with BNN predictions ──────────────────────────────
     if HAVE_TORCH:
         X_all_sc = scaler.transform(X_all)
-        p_all_mean, p_all_epist, p_all_aleat = _predict_torch(
+        p_all_mean, p_all_epist, p_all_aleat, p_all_mc_std = _predict_torch(
             models, X_all_sc, cfg.n_mc_samples
         )
     else:
         X_all_sc = scaler.transform(X_all)
         p_all_mean, p_all_epist, p_all_aleat = _predict_sklearn(models, X_all_sc)
+        p_all_mc_std = np.zeros_like(p_all_mean)  # sklearn has no MC dropout
 
     # FIX (Finding 3, Quant-Guild Part 26): apply bias correction to full tape
     if bias_correction_factor != 1.0:
         p_all_mean = np.clip(p_all_mean * bias_correction_factor, 1e-6, 1.0 - 1e-6)
+        # Re-derive aleatoric from bias-corrected mean so the Bernoulli term is consistent
+        p_all_aleat = np.sqrt(np.clip(p_all_mean * (1.0 - p_all_mean), 0.0, 0.25))
 
     tape = pd.DataFrame({
-        "Date":              X.index,
-        "p_bnn_mean":        p_all_mean,
-        "p_bnn_epistemic":   p_all_epist,
-        "p_bnn_aleatoric":   p_all_aleat,
-        "p_bnn_total_std":   np.sqrt(p_all_epist**2 + p_all_aleat**2),
-        "bnn_overlay_on":    (p_all_epist > epist_threshold).astype(int),
-        "y_true":            y_all,
-        "in_holdout":        holdout_mask.astype(int),
+        "Date":                  X.index,
+        "p_bnn_mean":            p_all_mean,
+        "p_bnn_epistemic":       p_all_epist,
+        "p_bnn_aleatoric":       p_all_aleat,
+        "p_bnn_mc_dropout_std":  p_all_mc_std,   # diagnostic: within-model MC std
+        "p_bnn_total_std":       np.sqrt(p_all_epist**2 + p_all_aleat**2),
+        "bnn_overlay_on":        (p_all_epist > epist_threshold).astype(int),
+        "y_true":                y_all,
+        "in_holdout":            holdout_mask.astype(int),
     })
     tape_path = Path(out_dir) / "part2c_bnn_tape.csv"
     # FIX (BUG-1 continued): if X_full has a live date not in the revealed set,
@@ -953,14 +978,15 @@ def main() -> int:
         # duplicate predict_live() call entirely: the tape live row now uses
         # `live_result` which is already bias-corrected and threshold-consistent.
         _live_tape_row = pd.DataFrame({
-            "Date":            [_live_date_full],
-            "p_bnn_mean":      [live_result["p_bnn_mean"]],       # FIX: bias-corrected
-            "p_bnn_epistemic": [live_result["p_bnn_epistemic"]],
-            "p_bnn_aleatoric": [live_result["p_bnn_aleatoric"]],
-            "p_bnn_total_std": [live_result["p_bnn_total_std"]],
-            "bnn_overlay_on":  [live_result["bnn_overlay_on"]],
-            "y_true":          [np.nan],
-            "in_holdout":      [0],
+            "Date":                  [_live_date_full],
+            "p_bnn_mean":            [live_result["p_bnn_mean"]],       # FIX: bias-corrected
+            "p_bnn_epistemic":       [live_result["p_bnn_epistemic"]],
+            "p_bnn_aleatoric":       [live_result["p_bnn_aleatoric"]],
+            "p_bnn_mc_dropout_std":  [live_result.get("p_bnn_mc_dropout_std", np.nan)],
+            "p_bnn_total_std":       [live_result["p_bnn_total_std"]],
+            "bnn_overlay_on":        [live_result["bnn_overlay_on"]],
+            "y_true":                [np.nan],
+            "in_holdout":            [0],
         })
         tape = pd.concat([tape, _live_tape_row], ignore_index=True)
     tape.to_csv(tape_path, index=False)
