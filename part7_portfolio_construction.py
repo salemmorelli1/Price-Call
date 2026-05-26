@@ -952,12 +952,26 @@ def main() -> int:
     _ensemble_available = _p2b_available or _p2c_available
 
     # ── FIX (F-1/F-2, Quant-Guild Part 29): Ensemble AUC after exclusion gates ──
-    # Only include non-excluded sleeves in the walkforward AUC mean.
-    # Part 2B was just excluded above if non-significant or Platt-degenerate.
-    # Part 2C exclusion is checked below. At this point _p2b_available reflects
-    # its final post-exclusion status; _p2c_available is set from the quality gates
-    # earlier. Both are checked here so the AUC mean is never contaminated by
-    # a sleeve that does not contribute to the probability blend.
+    # FIX (F1, Quant-Guild Part 30): _ensemble_walkforward_auc ordering bug.
+    # The prior code computed _ensemble_walkforward_auc at lines 962-972, then
+    # IMMEDIATELY overwrote it with `= None` at the next block (line 989).
+    # Effect: _ensemble_walkforward_auc was always None in the row loop, so
+    #   raw_auc fell back to row['raw_val_auc'] ≈ 0.526 (Part 2 base, not ensemble).
+    #   view_confidence = (0.526-0.50)/0.08 = 0.325 instead of ensemble-based 0.685
+    #   (2.11× understatement). The BL optimizer treated the ensemble signal as
+    #   near-noise on every run.
+    #
+    # Fix: initialize to None FIRST, THEN compute it once using post-exclusion flags.
+    # The None declaration is moved here (before the computation) so the computed
+    # value is never overwritten. All exclusion gates for 2B and 2C are already
+    # above this point (_p2b_available and _p2c_available reflect final post-exclusion
+    # status), so the computation is correctly gated by those flags.
+    _ensemble_walkforward_auc: Optional[float] = None  # init; may be updated below
+
+    # Compute ensemble walkforward AUC from non-excluded sleeves only.
+    # Both exclusion gates (Part 2B: non-significant/Platt-degenerate; Part 2C:
+    # failed ECE gate/mean-bias) are applied above this block.  Only sleeves with
+    # _p2b_available=True / _p2c_available=True contribute to the mean.
     if _ensemble_available:
         _auc_vals = []
         if _p2b_available and _p2b_summary:
@@ -971,22 +985,6 @@ def main() -> int:
         if _auc_vals:
             _ensemble_walkforward_auc = float(np.mean(_auc_vals))
             print(f"[Part 7] Ensemble walkforward AUC (non-excluded sleeves): {_ensemble_walkforward_auc:.4f}")
-    # _ensemble_walkforward_auc MUST be computed AFTER the exclusion gates below
-    # (Part 2B exclusion for non-significant walkforward AUC / degenerate Platt;
-    # Part 2C exclusion for failed ECE gate / mean bias). If excluded sleeves are
-    # included in the AUC mean, their lower AUCs drag the ensemble below the base
-    # model's walkforward AUC, causing the aggregate uplift gate to return False
-    # even when an active sleeve (e.g. Part 2C, AUC=0.553) genuinely lifts signal.
-    #
-    # Concrete impact: with Part 2B excluded (walkforward AUC=0.512) but still
-    # included in the mean, ensemble AUC = mean(0.512, 0.553) = 0.532 < base 0.538
-    # → uplift = -0.006 → _ensemble_regime_override=False → 41% of rows use
-    # regime_gated_prior (static 60/40) instead of BL optimizer.
-    #
-    # Fix: initialise _ensemble_walkforward_auc = None here; compute it AFTER
-    # both exclusion gates using only sleeves that pass (_p2b_available,
-    # _p2c_available both checked at their post-exclusion values).
-    _ensemble_walkforward_auc: Optional[float] = None
 
     # Step 4: When ensemble is available, all 4 regimes are active.
     # The Part 2 base active_regimes=["high_vol"] is derived from the base model
@@ -1022,9 +1020,19 @@ def main() -> int:
     # If Part 2B's per-regime AUC is available, compute the ensemble active_regimes as
     # the union of regimes where EITHER the base model OR the ensemble has AUC > 0.50.
     # This captures regimes where the ensemble lifts signal even when the base is poor.
+    # FIX (F2, Quant-Guild Part 30): Guard _p2b_active_regimes with _p2b_available.
+    # Prior code loaded regime labels from _p2b_summary regardless of whether Part 2B
+    # was excluded from the probability blend (`if _p2b_summary else []` — missing
+    # the _p2b_available check). When Part 2B is excluded (currently:
+    # walkforward_auc_significant=False, platt_degenerate=True), its regime labels
+    # must NOT expand the active_regimes set. An excluded sleeve has no verified
+    # probability signal; basing the regime override on its breakdown is unsupported.
+    # Fix: add `and _p2b_available` to the guard so excluded Part 2B contributes
+    # zero regime labels. Part 2C's regime labels (all 4 regimes, each AUC > 0.55)
+    # are sufficient to drive the override independently.
     _p2b_active_regimes: List[str] = (
         _p2b_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
-        if _p2b_summary else []
+        if _p2b_summary and _p2b_available else []  # FIX F2: gate on _p2b_available
     )
 
     # FIX (F-1, Quant-Guild Part 29): derive _p2c_active_regimes from Part 2C summary.
