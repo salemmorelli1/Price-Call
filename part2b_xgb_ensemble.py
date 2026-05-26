@@ -668,55 +668,13 @@ def main() -> int:
 
     gate_validated = print_comparison(wf_df, p2_summary)
 
-    # ── FIX (BUG-5, Audit 2026-05-12 — Quant-Guild Part 25): per-regime AUC breakdown ──
-    # Part 7's _ensemble_regime_override can never correctly decide which regimes to use
-    # without per-regime AUC from Part 2B.  Without this data, Part 7 falls back to the
-    # BASE model's active_regimes=['crisis','high_vol'], perpetually blocking ensemble
-    # deployment in risk_on (where ensemble clearly has better signal).
-    # Method: join Part 2B holdout tape with Part 2 tape on Date, then AUC per regime.
+    # NOTE (F-1 fix, Quant-Guild Part 29): the per-regime AUC breakdown was
+    # previously placed HERE, before tape_out was defined. The block referenced
+    # tape_out.copy(), which raised NameError (swallowed by except), leaving
+    # _regime_auc_2b = {} on every run. The block is now placed AFTER tape_out
+    # is built and written to disk (see below). _regime_auc_2b is initialised
+    # here so the summary JSON assembly further down always finds it in scope.
     _regime_auc_2b: Dict = {}
-    try:
-        tape_p2_path = Path(p2_dir) / "g532_final_consensus_tape.csv"
-        if tape_p2_path.exists():
-            _tape_p2 = pd.read_csv(tape_p2_path)
-            _tape_p2["Date"] = pd.to_datetime(_tape_p2["Date"], errors="coerce").dt.normalize()
-            _tape_p2 = _tape_p2.dropna(subset=["Date"])
-            if "regime_label" in _tape_p2.columns:
-                _tape_2b_tmp = tape_out.copy()
-                _tape_2b_tmp["Date"] = pd.to_datetime(_tape_2b_tmp["Date"], errors="coerce").dt.normalize()
-                _merged = _tape_2b_tmp.merge(_tape_p2[["Date", "regime_label"]], on="Date", how="left")
-                _holdout_sub = _merged[(_merged["in_holdout"] == 1) & _merged["y_true"].notna()].copy()
-                _active_regimes_2b: List[str] = []
-                _passive_regimes_2b: List[str] = []
-                for _regime in sorted(_holdout_sub["regime_label"].dropna().unique()):
-                    _sub = _holdout_sub[_holdout_sub["regime_label"] == _regime].copy()
-                    if len(_sub) < 30:
-                        continue
-                    _y_r = _sub["y_true"].values.astype(float)
-                    _p_r = np.clip(_sub["p_xgb_ens_mean"].values, 1e-6, 1.0 - 1e-6)
-                    if len(np.unique(_y_r)) < 2:
-                        continue
-                    _auc_r = float(roc_auc_score(_y_r, _p_r))
-                    _regime_auc_2b[str(_regime)] = {
-                        "n": int(len(_sub)),
-                        "auc": round(_auc_r, 6),
-                        "base_rate": round(float(_y_r.mean()), 6),
-                        "brier": round(float(brier_score_loss(_y_r, _p_r)), 6),
-                        "ece": round(float(_ece(_y_r, _p_r)), 6),
-                    }
-                    if _auc_r > 0.50:
-                        _active_regimes_2b.append(str(_regime))
-                    else:
-                        _passive_regimes_2b.append(str(_regime))
-                _regime_auc_2b["active_regimes"] = sorted(_active_regimes_2b)
-                _regime_auc_2b["passive_regimes"] = sorted(_passive_regimes_2b)
-                print(f"\n[Part 2B] Per-regime AUC breakdown:")
-                for _r, _s in _regime_auc_2b.items():
-                    if isinstance(_s, dict):
-                        print(f"  {_r:12s}: n={_s['n']:4d}, auc={_s['auc']:.4f}, {'ACTIVE' if _s['auc']>0.5 else 'passive'}")
-                print(f"  Active regimes: {_regime_auc_2b.get('active_regimes', [])}")
-    except Exception as _rae:
-        print(f"[Part 2B] Per-regime AUC computation failed ({_rae}) — skipping")
 
     # IMPORTANT: the threshold must come from the row-level spread
     # distribution, not from the distribution of fold-level mean spreads.
@@ -868,6 +826,69 @@ def main() -> int:
 
     tape_out_path = Path(out_dir) / "part2b_xgb_tape.csv"
     tape_out.to_csv(tape_out_path, index=False)
+
+    # ── FIX (BUG-5 CORRECTED, Quant-Guild Part 29): per-regime AUC breakdown ──
+    # Root cause of prior failure: the original BUG-5 block (Part 25) referenced
+    # tape_out BEFORE tape_out was assigned in main(). The NameError was silently
+    # swallowed by the except handler, leaving _regime_auc_2b = {} on every run.
+    # Part 7 then found _p2b_active_regimes = [] → _ensemble_active_regimes = []
+    # → aggregate uplift gate = -0.006 (Part 2B drags mean AUC below base) →
+    # _ensemble_regime_override = False → 685/1670 rows (41%) use regime_gated_prior
+    # instead of the BL optimizer, even though Part 2C has AUC > 0.56 in all 4 regimes.
+    #
+    # Fix: moved here where tape_out is defined and has the correct columns.
+    # tape_out contains: Date, p_xgb_ens_mean, y_true, in_holdout.
+    # Joining with Part 2's regime_label gives the per-regime AUC split.
+    try:
+        tape_p2_path = Path(p2_dir) / "g532_final_consensus_tape.csv"
+        if tape_p2_path.exists():
+            _tape_p2 = pd.read_csv(tape_p2_path)
+            _tape_p2["Date"] = pd.to_datetime(_tape_p2["Date"], errors="coerce").dt.normalize()
+            _tape_p2 = _tape_p2.dropna(subset=["Date"])
+            if "regime_label" in _tape_p2.columns:
+                _tape_2b_tmp = tape_out.copy()
+                _tape_2b_tmp["Date"] = pd.to_datetime(_tape_2b_tmp["Date"], errors="coerce").dt.normalize()
+                _merged = _tape_2b_tmp.merge(_tape_p2[["Date", "regime_label"]], on="Date", how="left")
+                # in_holdout=1 rows are the 2020-present period used for evaluation.
+                # y_true is NaN on the live-appended row (today); dropna excludes it.
+                _holdout_sub = _merged[(_merged["in_holdout"] == 1) & _merged["y_true"].notna()].copy()
+                _active_regimes_2b: List[str] = []
+                _passive_regimes_2b: List[str] = []
+                for _regime in sorted(_holdout_sub["regime_label"].dropna().unique()):
+                    _sub = _holdout_sub[_holdout_sub["regime_label"] == _regime].copy()
+                    if len(_sub) < 30:
+                        continue
+                    _y_r = _sub["y_true"].values.astype(float)
+                    _p_r = np.clip(_sub["p_xgb_ens_mean"].values, 1e-6, 1.0 - 1e-6)
+                    if len(np.unique(_y_r)) < 2:
+                        continue
+                    _auc_r = float(roc_auc_score(_y_r, _p_r))
+                    _regime_auc_2b[str(_regime)] = {
+                        "n": int(len(_sub)),
+                        "auc": round(_auc_r, 6),
+                        "base_rate": round(float(_y_r.mean()), 6),
+                        "brier": round(float(brier_score_loss(_y_r, _p_r)), 6),
+                        "ece": round(float(_ece(_y_r, _p_r)), 6),
+                    }
+                    if _auc_r > 0.50:
+                        _active_regimes_2b.append(str(_regime))
+                    else:
+                        _passive_regimes_2b.append(str(_regime))
+                _regime_auc_2b["active_regimes"] = sorted(_active_regimes_2b)
+                _regime_auc_2b["passive_regimes"] = sorted(_passive_regimes_2b)
+                print(f"\n[Part 2B] Per-regime AUC breakdown (from holdout tape):")
+                for _r, _s in _regime_auc_2b.items():
+                    if isinstance(_s, dict):
+                        print(f"  {_r:12s}: n={_s['n']:4d}, auc={_s['auc']:.4f}, "
+                              f"{'ACTIVE' if _s['auc'] > 0.5 else 'passive'}")
+                print(f"  Active regimes: {_regime_auc_2b.get('active_regimes', [])}")
+            else:
+                print("[Part 2B] Per-regime AUC: Part 2 tape has no regime_label column — skipping.")
+        else:
+            print(f"[Part 2B] Per-regime AUC: Part 2 tape not found at {tape_p2_path} — skipping.")
+    except Exception as _rae:
+        print(f"[Part 2B] Per-regime AUC computation failed ({_rae}) — skipping.")
+
 
     print(f"\nLive prediction ({_live_print_date}):")
     print(f"  p_xgb_ens_mean (calibrated)={p_live_mean[0]:.4f}")
