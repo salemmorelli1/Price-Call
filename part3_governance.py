@@ -735,11 +735,27 @@ def _prepare_production_tape(defense_df: pd.DataFrame, part2_summary: Dict[str, 
     return tape
 
 
-def _build_governance_df(decision_date: pd.Timestamp, part2_summary: Dict[str, Any], alpha_status: Dict[str, Any]) -> pd.DataFrame:
+def _build_governance_df(
+    decision_date: pd.Timestamp,
+    part2_summary: Dict[str, Any],
+    alpha_status: Dict[str, Any],
+    publish_mode_override: Optional[str] = None,
+    final_pass_override: Optional[int] = None,
+) -> pd.DataFrame:
+    # FIX (F-2, Quant-Guild Part 32 Audit):
+    # Part 3's main function overrides the local `publish_mode` variable at L1345
+    # (when final_pass=False but publish_mode=NORMAL, it forces FAIL_CLOSED_NEUTRAL).
+    # However, _build_governance_df previously read publish_mode directly from the
+    # part2_summary dict, which is never mutated. Result: the governance CSV always
+    # received the pre-override publish_mode (NORMAL) while the prediction log and
+    # part3_summary.json correctly received the overridden value (FAIL_CLOSED_NEUTRAL).
+    #
+    # Fix: accept explicit override parameters. The call site passes the post-override
+    # `publish_mode` and `final_pass` local variables so all artifacts stay consistent.
     row = {
         "Date": decision_date,
-        "publish_mode": _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN")),
-        "final_pass": _boolish(_json_value(part2_summary, ["final_pass"], 0), 0),
+        "publish_mode": (_normalize_publish_mode(publish_mode_override) if publish_mode_override is not None else _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN"))),
+        "final_pass": (int(final_pass_override) if final_pass_override is not None else _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)),
         "quality_ok": alpha_status["quality_ok"],
         "drift_ok": alpha_status["drift_ok"],
         "trial_gate_open": alpha_status["trial_gate_open"],
@@ -1630,7 +1646,18 @@ def main(cfg: Part3Config = CFG) -> None:
     p_regime_recal: Optional[float] = _apply_regime_platt(p_raw, current_regime, platt_params)
 
     prod_tape = _prepare_production_tape(defense_df, part2_summary, alpha_status, alpha_summary_json)
-    gov_df = _build_governance_df(decision_date, part2_summary, alpha_status)
+    gov_df = _build_governance_df(
+        decision_date,
+        part2_summary,
+        alpha_status,
+        # FIX (F-2, Quant-Guild Part 32 Audit):
+        # Pass post-override publish_mode and final_pass so the governance CSV
+        # reflects the same values written to prediction_log and part3_summary.
+        # The local `publish_mode` may have been overridden from NORMAL to
+        # FAIL_CLOSED_NEUTRAL at L1345 when final_pass=False; the dict is not mutated.
+        publish_mode_override=publish_mode,
+        final_pass_override=final_pass,
+    )
     alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, part7_weights)
 
     out_dir = root / cfg.out_dir_relative
