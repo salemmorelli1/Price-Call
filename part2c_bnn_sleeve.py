@@ -922,10 +922,25 @@ def main() -> int:
 
     # FIX (Finding 3, Quant-Guild Part 26): apply bias correction to live prediction.
     # bias_correction_factor computed above from holdout mean → base_rate alignment.
+    # FIX (F-4, Quant-Guild Part 32 Audit):
+    # After correcting p_bnn_mean, re-derive p_bnn_aleatoric and p_bnn_total_std
+    # from the corrected mean. Previously, aleatoric was left at its pre-correction
+    # value (sqrt(p_pre*(1-p_pre))), creating an inconsistency: the tape reported
+    # p_bnn_mean=0.1025 (corrected) but aleatoric=0.2533 (pre-correction, based on
+    # p_pre=0.0689). The Bernoulli aleatoric must always be computed from the final
+    # probability that Part 3 blends. The tape already applies this fix at L949-950;
+    # this block extends it to the live row.
     if bias_correction_factor != 1.0:
         live_result["p_bnn_mean"] = float(np.clip(
             live_result["p_bnn_mean"] * bias_correction_factor, 1e-6, 1.0 - 1e-6
         ))
+        # Re-derive aleatoric (Bernoulli irreducible noise) from bias-corrected mean
+        _p_corr = live_result["p_bnn_mean"]
+        live_result["p_bnn_aleatoric"] = float(np.sqrt(np.clip(_p_corr * (1.0 - _p_corr), 0.0, 0.25)))
+        # Recompute total_std with corrected aleatoric
+        live_result["p_bnn_total_std"] = float(
+            np.sqrt(live_result["p_bnn_epistemic"] ** 2 + live_result["p_bnn_aleatoric"] ** 2)
+        )
     live_result["bias_correction_factor"] = bias_correction_factor
 
     print(f"\nLive prediction (latest row {_live_print_date}):")
