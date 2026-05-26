@@ -29,6 +29,24 @@ except Exception as exc:  # pragma: no cover
         "yfinance is required for backfill_realized.py. Install it with `%pip install yfinance`."
     ) from exc
 
+# FIX (Quant-Guild Part 32 Audit — Backfill OperationalError):
+# yfinance stores timezone data in a SQLite database under the system user-cache
+# directory (~/.cache/py-yfinance/tkr-tz.db by default). On GitHub Actions the
+# same path is accessed by every concurrent job step, causing SQLite
+# "database is locked" errors that abort the backfill before any price data
+# is downloaded. The fix redirects ALL yfinance caches (tz, cookie, ISIN) to a
+# per-process /tmp directory. Each process gets its own directory (keyed by PID),
+# so concurrent jobs never contend on the same file. The temp directory is created
+# here unconditionally; yfinance will populate it lazily on first use.
+import os as _os, tempfile as _tempfile
+_yf_cache_dir = _os.path.join(_tempfile.gettempdir(), f"yf_cache_backfill_{_os.getpid()}")
+_os.makedirs(_yf_cache_dir, exist_ok=True)
+try:
+    yf.set_tz_cache_location(_yf_cache_dir)
+except Exception as _yf_cache_exc:
+    print(f"[backfill] WARNING: could not set yfinance cache location: {_yf_cache_exc}")
+    print("[backfill] Proceeding; SQLite lock errors may still occur.")
+
 
 # -----------------------------------------------------------------------------
 # Environment helpers
@@ -154,33 +172,70 @@ def _resolve_call_value(row: pd.Series, asset: str) -> float:
 
 
 def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    # FIX (Quant-Guild Part 32 Audit — Backfill OperationalError):
+    # Added retry loop (3 attempts, 5-second sleep between attempts) to handle:
+    #   (a) transient yfinance SQLite lock errors that survive the cache relocation fix,
+    #   (b) transient network failures that return an empty DataFrame on first attempt.
+    # On each retry the per-process cache directory is re-pointed to a fresh temp path
+    # so a corrupted or locked db from a prior attempt cannot block subsequent attempts.
+    import time as _time
+
     start_str = start.strftime("%Y-%m-%d")
     end_str = (end + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
 
-    data = yf.download(
-        ["VOO", "IEF"],
-        start=start_str,
-        end=end_str,
-        progress=False,
-        auto_adjust=True,
+    _max_attempts = 3
+    _last_exc: Optional[Exception] = None
+
+    for _attempt in range(1, _max_attempts + 1):
+        try:
+            # On retries, redirect cache to a fresh unique directory so any
+            # corrupted or locked SQLite file from the previous attempt is bypassed.
+            if _attempt > 1:
+                import os as _os2, tempfile as _tf2
+                _retry_cache = _os2.path.join(_tf2.gettempdir(), f"yf_cache_retry_{_os2.getpid()}_{_attempt}")
+                _os2.makedirs(_retry_cache, exist_ok=True)
+                try:
+                    yf.set_tz_cache_location(_retry_cache)
+                except Exception:
+                    pass
+                _sleep_secs = 5 * _attempt
+                print(f"[backfill] Download attempt {_attempt}/{_max_attempts} "
+                      f"(sleeping {_sleep_secs}s after prior failure) ...")
+                _time.sleep(_sleep_secs)
+
+            data = yf.download(
+                ["VOO", "IEF"],
+                start=start_str,
+                end=end_str,
+                progress=False,
+                auto_adjust=True,
+            )
+
+            if isinstance(data.columns, pd.MultiIndex):
+                if "Close" in data.columns.get_level_values(0):
+                    close = data["Close"].copy()
+                else:
+                    close = data.xs("Close", axis=1, level=0, drop_level=True).copy()
+            else:
+                close = data.copy()
+
+            close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
+            close = close[[c for c in ["VOO", "IEF"] if c in close.columns]].copy()
+            close = close.dropna(how="any")
+
+            if close.empty or not {"VOO", "IEF"}.issubset(close.columns):
+                raise RuntimeError("yfinance returned empty or incomplete data for VOO/IEF.")
+
+            return close
+
+        except Exception as _exc:
+            _last_exc = _exc
+            print(f"[backfill] Download attempt {_attempt}/{_max_attempts} failed: {_exc}")
+
+    raise RuntimeError(
+        f"Unable to download usable VOO/IEF close history for backfill "
+        f"after {_max_attempts} attempts. Last error: {_last_exc}"
     )
-
-    if isinstance(data.columns, pd.MultiIndex):
-        if "Close" in data.columns.get_level_values(0):
-            close = data["Close"].copy()
-        else:
-            close = data.xs("Close", axis=1, level=0, drop_level=True).copy()
-    else:
-        close = data.copy()
-
-    close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
-    close = close[[c for c in ["VOO", "IEF"] if c in close.columns]].copy()
-    close = close.dropna(how="any")
-
-    if close.empty or not {"VOO", "IEF"}.issubset(close.columns):
-        raise RuntimeError("Unable to download usable VOO/IEF close history for backfill.")
-
-    return close
 
 
 def _resolve_target_trading_date(
