@@ -812,6 +812,16 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         # Part 9, Part 4) now prefer _1d explicitly and fall back gracefully.
         # Existing rows in the prediction log retain their _7d columns harmlessly;
         # new rows written from this point forward carry only _1d.
+        # FIX (Audit Part 28 — C-3): Store the blended and regime-recalibrated
+        # probabilities in the prediction_log so Part 9 and operators can trace the
+        # full probability chain: raw Part 2 → blend → Platt recal → deployed.
+        #
+        # p_final_cal (existing): raw Part 2 base model probability (from defense tape).
+        # p_final_cal_blended (new): after Part 2B/2C ensemble blend (or = p_final_cal
+        #   if blend unavailable). This is the probability that Part 7 uses for BL.
+        # p_final_cal_regime_recal (new): after Platt regime recalibration applied to
+        #   the blended value. This is the probability used for Part 9 live attribution
+        #   (already written separately as p_regime_recal; now named explicitly here).
         "p_final_cal": _safe_float(_row_value(defense_row, ["p_final_cal", "p_final_g5"], None)),
         "base_rate": _safe_float(_row_value(defense_row, ["T", "base_rate", "b"], None)),
         "raw_val_auc": _safe_float(_row_value(defense_row, ["raw_val_auc"], _json_value(part2_summary, ["raw_val_auc_median"], None))),
@@ -1410,6 +1420,44 @@ def main(cfg: Part3Config = CFG) -> None:
         _p2b_summary_cached = {}
         print(f"[Part 3] Blend: Part 2B tape load failed ({_e2b}) — skipping 2B")
 
+    # FIX (Audit Part 28 — C-1, C-2): Gate Part 2B from the probability blend when
+    # (a) its pooled walkforward AUC is not statistically significant (p >= 0.05
+    #     one-sided), or (b) the global Platt calibrator is degenerate (|a| < 0.25),
+    #     which collapses the calibrated signal std from 0.148 → 0.011 (93% collapse).
+    #
+    # At t=1.39, p=0.082 (current artifacts), Part 2B's calibrated probability carries
+    # no verified signal and blending it adds noise that pulls the ensemble away from
+    # the significantly predictive Part 2C component (t=6.24, p<0.0001).
+    #
+    # The uncertainty overlay gate (xgb_overlay_on) is NOT affected by this exclusion —
+    # it is evaluated independently via ECE stratification and remains valid.
+    # Part 2B can still influence Part 3 indirectly through its uncertainty spread
+    # signal once Part 2C's overlay_on fires.
+    #
+    # The significance check is permissive-by-default (True when field absent) so
+    # pre-existing runs without the field are not broken on cold start.
+    _p2b_wf_significant = bool(_p2b_summary_cached.get("walkforward_auc_significant", True))
+    _p2b_platt_degenerate = bool(_p2b_summary_cached.get("platt_degenerate", False))
+    if _p2b_blend_p is not None and (not _p2b_wf_significant or _p2b_platt_degenerate):
+        _exclusion_reasons: list = []
+        if not _p2b_wf_significant:
+            _pval = _p2b_summary_cached.get("walkforward_auc_pooled_pval", "?")
+            _pauc = _p2b_summary_cached.get("walkforward_auc_pooled", "?")
+            _exclusion_reasons.append(
+                f"walkforward_auc NOT significant (pooled_auc={_pauc}, p={_pval} >= 0.05)"
+            )
+        if _p2b_platt_degenerate:
+            _pa = _p2b_summary_cached.get("platt_global_a", "?")
+            _exclusion_reasons.append(
+                f"Platt degenerate (|a|={abs(float(_pa)) if _pa != '?' else '?':.3f} < 0.25, "
+                f"signal compressed >{(1 - 0.011 / 0.148):.0%})"
+            )
+        print(
+            f"[Part 3] Blend: Part 2B EXCLUDED from probability blend. "
+            f"Reason(s): {'; '.join(_exclusion_reasons)}"
+        )
+        _p2b_blend_p = None
+
     # Load Part 2C probability for the live date; check epistemic warning
     # FIX (BUG-A): tapes live in the `predictions/` subdirectory
     _p2c_root = root / "artifacts_part2c_bnn" / "predictions"
@@ -1634,6 +1682,19 @@ def main(cfg: Part3Config = CFG) -> None:
         date_mask = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
         if date_mask.any():
             predlog_df.loc[date_mask, "p_regime_recal"] = p_regime_recal
+        predlog_df.to_csv(predlog_out, index=False)
+
+    # FIX (Audit Part 28 — C-3): Also store p_final_cal_blended (the ensemble-blended
+    # probability before Platt recalibration) so Part 9 can see the full chain:
+    #   p_final_cal (raw Part 2) → p_final_cal_blended (+ 2B/2C) → p_regime_recal (+ Platt).
+    # p_raw holds the blended probability at this point (or the raw base value if blend was
+    # unavailable). Writing it here keeps the predlog schema additive and backward-compatible.
+    if not predlog_df.empty and p_raw is not None:
+        if "p_final_cal_blended" not in predlog_df.columns:
+            predlog_df["p_final_cal_blended"] = np.nan
+        date_mask2 = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
+        if date_mask2.any():
+            predlog_df.loc[date_mask2, "p_final_cal_blended"] = float(p_raw)
         predlog_df.to_csv(predlog_out, index=False)
 
     perf = _extract_performance_metrics(defense_df, alpha_summary_json, alpha_status)
