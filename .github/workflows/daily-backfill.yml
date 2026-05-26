@@ -83,6 +83,16 @@ jobs:
           git checkout "origin/${GITHUB_REF_NAME}" -- \
             artifacts_part10_bot/signal_log.csv \
             2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
+          # FIX (F-5, Quant-Guild Part 32 Audit):
+          # v1_final_production_governance.csv is a daily-accumulating artifact:
+          # Part 3 appends one row per run with dedup-on-Date logic at L1659.
+          # Without restoring from origin first, every run starts with an empty
+          # or missing file and the governance history collapses to 1 row.
+          # This restore is the same pattern as prediction_log.csv (already fixed
+          # in Audit 2026-04-21). The governance CSV was inadvertently omitted.
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part3_v1/v1_final_production_governance.csv \
+            2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
 
       - name: Run backfill
         run: python backfill_realized.py
