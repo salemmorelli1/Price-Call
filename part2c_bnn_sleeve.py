@@ -469,6 +469,36 @@ def walk_forward_eval(
         cfg.walk_forward_step,
     )
 
+    # FIX (F4, Quant-Guild Part 34 Audit): fold-adjacent Platt calibration.
+    #
+    # ROOT CAUSE OF ECE GAP:
+    # The BNN produces raw probabilities with mean ≈ 0.129 (bias_correction_factor
+    # = 1.55 to align with base_rate ≈ 0.201). This bias is systematic across folds
+    # but its magnitude varies by fold, so a single global bias factor applied
+    # uniformly to all folds produces ECE=0.065 at walkforward vs ECE=0.030 at holdout.
+    # The holdout ECE is optimistically low because the bias correction is fitted on the
+    # holdout period itself; the walkforward ECE is the honest time-ordered estimate.
+    #
+    # This is the same failure mode Part 2B experienced (ECE 0.235→0.013 after fixing
+    # from per-fold Platt to global OOS Platt). For Part 2C, fold-adjacent Platt calibration
+    # (the V4 architecture used by Part 2B) is the correct solution:
+    #   - Fold 0: use raw probabilities (no calibration data available yet)
+    #   - Fold i (i≥1): fit a 2-parameter logistic calibrator on fold i-1's predictions
+    #     and apply to fold i's probabilities. This is:
+    #     (a) Temporally valid — uses only prior data
+    #     (b) Adapts to the BNN's slowly-shifting bias per market period
+    #     (c) 2 parameters on ~252 rows — cannot overfit
+    #
+    # Expected effect: reduces walkforward ECE to closer to holdout ECE, which should
+    # raise gate_validation_passed to True (ceiling = base_ece + 0.05 = 0.058).
+    #
+    # Implementation mirrors Part 2B exactly (part2b_xgb_ensemble.py walk_forward_eval).
+    from scipy.special import logit as _logit_2c, expit as _expit_2c
+    from sklearn.linear_model import LogisticRegression as _LR_2c
+
+    _prior_p_raw_2c: Optional[np.ndarray] = None
+    _prior_y_ev_2c:  Optional[np.ndarray] = None
+
     for i, train_end in enumerate(fold_starts):
         eval_end = min(train_end + cfg.walk_forward_step, n)
         X_tr_raw = X.iloc[:train_end].values.astype(np.float32)
@@ -497,6 +527,35 @@ def walk_forward_eval(
             ]
             p_mean, p_epist, p_aleat = _predict_sklearn(models, X_ev)
 
+        # FIX (F4): fold-adjacent Platt calibration using prior fold's predictions.
+        _fold_platt_2c = None
+        if _prior_p_raw_2c is not None and _prior_y_ev_2c is not None:
+            _n_pos_2c = int(_prior_y_ev_2c.sum())
+            _n_neg_2c = int(len(_prior_y_ev_2c) - _n_pos_2c)
+            if _n_pos_2c >= 10 and _n_neg_2c >= 10:
+                try:
+                    _cal_X_2c = _logit_2c(
+                        np.clip(_prior_p_raw_2c, 1e-6, 1.0 - 1e-6)
+                    ).reshape(-1, 1)
+                    _fold_platt_2c = _LR_2c(C=1e4, solver="lbfgs", max_iter=2000, random_state=42)
+                    _fold_platt_2c.fit(_cal_X_2c, _prior_y_ev_2c.astype(int))
+                except Exception:
+                    _fold_platt_2c = None
+
+        # Apply fold-adjacent Platt if available; else use raw
+        if _fold_platt_2c is not None:
+            _p_cal_X = _logit_2c(np.clip(p_mean, 1e-6, 1.0 - 1e-6)).reshape(-1, 1)
+            try:
+                p_mean_cal = _fold_platt_2c.predict_proba(_p_cal_X)[:, 1]
+            except Exception:
+                p_mean_cal = p_mean
+        else:
+            p_mean_cal = p_mean
+
+        # Store this fold's raw predictions for the next fold's calibration
+        _prior_p_raw_2c = p_mean.copy()
+        _prior_y_ev_2c  = y_ev.copy()
+
         base_rate = float(y_tr.mean())
         # Collect per-row epistemic stds for threshold computation
         all_row_epist.append(p_epist)
@@ -508,10 +567,12 @@ def walk_forward_eval(
             "n_train":           int(train_end),
             "n_eval":            int(eval_end - train_end),
             "base_rate_train":   float(base_rate),
-            "auc":               float(roc_auc_score(y_ev, p_mean)) if y_ev.sum() > 0 else np.nan,
-            "brier":             float(brier_score_loss(y_ev, p_mean)),
-            "ece":               float(_ece(y_ev, p_mean)),
-            "decision_utility":  float(_decision_utility(y_ev, p_mean, base_rate)),
+            # FIX (F4): evaluate calibrated probabilities (fold-adjacent Platt applied)
+            "auc":               float(roc_auc_score(y_ev, p_mean_cal)) if y_ev.sum() > 0 else np.nan,
+            "brier":             float(brier_score_loss(y_ev, p_mean_cal)),
+            "ece":               float(_ece(y_ev, p_mean_cal)),
+            "ece_raw":           float(_ece(y_ev, p_mean)),   # raw (diagnostic)
+            "decision_utility":  float(_decision_utility(y_ev, p_mean_cal, base_rate)),
             "mean_epistemic_std": float(p_epist.mean()),
             "mean_aleatoric_std": float(p_aleat.mean()),
             "overlay_on_rate":   float((p_epist > np.percentile(p_epist, 75)).mean()),
@@ -520,7 +581,7 @@ def walk_forward_eval(
         print(
             f"  Fold {i}: train_end={row['train_end_date']} | "
             f"AUC={row['auc']:.4f} | Brier={row['brier']:.4f} | "
-            f"ECE={row['ece']:.4f} | utility={row['decision_utility']:.4f}"
+            f"ECE={row['ece']:.4f} (raw={row['ece_raw']:.4f}) | utility={row['decision_utility']:.4f}"
         )
 
     row_epist_arr = np.concatenate(all_row_epist) if all_row_epist else np.array([])
@@ -1093,12 +1154,41 @@ def main() -> int:
     # This is statistically meaningful: SE(AUC) ≈ 0.018 at n=1657 realized rows,
     # so 0.01 is ~0.56 SE — a modest but real threshold distinguishing the BNN
     # from noise. The baseline_auc comparison is already the right discriminant.
+    # FIX (F2, Quant-Guild Part 34 Audit): align production_candidate with gate_validation_passed.
+    #
+    # INCONSISTENCY IDENTIFIED:
+    # production_candidate=True when holdout_auc >= baseline_auc + 0.01, regardless of ECE.
+    # gate_validation_passed=False when worst_case_ece > baseline_ece + 0.05.
+    # Current state: production_candidate=True, gate_validation_passed=False.
+    # A model that is a "production candidate" but has a failed calibration gate is
+    # logically inconsistent and misleading to operators. If the calibration is too
+    # poor for blend inclusion (gate_validation_passed=False), the model is not ready
+    # for production regardless of AUC performance.
+    #
+    # Fix: require gate_validation_passed AND AUC uplift for production_candidate.
+    # This creates a single consistent threshold: if the calibration gate passes AND
+    # AUC is materially better than the baseline, the model is a production candidate.
+    # If either fails, it is not — and the blend exclusion and production_candidate
+    # labels remain logically consistent.
+    #
+    # Note: this does NOT remove the uncertainty/epistemic signal. p_bnn_epistemic,
+    # bnn_overlay_on, and epist_threshold are always computed and always available
+    # for Part 3 and Part 7 uncertainty gating. Only the p_bnn_mean probability
+    # blend contribution and the production_candidate label are affected.
     production_candidate = bool(
         uncertainty_backend_valid and
         np.isfinite(holdout_auc) and
-        holdout_auc >= baseline_auc + 0.01       # FIX: was also requiring holdout_util >= 0.0
-        # holdout_util >= 0.0 REMOVED — metric uses wrong reference threshold (0.5 vs base_rate=0.20)
-        # Evidence: XGB also has holdout_util=-0.527 but is correctly gated on AUC, not utility.
+        holdout_auc >= baseline_auc + 0.01 and   # AUC uplift requirement
+        # FIX (F2): also require gate_validation_passed logic to be consistent.
+        # Pre-compute worst_ece here to align with gate_validation_passed computation below.
+        (
+            not np.isfinite(baseline_ece)
+            or (
+                np.isfinite(holdout_ece) and
+                np.isfinite(_wf_mean_ece_for_gate) and
+                max(holdout_ece, _wf_mean_ece_for_gate) <= baseline_ece + 0.05
+            )
+        )
     )
 
     # FIX (F-3, Quant-Guild Part 33 Audit): compute worst-case ECE before the meta dict.
