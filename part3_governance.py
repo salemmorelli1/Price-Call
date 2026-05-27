@@ -1047,6 +1047,26 @@ def _write_json(path: Path, obj: Dict[str, Any]) -> None:
 # Regime-conditional Platt scaling
 # ============================================================
 
+# FIX (F-1, Quant-Guild Part 33 Audit):
+# Minimum Platt slope required for a regime-specific fit to be retained.
+# a < 0 → signal inversion (already gated below).
+# 0 <= a < _PLATT_MIN_SLOPE → near-zero slope → essentially maps every input
+#   probability to the same constant output, destroying all discriminative signal.
+#
+# Empirical evidence (2026-05-26 run):
+#   crisis:  a=0.0146, b=-1.108 → p(0.15)=0.2436, p(0.35)=0.2466 → range=0.003
+#   _global: a=0.3438, b=-0.923 → p(0.15)=0.1795, p(0.35)=0.2430 → range=0.064
+# The crisis Platt compresses the [0.15, 0.35] probability range to 0.003 pp
+# (21× narrower than the global fallback). This makes crisis Platt functionally
+# identical to a constant, providing no additional calibration value whatsoever.
+# Using the _global fallback for crisis is strictly better.
+#
+# Threshold: 0.25 — same value used by Part 2B's platt_degenerate gate.
+# This ensures both layers (Part 2B exclusion gate and Part 3 Platt exclusion)
+# apply the same minimum-slope standard for internal consistency.
+_PLATT_MIN_SLOPE: float = 0.25
+
+
 def _fit_regime_platt_scaling(
     defense_df: pd.DataFrame,
     y_revealed_path: Optional[Path],
@@ -1157,13 +1177,20 @@ def _fit_regime_platt_scaling(
             # signal precisely when it should be elevated. 59.2% of all rows (calm 36.4%
             # + crisis 18.5% + risk_on 4.3%) were receiving an inverted correction.
             #
-            # Fix: when a < 0, skip this regime's params. _apply_regime_platt falls
-            # through to _global (a=0.357 > 0, correct direction). The _global fit
-            # uses all 1668 rows and produces a reliable non-inverted calibration.
-            if a < 0:
+            # FIX (Finding 1, Quant-Guild Part 26): exclude a < 0 (signal inversion).
+            # FIX (F-1, Quant-Guild Part 33 Audit): also exclude a < _PLATT_MIN_SLOPE.
+            #
+            # A near-zero positive slope (e.g. crisis a=0.0146) maps all probabilities
+            # in [0.15, 0.35] to a 0.003 pp range — functionally a constant.  This
+            # provides zero discriminative recalibration while silently replacing the
+            # _global fallback (range=0.064) with a worse fit.  The a < _PLATT_MIN_SLOPE
+            # gate catches this degenerate case the same way Part 2B's platt_degenerate
+            # flag catches it there (both use threshold 0.25 for internal consistency).
+            if a < _PLATT_MIN_SLOPE:
+                reason = "ANTI-PREDICTIVE (a<0)" if a < 0 else f"DEGENERATE SLOPE (a={a:.4f} < {_PLATT_MIN_SLOPE})"
                 print(
                     f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)} "
-                    f"-- a<0 ANTI-PREDICTIVE: EXCLUDED. _global fallback will apply."
+                    f"-- {reason}: EXCLUDED. _global fallback will apply."
                 )
                 params_n[regime] = len(sub)   # track n for diagnostics only
                 continue                       # do NOT store params[regime] = (a, b)
@@ -1828,9 +1855,10 @@ def main(cfg: Part3Config = CFG) -> None:
         "p_2c_epist_ratio": _p2c_epist_ratio,
         "p_regime_recal": p_regime_recal,
         "platt_regimes_fit": sorted([k for k in platt_params if not k.startswith("_")]),
-        # FIX (Finding 1, Quant-Guild Part 26): report which regimes were excluded
-        # because their fitted Platt a<0 (anti-predictive, would invert the signal).
-        # These regimes receive _global Platt params at inference time.
+        # FIX (Finding 1, Quant-Guild Part 26): report regimes excluded because a<0.
+        # FIX (F-1, Quant-Guild Part 33 Audit): also report 0<=a<_PLATT_MIN_SLOPE.
+        # "inverted" is kept in the key name for backward-compatibility but now covers
+        # both anti-predictive (a<0) and degenerate-slope (0<=a<threshold) exclusions.
         "platt_inverted_regimes_excluded": sorted([
             regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
             if regime not in platt_params and regime not in [k for k in platt_params if k.startswith("_")]
