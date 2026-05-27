@@ -1868,6 +1868,53 @@ def main(cfg: Part3Config = CFG) -> None:
     }
     _write_json(summary_out, summary)
 
+    # FIX (F3, Quant-Guild Part 34 Audit): Propagate Part 3's authoritative
+    # publish_mode and deployment_mode back to current_target_weights.json.
+    #
+    # ROOT CAUSE OF THE BUG:
+    # Part 7 runs before Part 3 in the canonical pipeline order. Part 7 reads
+    # publish_mode from Part 2's summary JSON (which reports publish_mode=NORMAL
+    # when _should_fail_closed is False) and writes that value into
+    # current_target_weights.json. Part 3 then runs and, upon detecting
+    # final_pass=False with publish_mode=NORMAL, overrides to FAIL_CLOSED_NEUTRAL
+    # (BUG-C fix, Part 31). But current_target_weights.json is never updated.
+    # Result: any consumer reading only current_target_weights.json (the dashboard,
+    # Part 10 trading bot, external monitoring) sees publish_mode=NORMAL while the
+    # authoritative Part 3 state is FAIL_CLOSED_NEUTRAL / DEFENSE_ONLY.
+    #
+    # FIX: at the end of Part 3's main(), read current_target_weights.json from
+    # Part 7's output directory and update its publish_mode and deployment_mode
+    # fields with Part 3's authoritative values. This makes the file consistent
+    # with part3_summary.json for all downstream consumers.
+    #
+    # Safety: the update is atomic (read → modify → write). If the file doesn't
+    # exist or can't be parsed, the update is silently skipped so Part 3 never
+    # hard-fails due to a missing Part 7 artifact.
+    _ctw_path = _first_existing_path(["artifacts_part7/current_target_weights.json"], root)
+    if _ctw_path is not None:
+        try:
+            import json as _json_p3
+            with open(_ctw_path, "r", encoding="utf-8") as _ctw_f:
+                _ctw_data = _json_p3.load(_ctw_f)
+            _ctw_data["publish_mode"] = publish_mode
+            _ctw_data["deployment_mode"] = (
+                "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL"
+                else publish_mode
+            )
+            _ctw_data["final_pass"] = int(final_pass)
+            with open(_ctw_path, "w", encoding="utf-8") as _ctw_f:
+                _json_p3.dump(_ctw_data, _ctw_f, indent=2)
+            print(
+                f"[Part 3] current_target_weights.json updated: "
+                f"publish_mode={publish_mode}, "
+                f"deployment_mode={_ctw_data['deployment_mode']}, "
+                f"final_pass={int(final_pass)}"
+            )
+        except Exception as _ctw_exc:
+            print(f"[Part 3] WARNING: could not update current_target_weights.json: {_ctw_exc}")
+    else:
+        print("[Part 3] current_target_weights.json not found — skipping governance label sync.")
+
     print(f"✅ DEFENSE TAPE DISCOVERED: {part2_tape}")
     print(f"Decision-time 1D price call: VOO={voo_call:.4f} (explicit_call) | IEF={ief_call:.4f} (explicit_call)" if voo_call is not None and ief_call is not None else "Decision-time 1D price call: NA")
     print(f"Part 3 V1 defense_source: {part2_tape}")
