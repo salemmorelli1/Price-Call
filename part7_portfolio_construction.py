@@ -130,6 +130,46 @@ class Part7Config:
         "unknown":  0.70,
     })
 
+    # FIX (F5, Quant-Guild Part 34 Audit): Regime-conditional VOO minimum floor.
+    #
+    # ROOT CAUSE: in high_vol and crisis regimes the BL optimizer was hitting the
+    # global voo_min=0.35 floor on 41.9% and ~50%+ of rows respectively. Analysis
+    # shows that at typical high_vol edge values (≈ ±1.9% annual, std=1.9%), the
+    # unconstrained BL optimum is approximately 0.30 — well below the floor. The
+    # constraint was therefore doing all the work: 0.35 is not the BL optimum, it
+    # is the binding constraint. This means:
+    #   (a) The BL optimizer's differentiated signal is being discarded, replaced
+    #       by a constant floor regardless of the model's directional view.
+    #   (b) A 25pp defensive tilt (0.60 → 0.35) is disproportionate to an annual
+    #       edge of ~2%. The resulting portfolio has 35% equity / 65% bonds, which
+    #       significantly departs from a 60/40 benchmark without commensurate signal.
+    #   (c) This creates a structural drag: in high_vol the model is roughly balanced
+    #       between positive and negative edges (mean edge ≈ 0), so persistent 35%
+    #       floors average ~25pp underweight equity without a net positive directional
+    #       justification.
+    #
+    # FIX: raise the VOO floor in high_vol and crisis regimes from 0.35 to 0.42.
+    # Statistical basis:
+    #   • 0.42 = Part 2's MIN_W_VOO hard ceiling (already used in the defense sleeve).
+    #     Using the same floor creates a consistent constraint across both layers.
+    #   • 0.42 caps the maximum defensive tilt at 18pp (60%→42%) vs the old 25pp
+    #     (60%→35%). An 18pp tilt corresponds to a portfolio volatility change of
+    #     approximately 1.2% annual — defensible given an AUC of 0.55–0.57 in high_vol.
+    #   • 41.9% of high_vol rows hitting the old 0.35 floor is evidence of systematic
+    #     over-defensiveness. The mean p_tail in high_vol (0.206) is barely above the
+    #     base_rate (0.206), meaning the model's mean view is effectively neutral —
+    #     yet the floor was pinning the portfolio at its most defensive bound.
+    #
+    # Note: calm and risk_on regimes are either regime-gated (BL bypassed) or have
+    # positive AUC where BL upside tilt is appropriate. No floor change is needed there.
+    regime_voo_min_overrides: Dict[str, float] = field(default_factory=lambda: {
+        "calm":     0.35,   # regime-gated (BL bypassed); floor irrelevant in practice
+        "risk_on":  0.35,   # positive AUC; upside tilts dominate; floor rarely hit
+        "high_vol": 0.42,   # FIX: was 0.35; raised to match Part 2 MIN_W_VOO = 0.42
+        "crisis":   0.42,   # FIX: was 0.35; raised to match Part 2 MIN_W_VOO = 0.42
+        "unknown":  0.42,   # conservative default
+    })
+
     cov_window: int = 126              # Rolling covariance window: 126 trading days (~6 months)
     cov_ewm_halflife: int = 21         # EWM half-life for covariance (1 trading month)
     # FIX (Finding 1, Audit 2026-05-10 — Quant-Guild Part 19):
@@ -613,8 +653,20 @@ def compute_allocation(
     # Without this cap, risk_on regime gives voo_max = 0.75 * 1.20 = 0.90, which
     # exceeds Part 2's constraint and creates an inconsistent weight space between
     # the two optimizers. The cap makes Part 7 a strict subset of Part 2's feasible set.
+    # FIX (F5, Quant-Guild Part 34 Audit): use regime_voo_min_overrides for the floor.
+    # In high_vol and crisis, the old global floor of 0.35 caused the BL optimizer to
+    # hit the constraint on 42%+ of rows, pinning the portfolio at its most defensive
+    # position regardless of the model's directional view magnitude. The overrides raise
+    # the floor to 0.42 (= Part 2 MIN_W_VOO) in defensive regimes.
     PART2_MAX_W_VOO: float = 0.70
-    voo_min = max(cfg.w_voo_min, 0.30)
+    # Resolve regime-conditional minimum floor
+    _regime_key = str(regime_label).lower().strip()
+    _regime_voo_min_overrides: Dict[str, float] = (
+        cfg.regime_voo_min_overrides
+        if hasattr(cfg, "regime_voo_min_overrides") else {}
+    )
+    _voo_min_regime = _regime_voo_min_overrides.get(_regime_key, cfg.w_voo_min)
+    voo_min = max(float(_voo_min_regime), 0.30)
     voo_max = max(voo_min, min(cfg.w_voo_max * regime_mult, PART2_MAX_W_VOO))
     ief_min = cfg.w_ief_min
     ief_max = max(ief_min, cfg.w_ief_max)
