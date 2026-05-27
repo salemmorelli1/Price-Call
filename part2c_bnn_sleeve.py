@@ -1101,6 +1101,21 @@ def main() -> int:
         # Evidence: XGB also has holdout_util=-0.527 but is correctly gated on AUC, not utility.
     )
 
+    # FIX (F-3, Quant-Guild Part 33 Audit): compute worst-case ECE before the meta dict.
+    # gate_validation_passed uses max(holdout_ece, walkforward_mean_ece) rather than
+    # holdout_ece alone. The walkforward ECE averages 14 non-overlapping temporal folds
+    # (0.062 currently) vs the single-block holdout ECE (0.030). The 2× gap means the
+    # holdout substantially understates realistic out-of-sample calibration error.
+    # Using the max ensures neither estimate can individually pass a gate that the other
+    # fails. Falls back to whichever estimate is finite if only one is available.
+    _wf_mean_ece_for_gate = float(wf_df["ece"].mean()) if len(wf_df) > 0 else float("nan")
+    _worst_ece_for_gate = (
+        max(holdout_ece, _wf_mean_ece_for_gate)
+        if np.isfinite(holdout_ece) and np.isfinite(_wf_mean_ece_for_gate)
+        else holdout_ece if np.isfinite(holdout_ece)
+        else _wf_mean_ece_for_gate
+    )
+
     meta = {
         "part": "PART2C_BNN",
         "version": "V1_DEEP_ENSEMBLE_MC_DROPOUT",
@@ -1152,24 +1167,25 @@ def main() -> int:
         "production_candidate": production_candidate,
         # ── FIX (BUG-2, Audit 2026-05-12 — Quant-Guild Part 25): gate_validation_passed ──
         # Adds an ECE calibration gate equivalent to Part 2B's gate_validation_passed.
-        # Gate: holdout_ece <= base_ece + 0.05  (same ceiling as Part 2B).
         # This field is consumed by Part 3 and Part 7 blend code to exclude Part 2C
         # when its calibration is too poor to contribute signal to the blend.
         #
-        # Current values (2026-05-11 run):
-        #   holdout_ece = 0.0767, base_ece = 0.0145, ceiling = 0.0645
-        #   gate_validation_passed = False  (0.0767 > 0.0645)
+        # FIX (F-3, Quant-Guild Part 33 Audit):
+        # Prior gate used only holdout_ece (0.030 currently). walkforward_mean_ece
+        # (0.062) exceeds the gate ceiling (base_ece + 0.05 = 0.060) by 0.002 pp.
+        # The worst-case ECE is pre-computed above as _worst_ece_for_gate and is
+        # now the gate input. See comment block above meta = { for full rationale.
         #
-        # Rationale: including a 7.7%-ECE component in a blend with a 1.4%-ECE base
-        # increases the ensemble ECE rather than decreasing it.  The gate prevents
-        # this quality degradation from silently persisting.
+        # NOTE: gate_validation_passed=False does NOT prevent Part 2C from contributing
+        # the uncertainty/epistemic signal (bnn_overlay_on, epist_threshold). Only the
+        # p_bnn_mean blend contribution is blocked when the gate fails.
         "gate_validation_passed": bool(
             uncertainty_backend_valid and
             np.isfinite(holdout_auc) and
-            np.isfinite(holdout_ece) and
+            np.isfinite(_worst_ece_for_gate) and
             (
                 not np.isfinite(baseline_ece)
-                or holdout_ece <= baseline_ece + 0.05
+                or _worst_ece_for_gate <= baseline_ece + 0.05
             )
         ),
         # ── FIX (BUG-4, Audit 2026-05-12 — Quant-Guild Part 25): mean-bias diagnostic ──
