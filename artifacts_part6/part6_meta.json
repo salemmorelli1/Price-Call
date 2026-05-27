@@ -1,0 +1,57 @@
+{
+  "version": "V2_DAILY_CANONICAL",
+  "built_at": "2026-05-27T07:54:20.001872+00:00",
+  "model_type": "hmm",
+  "n_regimes": 4,
+  "feature_cols": [
+    "vix_z21",
+    "vix_term_ratio",
+    "vix_rv_gap",
+    "hy_ig_z21",
+    "spread_vol10",
+    "duration_spread_z21",
+    "breadth_rsp_voo_z21",
+    "yield_curve_2s10s"
+  ],
+  "regime_map": {
+    "2": "calm",
+    "1": "risk_on",
+    "0": "high_vol",
+    "3": "crisis"
+  },
+  "transition_matrix": [
+    [
+      0.94805532,
+      0.02730879,
+      0.0188717,
+      0.0057642
+    ],
+    [
+      0.01935274,
+      0.92811773,
+      0.04371909,
+      0.00881044
+    ],
+    [
+      0.04357817,
+      0.02954912,
+      0.9187791,
+      0.00809362
+    ],
+    [
+      0.0,
+      0.02515768,
+      0.02861488,
+      0.94622745
+    ]
+  ],
+  "regime_distribution": {
+    "high_vol": 0.3229268292682927,
+    "risk_on": 0.28341463414634144,
+    "calm": 0.2736585365853659,
+    "crisis": 0.12
+  },
+  "unknown_rate": 0.0,
+  "fomc_dates_included": 65,
+  "source_part0_dir": "/home/runner/work/Price-Call/Price-Call/artifacts_part0"
+}
