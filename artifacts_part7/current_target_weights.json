@@ -1,0 +1,17 @@
+{
+  "Date": "2026-05-27T00:00:00",
+  "w_target_voo": 0.5624999998342823,
+  "w_target_ief": 0.43750000016571766,
+  "regime_label": "high_vol",
+  "p_tail_base": 0.16562648990970746,
+  "base_rate": 0.2059547244094488,
+  "raw_val_auc": 0.542458400429415,
+  "optimizer": "black_litterman_cvar",
+  "portfolio_vol_ann": 0.07655195855376139,
+  "view_confidence": 0.5307300053676869,
+  "edge": 0.04032823449974135,
+  "dead_band_hold": 1,
+  "publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "final_pass": 0,
+  "deployment_mode": "DEFENSE_ONLY"
+}
