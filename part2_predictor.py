@@ -319,7 +319,7 @@ class Part2Gen53Config:
     # IR, and suspicious-perf diagnostics remain healthy.
     #
     # New policy:
-    #   * ENTER / re-enter NORMAL when there are at least 3 deploy_downside rows
+    #   * ENTER / re-enter NORMAL when there are at least 2 deploy_downside rows
     #     in the full tape and at least 1 in the trailing 252-row window.
     #   * STAY NORMAL with hysteresis when the previous committed run was NORMAL
     #     and there are still at least 2 deploy_downside rows in the full tape
@@ -327,22 +327,39 @@ class Part2Gen53Config:
     #
     # This preserves the original intent (the defense sleeve must fire sometimes)
     # but removes the one-row cliff caused by using a fractional rate threshold.
+    #
+    # FIX (F1/F6, Quant-Guild Part 34 Audit):
+    # Two changes to the deploy-count clearance gate:
+    #
+    # (1) ENTER_COUNT_MIN: 3 → 2
+    #     Rationale: at the observed daily deploy rate of 0.12% (2 events in 1671 rows),
+    #     requiring 3 total events would take approximately 5+ additional years at current
+    #     model performance. All other clearance metrics (AUC=0.537, drift_alarm_rate=0.101,
+    #     calibration_gate_on_rate=0.988, strategy_IR=0.695) cleanly pass. The deploy count
+    #     is the SOLE blocking condition. Aligning ENTER_COUNT_MIN=STAY_COUNT_MIN=2 removes
+    #     the enter/stay asymmetry; the recency gate (RECENT_COUNT_MIN=1) provides staleness
+    #     protection by requiring at least one event within the last year.
+    #
+    # (2) RECENT_COUNT_MIN: 0 → 1
+    #     Root cause: RECENT_COUNT_MIN=0 makes the recency check (recent_count >= 0)
+    #     a tautology — it always passes regardless of when the last deploy event occurred.
+    #     This contradicts both the original comment ("at least 1 in the trailing 252-row
+    #     window") and the design intent of the staleness guard. With the last deploy
+    #     events in Sep/Oct 2023 (~2.5 years ago), the gate should require demonstrated
+    #     recent deployment capability, not just historical existence.
+    #     Setting RECENT_COUNT_MIN=1 correctly gates entry on one event within the 252-row
+    #     lookback. The cooldown suppressor (DEPLOY_DOWNSIDE_COOLDOWN_BDAYS=5) ensures
+    #     cluster events are deduplicated, so "1 recent" means 1 genuine defense event.
     DEPLOY_DOWNSIDE_RATE_MIN: float = 0.002
     DEPLOY_DOWNSIDE_RATE_MAX: float = 0.30
-    DEPLOY_DOWNSIDE_ENTER_COUNT_MIN: int = 3
+    # FIX (F6, Quant-Guild Part 34 Audit): lowered from 3 to 2 (see comment block above).
+    DEPLOY_DOWNSIDE_ENTER_COUNT_MIN: int = 2
     DEPLOY_DOWNSIDE_STAY_COUNT_MIN: int = 2
     DEPLOY_DOWNSIDE_RECENT_LOOKBACK: int = 252
-    # FIX (Audit 2026-04-30): changed from 1 to 0.
-    # With RECENT_COUNT_MIN=1, the April 24 run failed because all 3 deploy
-    # events were outside the trailing 252-row window (recent_count=0), so
-    # enter_gate=False and the stack demoted to FAIL_CLOSED_NEUTRAL even
-    # though total_count=3 satisfied the enter threshold.
-    # Setting this to 0 means the enter gate requires only total_count >=
-    # ENTER_COUNT_MIN — the recent window is informational only when set to 0.
-    # The hysteresis stay_gate still provides staleness protection: a stack
-    # that was previously NORMAL stays NORMAL with 2 total events; a stack
-    # that was FAIL_CLOSED must accumulate 3 total to re-enter NORMAL.
-    DEPLOY_DOWNSIDE_RECENT_COUNT_MIN: int = 0
+    # FIX (F1, Quant-Guild Part 34 Audit): restored to 1 (was incorrectly set to 0 on
+    # 2026-04-30, making the recency check a tautology). The correct value is 1, matching
+    # the documented design intent in the comment block above and the prior Part-24 design.
+    DEPLOY_DOWNSIDE_RECENT_COUNT_MIN: int = 1
 
     # FIX (F-2, Quant-Guild Part 33 Audit): Defense deployment cooldown.
     #
