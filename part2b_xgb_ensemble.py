@@ -963,31 +963,41 @@ def main() -> int:
         # gate_validation_passed is the stricter downstream promotion-safe flag.
         "uncertainty_signal_validated": bool(gate_validated),
         # ── gate_validation_passed ──────────────────────────────────────────
-        # FIX (Audit 2026-05-07 / Part 11 — F1 + F2):
+        # FIX (Audit 2026-05-07 / Part 11 — F1 + F2): see inline comment above.
         #
-        # F1: Per-fold Platt replaced by global OOS Platt (see _fit_global_platt).
-        #     holdout_ece now reflects correctly calibrated probabilities (~0.003).
+        # FIX (F2, Quant-Guild Part 35 Audit): align gate_validation_passed with the
+        # blend-exclusion flags (walkforward_auc_significant, platt_degenerate).
         #
-        # F2: decision_utility gate REMOVED.
-        #     Mathematical justification: For AUC τ, base rate β, the expected
-        #     decision utility at threshold β is:
-        #       E[utility] ≈ 2·E[precision|p>β] − 1
-        #       E[precision|p>β] ≈ β + O(τ−0.50)
-        #     At AUC=0.533, β=0.207: expected utility ≈ −0.57.
-        #     A gate of >= −0.10 implies AUC >= ~0.60. This permanently blocks
-        #     a valid uncertainty-quantification module whose purpose is to
-        #     identify high-uncertainty rows (ECE_high > ECE_low), NOT to
-        #     generate trading returns.
+        # ROOT CAUSE OF INCONSISTENCY:
+        # Part 3 and Part 7 both gate Part 2B OUT of the probability blend when:
+        #   (a) walkforward_auc_significant=False  (p=0.102 — not significant at 5%)
+        #   (b) platt_degenerate=True              (|a|=0.087 < 0.25 — signal collapsed 93%)
+        # Yet gate_validation_passed=True is still written because its gate logic did not
+        # include these same checks. This is a logical contradiction:
+        #   gate_validation_passed=True  means "this sleeve is validated for production use"
+        #   walkforward_auc_significant=False + platt_degenerate=True means "excluded from
+        #   every blend calculation in the pipeline"
+        # A consumer reading gate_validation_passed=True would include Part 2B in the blend,
+        # directly contradicting the behaviour of Part 3 and Part 7.
         #
-        #     The three correct gates for an uncertainty-quantification sleeve:
-        #       1. gate_validated: spread identifies uncertainty (ECE_high > ECE_low)
-        #       2. AUC: ensemble not much worse than single model (>= xgb_single - 0.01)
-        #       3. ECE: calibration adequate after global Platt (<= base_ece + 0.05)
+        # FIX: require BOTH walkforward_auc_significant=True AND platt_degenerate=False
+        # as ADDITIONAL conditions in gate_validation_passed. This makes the single flag
+        # authoritative and consistent: if gate_validation_passed=True, Part 2B is genuinely
+        # safe to blend; if False, it should be excluded everywhere.
+        #
+        # Note: this does NOT affect the uncertainty overlay signal (xgb_overlay_on,
+        # epist_threshold). Those are evaluated by ECE stratification (ece_high > ece_low)
+        # which is independent of Platt calibration quality or AUC significance.
+        # Only the p_xgb_ens_mean probability blend contribution is gated here.
         "gate_validation_passed": bool(
             gate_validated and
             np.isfinite(holdout_auc) and
             np.isfinite(holdout_ece) and
-            # FIX F2: holdout_util gate REMOVED — see rationale above
+            # FIX F2: walkforward AUC must be statistically significant
+            bool(_compute_wf_significance(wf_df, wf_eval_df).get("walkforward_auc_significant", False)) and
+            # FIX F2: Platt calibrator must not be degenerate (|a| >= 0.25)
+            (not np.isfinite(a_platt) or abs(a_platt) >= 0.25) and
+            # FIX F2 (original gates unchanged):
             (
                 not np.isfinite(float(p2_summary.get("classification_base", {}).get("auc", np.nan)))
                 or holdout_auc >= float(p2_summary.get("classification_base", {}).get("auc", np.nan)) - 0.01
@@ -1029,7 +1039,9 @@ def main() -> int:
             gate_validated and
             np.isfinite(holdout_auc) and
             np.isfinite(holdout_ece) and
-            # FIX F2: holdout_util gate REMOVED
+            # FIX F2 (Part 35): require walkforward_auc_significant and non-degenerate Platt
+            bool(_compute_wf_significance(wf_df, wf_eval_df).get("walkforward_auc_significant", False)) and
+            (not np.isfinite(a_platt) or abs(a_platt) >= 0.25) and
             (
                 not np.isfinite(float(p2_summary.get("classification_base", {}).get("auc", np.nan)))
                 or holdout_auc >= float(p2_summary.get("classification_base", {}).get("auc", np.nan)) - 0.01
