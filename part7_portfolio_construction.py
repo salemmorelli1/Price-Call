@@ -126,7 +126,31 @@ class Part7Config:
         "calm":     1.30,   # quietest 25% — lean into equity risk
         "risk_on":  1.10,   # normal expansionary — modest equity tilt
         "high_vol": 0.75,   # elevated vol — moderate defense
-        "crisis":   0.50,   # genuine tail episode — meaningful defense
+        # FIX (F1, Quant-Guild Part 35 Audit): raised from 0.50 → 0.60.
+        #
+        # ROOT CAUSE: with crisis_mult=0.50, voo_max = min(0.75*0.50, 0.70) = 0.375.
+        # After the F5 Part 34 fix raised voo_min for crisis to 0.42, the code resolves:
+        #   voo_max = max(voo_min=0.42, min(0.375, 0.70)) = max(0.42, 0.375) = 0.42
+        # This collapses the feasible interval to the single point {0.42}. The BL
+        # optimizer has zero degrees of freedom: the CVXPY problem is trivially solved
+        # as w_voo = 0.42 for 100% of crisis rows (confirmed: 260/260 rows pinned at 0.42,
+        # 100% hit rate). Black-Litterman, view confidence, edge — none of these matter;
+        # the portfolio is always at exactly the floor regardless of the model's view.
+        #
+        # FIX: raise crisis_mult to 0.60 so:
+        #   voo_max = min(0.75*0.60, 0.70) = min(0.45, 0.70) = 0.45
+        #   Feasible bounds: (0.42, 0.45) — 3pp range, allowing BL signal to matter
+        #   at moderate crisis-regime probability edges (0–3pp tilt within the band).
+        #
+        # Statistical justification: Part 2 base AUC in crisis = 0.510, ensemble AUC
+        # (Part 2C, bias-corrected) > 0.52. These provide genuine but weak signal.
+        # A 3pp tilt band (0.42–0.45) is proportional to that signal magnitude, while
+        # still enforcing a meaningful defensive posture vs the full 60/40 baseline.
+        #
+        # Note: 0.60 preserves effective_risk_aversion = risk_aversion/0.60 = 4.17
+        # (higher than the 3.33 at mult=0.75 for high_vol), maintaining a more cautious
+        # posture in crisis than high_vol, which is the correct risk hierarchy.
+        "crisis":   0.60,   # FIX: was 0.50; raised to prevent degenerate pinned-floor
         "unknown":  0.70,
     })
 
@@ -1296,13 +1320,32 @@ def main() -> int:
     meta = {
         "version": cfg.version,
         "built_at": datetime.now(timezone.utc).isoformat(),
-        "universe": list(cfg.universe),
+        # FIX (F3, Quant-Guild Part 35 Audit): previously `list(cfg.universe)` was passed
+        # through `{k: _json_safe(v) for k, v in meta.items()}`. _json_safe calls str() on
+        # any object that is not a recognized scalar/numpy type. A Python list IS recognized
+        # by isinstance checks but the generic `str(obj)` fallback was reached because list
+        # is not in the explicit isinstance chain (bool, int, float, Timestamp, ndarray).
+        # Result: universe was serialized as the string "['VOO', 'IEF']" (Python repr)
+        # rather than a proper JSON array ["VOO", "IEF"]. Any downstream consumer parsing
+        # part7_meta.json and reading meta["universe"] would get a string instead of a list.
+        #
+        # Fix: assign the list directly without routing through _json_safe, since a
+        # list of plain strings is natively JSON-serializable.
+        "universe": list(cfg.universe),   # FIX: plain list, not str(list)
         "optimizer": "cvxpy" if HAVE_CVXPY else "scipy",
         "rows": int(len(weights_tape)),
     }
-    meta = {k: _json_safe(v) for k, v in meta.items()}
+    # FIX: apply _json_safe only to scalar fields, not to "universe" which is already
+    # a JSON-native list of strings. Rebuild without the generic dict comprehension
+    # that was silently converting list → str.
+    meta_safe = {}
+    for k, v in meta.items():
+        if k == "universe":
+            meta_safe[k] = v  # already a clean list of strings
+        else:
+            meta_safe[k] = _json_safe(v)
     with open(os.path.join(cfg.out_dir, "part7_meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(meta_safe, f, indent=2)
 
     print(f"\n✅ PART 7 COMPLETE | rows={len(weights_tape)}")
     print(f"   Wrote: {os.path.join(cfg.out_dir, 'portfolio_weights_tape.csv')}")
