@@ -1,0 +1,34 @@
+{
+  "version": "V2_DAILY_CANONICAL",
+  "built_at": "2026-05-31T10:21:28.403641+00:00",
+  "assets_modeled": [
+    "VOO",
+    "IEF",
+    "GLD",
+    "TLT"
+  ],
+  "live_vix_used": 15.319999694824219,
+  "latest_order_instructions": {
+    "decision_date": "2026-05-29T00:00:00",
+    "generated_at": "2026-05-31T10:21:28.352884+00:00",
+    "portfolio_dollars": 1000.0,
+    "vix_level": 15.319999694824219,
+    "stress_label": "NORMAL",
+    "total_estimated_cost_dollars": 0.0,
+    "total_estimated_cost_bps": 0.0,
+    "instructions": [],
+    "n_trades": 0,
+    "execute_window": "10:00\u201314:30 on 2026-05-29T00:00:00"
+  },
+  "impact_coefficients": {
+    "VOO": 0.35,
+    "IEF": 0.45,
+    "GLD": 0.4,
+    "TLT": 0.4
+  },
+  "annual_drag_summary": {
+    "error": "No trades with sufficient turnover"
+  },
+  "min_rebalance_threshold": 0.005,
+  "max_annual_tc_drag_bps": 50.0
+}
