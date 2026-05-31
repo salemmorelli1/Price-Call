@@ -564,13 +564,66 @@ def _conditional_active_ir(out: pd.DataFrame, h: int, n_min: int = 3) -> float:
     enough events exist to distinguish noise from signal.
 
     Returns nan if fewer than n_min deploy rows are available (gate is deferred).
+
+    FIX (F1, Quant-Guild Part 39 Audit): BENCHMARK MISALIGNMENT — use counterfactual
+    defense return instead of the lagged-benchmark-corrupted active_ret_net.
+
+    ROOT CAUSE: benchmark_ret in the consensus tape = bench_60_40 from Part 1's
+    factor_returns, which is the contemporaneous log return (t-1 → t).  But
+    fwd_voo / fwd_ief are forward log returns (t → t+1).  This creates a 1-day lag:
+
+        benchmark_ret[t]  = 0.60*log(VOO_t/VOO_{t-1}) + 0.40*log(IEF_t/IEF_{t-1})
+        strategy_ret[t]   = w_voo*log(VOO_{t+1}/VOO_t) + w_ief*log(IEF_{t+1}/IEF_t)
+
+    active_ret_net = strategy_ret(t→t+1) − benchmark_ret(t-1→t) is NOT a valid
+    active return — the two terms are from different one-day windows.
+
+    IMPACT (verified on artifact tape):
+        Row 1375 (2025-04-09, crisis, deploy_downside=1):
+            fwd_voo = −3.47%, fwd_ief = −0.63%  → strategy_ret = −2.33%
+            benchmark_ret (LAGGED, prev-day close) = +5.19%   ← wrong sign/period
+            Bogus active_ret_net = −7.53%
+        This drove conditional_active_ir from +5.89 to −5.07, failing the −0.50
+        threshold and locking the entire system in FAIL_CLOSED_NEUTRAL permanently.
+
+    CORRECT FORMULA: the defense sleeve intends to hold
+        w_strategy_voo + active_weight_capped  (< 0.60) of VOO.
+    The counterfactual active return for the intended underweight is:
+
+        active_ret_defense = active_weight_capped × excess_ret
+                           = active_weight_capped × (fwd_voo − fwd_ief)
+
+    This is exact (no lag), valid regardless of whether fail_closed_neutral has
+    overridden w_strategy_voo back to 0.60, and measures what the defense WOULD have
+    earned had it actually been deployed — the correct signal for the IR gate.
+
+    VERIFICATION on 10 historical deploy events:
+        Bogus ann. conditional IR (active_ret_net, lagged bench):   −5.07  (FAILS −0.50)
+        Correct ann. conditional IR (active_weight × excess_ret):   +5.89  (passes by 13×)
     """
-    if "deploy_downside" not in out.columns or "active_ret_net" not in out.columns:
+    if "deploy_downside" not in out.columns:
         return np.nan
     deploy_mask = out["deploy_downside"].fillna(0).astype(int) == 1
-    deploy_rets = pd.to_numeric(out.loc[deploy_mask, "active_ret_net"], errors="coerce").dropna().values
-    # FIX: return nan (deferred) if event count is below the configurable minimum.
-    # The caller treats nan as a passing gate (insufficient data to evaluate).
+    if deploy_mask.sum() == 0:
+        return np.nan
+    deploy_rows = out.loc[deploy_mask].copy()
+
+    # FIX (F1, Part 39): counterfactual defense return = active_weight_capped * excess_ret.
+    # active_weight_capped is ≤ 0 on deploy rows (underweight VOO).
+    # excess_ret = fwd_voo − fwd_ief (forward return, same period as the defense intent).
+    # No benchmark lag; independent of fail_closed weight override.
+    if "active_weight_capped" in deploy_rows.columns and "excess_ret" in deploy_rows.columns:
+        aw = pd.to_numeric(deploy_rows["active_weight_capped"], errors="coerce")
+        er = pd.to_numeric(deploy_rows["excess_ret"], errors="coerce")
+        deploy_rets = (aw * er).dropna().values
+    elif "active_ret_net" in out.columns:
+        # Legacy fallback: old tape schema without excess_ret column.
+        deploy_rets = pd.to_numeric(deploy_rows["active_ret_net"], errors="coerce").dropna().values
+    else:
+        return np.nan
+
+    # Defer gate if event count is below the configurable minimum.
+    # Caller treats nan as a passing gate (insufficient data to evaluate).
     if len(deploy_rets) < n_min:
         return np.nan
     return _annualized_ir(deploy_rets, h)
@@ -2061,6 +2114,16 @@ def _apply_fail_closed_neutral(out: pd.DataFrame, cfg) -> pd.DataFrame:
         out["turnover"] = new_turn
         out.loc[mask, "cost_model"] = (cfg.SLIP_BPS / 10000.0) * out.loc[mask, "turnover"].fillna(0.0)
         out.loc[mask, "strategy_ret_gross"] = out.loc[mask, "w_strategy_voo"] * out.loc[mask, "fwd_voo"] + (1.0 - out.loc[mask, "w_strategy_voo"]) * out.loc[mask, "fwd_ief"]
+        # FIX (F1, Quant-Guild Part 39 Audit): use contemporaneous 60/40 benchmark.
+        # The prior code used the pre-existing benchmark_ret (bench_60_40), which
+        # is the prior-day return (t-1→t) and creates a 1-day lag vs strategy_ret.
+        # Since w_strategy_voo=0.60=BASE in fail_closed mode, active_ret should be
+        # exactly zero (or negligible from cost_model).  The lag made it non-zero,
+        # producing systematic noise in every performance metric.
+        out.loc[mask, "benchmark_ret"] = (
+            cfg.BASE_WEIGHT_VOO * out.loc[mask, "fwd_voo"]
+            + cfg.BASE_WEIGHT_IEF * out.loc[mask, "fwd_ief"]
+        )
         out.loc[mask, "active_ret_gross"] = out.loc[mask, "strategy_ret_gross"] - out.loc[mask, "benchmark_ret"]
         out.loc[mask, "strategy_ret_net"] = out.loc[mask, "strategy_ret_gross"] - out.loc[mask, "cost_model"]
         out.loc[mask, "active_ret_net"] = out.loc[mask, "active_ret_gross"] - out.loc[mask, "cost_model"]
@@ -2443,6 +2506,15 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "turnover": np.nan,
             "cost_model": np.nan,
             "strategy_ret_gross": np.nan,
+            # FIX (F1, Quant-Guild Part 39 Audit): BENCHMARK MISALIGNMENT.
+            # bench_60_40 from factor_returns is the contemporaneous return (t-1→t).
+            # fwd_voo/fwd_ief are forward returns (t→t+1).  Using bench_60_40 here
+            # produces a 1-day lag: active_ret = strategy(t→t+1) − benchmark(t-1→t).
+            # This is corrected in the y_avail=1 block below, which overwrites
+            # benchmark_ret with 0.60*fwd_voo + 0.40*fwd_ief (same period, no lag).
+            # For y_avail=0 (unrealized) rows, bench_60_40 is kept as a carry value
+            # because there is no forward return yet; these rows never enter
+            # active_ret_net computations.
             "benchmark_ret": _safe_num(current_row.iloc[0].get("bench_60_40", np.nan)),
             "active_ret_gross": np.nan,
             "strategy_ret_net": np.nan,
@@ -2469,6 +2541,17 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             row["turnover"] = abs(row["w_strategy_voo"] - prev_w)
             row["cost_model"] = (cfg.SLIP_BPS / 10000.0) * row["turnover"]
             row["strategy_ret_gross"] = row["w_strategy_voo"] * row["fwd_voo"] + (1.0 - row["w_strategy_voo"]) * row["fwd_ief"]
+            # FIX (F1, Quant-Guild Part 39 Audit): overwrite benchmark_ret with the
+            # contemporaneous 60/40 forward return (same period as strategy_ret_gross).
+            # bench_60_40 from carry_cols is the prior-day return (t-1→t); fwd_voo is
+            # the next-day return (t→t+1).  Using carry bench_60_40 here produced a
+            # 1-day lag that inflated/deflated active_ret_net by the full prior day's
+            # benchmark return, corrupting every active return and the conditional IR gate.
+            row["benchmark_ret"] = (
+                cfg.BASE_WEIGHT_VOO * row["fwd_voo"] + cfg.BASE_WEIGHT_IEF * row["fwd_ief"]
+                if np.isfinite(row["fwd_voo"]) and np.isfinite(row["fwd_ief"])
+                else np.nan
+            )
             row["active_ret_gross"] = row["strategy_ret_gross"] - row["benchmark_ret"] if np.isfinite(row["benchmark_ret"]) else np.nan
             row["strategy_ret_net"] = row["strategy_ret_gross"] - row["cost_model"]
             row["active_ret_net"] = row["active_ret_gross"] - row["cost_model"] if np.isfinite(row["active_ret_gross"]) else np.nan
@@ -2624,6 +2707,15 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         out.loc[realized_mask, "strategy_ret_gross"] = (
             out.loc[realized_mask, "w_strategy_voo"] * out.loc[realized_mask, "fwd_voo"]
             + (1.0 - out.loc[realized_mask, "w_strategy_voo"]) * out.loc[realized_mask, "fwd_ief"]
+        )
+        # FIX (F1, Quant-Guild Part 39 Audit): overwrite benchmark_ret with the
+        # contemporaneous 60/40 forward return.  bench_60_40 from carry_cols is the
+        # prior-day return (t-1→t); fwd_voo is the next-day return (t→t+1).  Using
+        # carry bench_60_40 as benchmark introduced a 1-day lag on every realized row,
+        # corrupting active_ret_net and the conditional IR gate.
+        out.loc[realized_mask, "benchmark_ret"] = (
+            cfg.BASE_WEIGHT_VOO * out.loc[realized_mask, "fwd_voo"]
+            + cfg.BASE_WEIGHT_IEF * out.loc[realized_mask, "fwd_ief"]
         )
         _bench_finite = out.loc[realized_mask, "benchmark_ret"].notna() & np.isfinite(out.loc[realized_mask, "benchmark_ret"])
         out.loc[realized_mask & _bench_finite, "active_ret_gross"] = (
