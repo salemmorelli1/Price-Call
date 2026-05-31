@@ -1902,6 +1902,25 @@ def main(cfg: Part3Config = CFG) -> None:
                 else publish_mode
             )
             _ctw_data["final_pass"] = int(final_pass)
+            # FIX (F2, Quant-Guild Part 37 Audit):
+            # When publish_mode = FAIL_CLOSED_NEUTRAL, Part 7 may have written
+            # BL-optimized weights (e.g. 0.70/0.30) via the soft-clearance path
+            # (raw_val_auc_median >= 0.52). Part 3 then stamps FAIL_CLOSED_NEUTRAL
+            # on the governance fields, creating a semantic contradiction:
+            #   w_target_voo = 0.70  (BL result — active management)
+            #   publish_mode = FAIL_CLOSED_NEUTRAL  (governance says 60/40)
+            #
+            # Any external consumer of current_target_weights.json reading both fields
+            # receives contradictory information. Part 10 handles this internally
+            # (overrides to 60/40 when fail-closed), but the artifact itself is wrong.
+            #
+            # Fix: when FAIL_CLOSED_NEUTRAL, overwrite w_target_voo and w_target_ief
+            # to exactly 60/40 so the file is semantically consistent. The soft-clearance
+            # BL result is discarded — it is an internal Part 7 computation artifact, not
+            # an actionable portfolio weight when governance is fail-closed.
+            if publish_mode == "FAIL_CLOSED_NEUTRAL":
+                _ctw_data["w_target_voo"] = CFG.default_voo_weight   # 0.60
+                _ctw_data["w_target_ief"] = CFG.default_ief_weight    # 0.40
             with open(_ctw_path, "w", encoding="utf-8") as _ctw_f:
                 _json_p3.dump(_ctw_data, _ctw_f, indent=2)
             print(
@@ -1909,6 +1928,7 @@ def main(cfg: Part3Config = CFG) -> None:
                 f"publish_mode={publish_mode}, "
                 f"deployment_mode={_ctw_data['deployment_mode']}, "
                 f"final_pass={int(final_pass)}"
+                + (f", weights reset to 60/40 (fail-closed)" if publish_mode == "FAIL_CLOSED_NEUTRAL" else "")
             )
         except Exception as _ctw_exc:
             print(f"[Part 3] WARNING: could not update current_target_weights.json: {_ctw_exc}")
