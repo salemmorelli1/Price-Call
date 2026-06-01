@@ -1084,9 +1084,47 @@ def main() -> int:
     # TODO: Add regime_auc_breakdown to Part 2B summary JSON (same as Part 2's
     # _compute_regime_auc function) so this can be verified against artifact data.
     _ALL_REGIMES = ["calm", "risk_on", "high_vol", "crisis"]
-    _base_active_regimes = (
-        _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
-    )
+
+    # FIX (F1/F4, Quant-Guild Part 40 Audit): Use rolling per-regime AUC when available.
+    # Part 2's full-period active_regimes=[calm, high_vol, risk_on] was calibrated on
+    # 2020-2026 aggregate data. The rolling 252-day breakdown from regime_auc_rolling
+    # reflects CURRENT predictive quality and must take priority.
+    #
+    # If regime_auc_rolling is present and non-empty in Part 2's summary JSON, use
+    # _dynamic_active_regimes logic: a regime must have AUC > 0.50 on BOTH full-period
+    # and rolling timescales to be active. If rolling has insufficient data for a regime
+    # (< 30 obs), fall back to full-period for that regime (conservative).
+    #
+    # This directly prevents the Part 40 finding: calm with rolling AUC=0.257 (2025)
+    # and high_vol with rolling AUC=0.333 (2026) receiving BL optimizer views despite
+    # being anti-predictive on recent data.
+    _full_period_active = list(_p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", []))
+    _rolling_regime_data = _p2_summary.get("regime_auc_rolling", {})
+    _rolling_active = list(_rolling_regime_data.get("active_regimes_rolling", []))
+    _rolling_insufficient = set(_rolling_regime_data.get("insufficient_data_regimes", []))
+    _rolling_decay_alarm = bool(_rolling_regime_data.get("regime_auc_rolling_decay_alarm", False))
+
+    if _rolling_active or _rolling_insufficient:
+        # Rolling data available: use intersection logic
+        _dynamic_active: List[str] = []
+        for _r in _full_period_active:
+            if _r in _rolling_insufficient:
+                _dynamic_active.append(_r)   # insufficient rolling data — keep from full period
+            elif _r in _rolling_active:
+                _dynamic_active.append(_r)   # positive on both timescales — keep
+            # else: full-period active but rolling < 0.50 and sufficient data — remove
+        _base_active_regimes = sorted(_dynamic_active)
+        if _rolling_decay_alarm:
+            print(
+                f"[Part 7] ⚠️ Rolling AUC decay alarm from Part 2: "
+                f"active_regimes reduced from {_full_period_active} → {_base_active_regimes}"
+            )
+        else:
+            print(f"[Part 7] Rolling AUC check: active_regimes={_base_active_regimes}")
+    else:
+        # No rolling data (first run or cold start) — fall back to full-period
+        _base_active_regimes = _full_period_active
+        print(f"[Part 7] Rolling AUC not available — using full-period active_regimes={_base_active_regimes}")
 
     # FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25):
     # Now that Part 2B computes per-regime AUC (added in this session's BUG-5 fix),
@@ -1204,23 +1242,43 @@ def main() -> int:
             raw_auc = float(row.get("raw_val_auc", 0.55)) if np.isfinite(row.get("raw_val_auc", np.nan)) else 0.55
 
         regime_label = normalize_regime_label(row.get("regime_label", "unknown"))
+
+        # FIX (F4, Quant-Guild Part 40 Audit): Override raw_auc for view_confidence
+        # when the rolling per-regime AUC is below 0.50 for the current regime.
+        # The raw_val_auc_median (~0.536) is a smoothed full-period metric; it does
+        # not reflect that e.g. risk_on was 0.417 AUC in 2024 or high_vol was 0.333
+        # in 2026. Using the rolling per-regime AUC as the view_confidence anchor
+        # correctly reduces BL optimizer influence when the signal has decayed.
+        #
+        # Logic:
+        #   - If rolling AUC is available for this regime and < 0.50: set raw_auc=0.50
+        #     (zero view_confidence after (0.50-0.50)/0.08=0.0).
+        #   - If rolling AUC is available and >= 0.50: use that regime-specific value
+        #     as the view_confidence anchor (more accurate than full-period median).
+        #   - If rolling AUC not available for this regime: keep raw_auc unchanged.
+        _regime_key_lower = str(regime_label).lower().strip()
+        _rolling_auc_for_regime = _rolling_regime_data.get(_regime_key_lower, {})
+        if isinstance(_rolling_auc_for_regime, dict) and "auc" in _rolling_auc_for_regime:
+            _r_auc = float(_rolling_auc_for_regime["auc"])
+            raw_auc = max(0.50, _r_auc)  # capped at 0.50 floor; below = zero confidence
         # Use Part 2 summary JSON values (loaded once above) — the tape does not
         # carry a publish_mode string column, so per-row reads always return UNKNOWN.
         publish_mode = _p2_publish_mode
         final_pass = _p2_final_pass
         # ── FIX (BUG-6, Audit 2026-05-12 — Quant-Guild Part 25): active_regimes ──
-        # Use ensemble per-regime AUC (from Part 2B regime_auc_breakdown) when available.
-        # This resolves the prior deadlock where _ensemble_regime_override=False due to
-        # aggregate uplift < 0.01, causing the ensemble signal to be wasted in risk_on.
+        # ── FIX (F1, Quant-Guild Part 40 Audit): use rolling-aware _base_active_regimes ──
+        # _base_active_regimes is now computed above using _dynamic_active_regimes logic:
+        # it is the INTERSECTION of full-period and rolling AUC active sets.
+        # This correctly excludes regimes where the signal has decayed (e.g. high_vol 2026).
         if _ensemble_regime_override and _ensemble_active_regimes:
             _active_regimes = _ensemble_active_regimes  # evidence-based from Part 2B
         elif _ensemble_regime_override:
             _active_regimes = _ALL_REGIMES  # fallback when per-regime data absent
         else:
-            # No ensemble override: use Part 2 base active_regimes.
-            _active_regimes = (
-                _p2_summary.get("regime_auc_breakdown", {}).get("active_regimes", [])
-            )
+            # No ensemble override: use rolling-aware base_active_regimes (Part 40 fix).
+            # Previously read directly from regime_auc_breakdown.active_regimes (full-period);
+            # now uses _base_active_regimes which incorporates rolling AUC intersection.
+            _active_regimes = _base_active_regimes
         alloc, diag = compute_allocation(
             p_tail_base=p_tail,
             base_rate=base_rate,
