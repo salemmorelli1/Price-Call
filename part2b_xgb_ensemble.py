@@ -962,6 +962,24 @@ def main() -> int:
         # uncertainty_signal_validated records the raw spread-signal result.
         # gate_validation_passed is the stricter downstream promotion-safe flag.
         "uncertainty_signal_validated": bool(gate_validated),
+        # FIX (F3, Quant-Guild Part 40 Audit): Platt in-sample contamination warning.
+        # The global OOS Platt calibrator is fitted on ALL 3,528 walk-forward OOS rows.
+        # The holdout set (2020+, n=1,672) is a SUBSET of those same OOS rows.
+        # Fitting and evaluating Platt on overlapping data gives holdout_ece=0.014
+        # (optimistically biased). The walkforward_mean_ece=0.046 is the honest estimate.
+        # Gap = 0.046 - 0.014 = 0.032 (2.3× ratio). This is flagged here for transparency.
+        # gate_validation_passed is NOT affected — Part 2B is already excluded
+        # (platt_degenerate=True, walkforward_auc_significant=False).
+        # This warning prevents misinterpretation of the holdout_ece metric.
+        "holdout_ece_platt_contamination_warning": bool(
+            np.isfinite(holdout_ece) and
+            np.isfinite(float(wf_df["ece"].mean())) and
+            float(wf_df["ece"].mean()) > holdout_ece * 1.5  # >50% gap flags contamination
+        ),
+        "holdout_ece_wf_ece_ratio": float(
+            float(wf_df["ece"].mean()) / max(holdout_ece, 1e-9)
+            if np.isfinite(holdout_ece) and holdout_ece > 1e-9 else float("nan")
+        ),
         # ── gate_validation_passed ──────────────────────────────────────────
         # FIX (Audit 2026-05-07 / Part 11 — F1 + F2): see inline comment above.
         #
