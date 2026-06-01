@@ -701,6 +701,30 @@ def build_alpha_positions(
     ir_topk_rel_ret_net = _annualized_ir(mature_hist["topk_rel_ret_net"], h_reb=1) if realized_dates else np.nan
     alpha_drift_alarm_rate = float(pd.to_numeric(summary_tape["alpha_drift_alarm"], errors="coerce").fillna(0).mean())
 
+    # FIX (F5, Quant-Guild Part 40 Audit): compute backtest t-stat and p-value for
+    # topk_rel_ret_net. The annualized IR of 0.693 sounds strong but is computed on
+    # n=1294 BACKTEST rows; the t-stat = 1.570 (p=0.058, one-sided) does NOT pass
+    # the 5% significance threshold. This is critical context for the promotion gate:
+    # alpha should remain in SHADOW until live prediction-log rows (not backtest rows)
+    # accumulate a significant track record. The t-stat is written to the summary JSON
+    # for transparency and dashboard display.
+    _alpha_ir_tstat: float = float("nan")
+    _alpha_ir_pval: float = float("nan")
+    _alpha_n_for_tstat: int = 0
+    if realized_dates >= 30:
+        try:
+            from scipy import stats as _sp_stats
+            _ret_vals = mature_hist["topk_rel_ret_net"].dropna().values
+            _n_ret = len(_ret_vals)
+            _ret_mean = float(_ret_vals.mean())
+            _ret_std = float(_ret_vals.std(ddof=1))
+            if _ret_std > 0 and _n_ret > 1:
+                _alpha_ir_tstat = float(_ret_mean / (_ret_std / (_n_ret ** 0.5)))
+                _alpha_ir_pval = float(_sp_stats.t.sf(_alpha_ir_tstat, df=_n_ret - 1))
+                _alpha_n_for_tstat = _n_ret
+        except Exception:
+            pass
+
     latest = positions_df.iloc[-1]
     # Resolve publish_mode and final_pass from Part 2 summary JSON when
     # available.  The consensus tape carries publish_fail_closed (int) but
@@ -726,6 +750,17 @@ def build_alpha_positions(
         "mean_rank_ic": None if not np.isfinite(mean_rank_ic) else round(mean_rank_ic, 6),
         "mean_topk_rel_ret_net": None if not np.isfinite(mean_topk_rel_ret_net) else round(mean_topk_rel_ret_net, 6),
         "ir_topk_rel_ret_net": None if not np.isfinite(ir_topk_rel_ret_net) else round(ir_topk_rel_ret_net, 6),
+        # FIX (F5, Quant-Guild Part 40 Audit): backtest significance metrics.
+        # ir_topk_rel_ret_net=0.693 with t=1.570, p=0.058 — does NOT pass 5% threshold.
+        # All returns are BACKTEST rows. Live promotion gate uses live_realized_dates,
+        # not realized_dates. Alpha must remain SHADOW until live track record significant.
+        "alpha_ir_tstat_backtest": None if not np.isfinite(_alpha_ir_tstat) else round(_alpha_ir_tstat, 4),
+        "alpha_ir_pval_backtest_one_sided": None if not np.isfinite(_alpha_ir_pval) else round(_alpha_ir_pval, 6),
+        "alpha_ir_n_backtest": _alpha_n_for_tstat,
+        "alpha_ir_significant_backtest": bool(
+            np.isfinite(_alpha_ir_tstat) and _alpha_ir_tstat > 1.645  # one-sided 5% threshold
+        ),
+        "alpha_ir_live_n_required_for_5pct": 60,  # at daily rebal, need ~60 live rows for power
         "alpha_drift_alarm_rate": round(alpha_drift_alarm_rate, 6),
         "eligible_rate": round(float(positions_df["eligible"].mean()), 6),
         "nonzero_alpha_rate": round(float((positions_df["alpha_abs"] > 0).mean()), 6),
