@@ -468,23 +468,32 @@ class Part2Gen53Config:
     DEPLOY_DOWNSIDE_COOLDOWN_BDAYS: int = 5  # min business days between deploy events
 
     # FIX (Finding 2, Quant-Guild Part 26): Regime-conditional deploy guard.
-    # Empirical regime AUC (full holdout 2020-2026):
-    #   calm    AUC=0.461  (anti-predictive, base_rate=0.152)
-    #   crisis  AUC=0.464  (anti-predictive, base_rate=0.269 — but high_risk_state governs crisis defense)
-    #   high_vol AUC=0.570 (predictive — all 3 historical deploy events occurred here)
-    #   risk_on AUC=0.381  (strongly anti-predictive, base_rate=0.197)
+    # FIX (F2, Quant-Guild Part 40 Audit): Updated under new Part 6 HMM labels.
     #
-    # In calm and risk_on, deploying the defense sleeve when the model is anti-predictive
-    # guarantees negative expected value. The PASSIVE_REGIMES_NO_DEPLOY set gates
-    # deploy_downside=0 regardless of other conditions in these regimes.
+    # Prior entry was calibrated under pre-Part-6-audit GMM labels where:
+    #   calm    AUC=0.461  (anti-predictive)
+    #   risk_on AUC=0.381  (strongly anti-predictive)
+    # Those values drove the ("calm", "risk_on") passive list.
     #
-    # Crisis is NOT included: high_risk_state fires on crisis regime directly (Platt F1 fix
-    # in Part 26 routes crisis through _global params), and crisis base_rate=0.269 > threshold.
-    # The passive defense via high_risk_state (regime score = 1.0) remains operative.
+    # Post-Part-6-audit HMM labels (confirmed from v1_final_production_tape.csv,
+    # 1672 realized rows, 2020-2026):
+    #   calm    AUC=0.547  (positive — deploy ALLOWED)
+    #   risk_on AUC=0.517  (positive — deploy ALLOWED)
+    #   high_vol AUC=0.530 (positive — deploy ALLOWED)
+    #   crisis  AUC=0.445  (anti-predictive — deploy BLOCKED)
     #
-    # Statistical basis: 0 of 3 historical deploy events occurred in calm or risk_on.
-    # Expected value of deploying in anti-predictive regime is negative by construction.
-    PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("calm", "risk_on")
+    # Crisis is the ONLY regime with AUC < 0.50 under the corrected HMM labels.
+    # The defense sleeve in crisis is handled by high_risk_state (regime score = 1.0)
+    # and the _global Platt fallback — not by deploy_downside, which requires the
+    # model to be directionally correct. At AUC=0.445, deploy_downside in crisis
+    # will on average tilt the portfolio in the wrong direction.
+    #
+    # Temporal note: calm AUC was 0.257 in 2025 and risk_on AUC was 0.417 in 2024.
+    # These decays are monitored by the rolling AUC monitor added in this session
+    # (see _compute_regime_auc_rolling and regime_auc_rolling_decay_alarm below).
+    # If trailing AUC falls below 0.50 in any currently-active regime, the rolling
+    # monitor fires regime_auc_rolling_decay_alarm and the FAIL_CLOSED gate triggers.
+    PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("crisis",)
 
     DEF_TRIGGER_LOOKBACK: int = 52
     DEF_TRIGGER_MIN_HISTORY: int = 26
@@ -2221,6 +2230,144 @@ def _compute_regime_auc(realized: pd.DataFrame, bins: int = 10) -> Dict[str, obj
     return result
 
 
+def _compute_regime_auc_rolling(
+    realized: pd.DataFrame,
+    window_days: int = 252,
+    min_regime_obs: int = 30,
+    bins: int = 10,
+) -> Dict[str, object]:
+    """Compute trailing-window per-regime AUC on the most-recent `window_days` rows.
+
+    FIX (F1, Quant-Guild Part 40 Audit): Temporal AUC Decay Monitor.
+
+    Root cause: _compute_regime_auc() uses the FULL 2020-2026 period.
+    This aggregates away severe temporal decay:
+      - calm    full=0.547  but 2025=0.257  (anti-predictive recently)
+      - high_vol full=0.530 but 2026=0.333  (anti-predictive currently)
+      - risk_on full=0.517  but 2024=0.417  (anti-predictive in 2024)
+
+    The full-period AUC creates a false impression of stable predictive quality.
+    This function evaluates only the most recent window_days rows (~1 year),
+    providing an estimate of CURRENT predictive quality per regime.
+
+    Returns a dict with:
+      - Per-regime AUC, n, base_rate (same schema as _compute_regime_auc)
+      - 'active_regimes_rolling': list of regimes with trailing AUC > 0.50 AND n >= min_regime_obs
+      - 'decay_alarm_regimes': regimes that were in full-period active_regimes but are now < 0.50
+      - 'regime_auc_rolling_decay_alarm': bool — True if ANY previously-active regime
+        has trailing AUC < 0.50, indicating the model's signal has degraded in that regime.
+        When True, the pipeline should reduce view_confidence in that regime toward 0 and
+        Part 3 should consider triggering FAIL_CLOSED if ALL active regimes are decaying.
+
+    Design: uses realized rows sorted by Date, taking the most recent window_days.
+    Requires at least min_regime_obs rows per regime to compute AUC (avoids noise at low n).
+    If a regime has fewer than min_regime_obs rows in the trailing window, it is treated
+    as 'insufficient data' (not alarmed but not confidently active either).
+    """
+    if realized.empty:
+        return {"regime_auc_rolling_decay_alarm": False, "active_regimes_rolling": []}
+
+    regime_col = "regime_label"
+    date_col = "Date"
+    if regime_col not in realized.columns or "p_final_cal" not in realized.columns:
+        return {"regime_auc_rolling_decay_alarm": False, "active_regimes_rolling": []}
+
+    # Sort by date and take trailing window
+    df = realized.copy()
+    if date_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df.sort_values(date_col)
+    df_window = df.tail(window_days).copy()
+
+    if len(df_window) < 50:
+        return {"regime_auc_rolling_decay_alarm": False, "active_regimes_rolling": []}
+
+    result: Dict[str, object] = {}
+    active_regimes_rolling: List[str] = []
+    insufficient_regimes: List[str] = []
+
+    for regime in sorted(df_window[regime_col].dropna().unique()):
+        sub = df_window[df_window[regime_col] == str(regime)].dropna(
+            subset=["p_final_cal", "y_rel_tail_voo_vs_ief"]
+        )
+        if len(sub) < min_regime_obs:
+            insufficient_regimes.append(str(regime))
+            continue
+        y = sub["y_rel_tail_voo_vs_ief"].values.astype(int)
+        p = np.clip(sub["p_final_cal"].values, 1e-6, 1 - 1e-6)
+        if len(np.unique(y)) < 2:
+            continue
+        from sklearn.metrics import roc_auc_score as _roc_auc
+        auc = float(_roc_auc(y, p))
+        result[str(regime)] = {
+            "n": int(len(sub)),
+            "auc": round(auc, 6),
+            "base_rate": round(float(y.mean()), 6),
+        }
+        if auc > 0.50:
+            active_regimes_rolling.append(str(regime))
+
+    result["active_regimes_rolling"] = sorted(active_regimes_rolling)
+    result["insufficient_data_regimes"] = sorted(insufficient_regimes)
+
+    # Decay alarm: any regime that the FULL-period analysis listed as active
+    # but the rolling window shows < 0.50
+    # The full-period active_regimes are: calm, high_vol, risk_on (confirmed artifact)
+    _full_period_active = {"calm", "high_vol", "risk_on"}
+    decay_alarm_regimes: List[str] = []
+    for regime, stats_dict in result.items():
+        if not isinstance(stats_dict, dict):
+            continue
+        if regime in _full_period_active and stats_dict.get("auc", 1.0) < 0.50:
+            decay_alarm_regimes.append(regime)
+
+    result["decay_alarm_regimes"] = sorted(decay_alarm_regimes)
+    result["regime_auc_rolling_decay_alarm"] = bool(len(decay_alarm_regimes) > 0)
+    result["window_days"] = window_days
+
+    if result["regime_auc_rolling_decay_alarm"]:
+        print(
+            f"[Part 2] ⚠️ REGIME AUC DECAY ALARM: {decay_alarm_regimes} have trailing-{window_days}d "
+            f"AUC < 0.50. Active regimes (rolling): {active_regimes_rolling}. "
+            f"Consider reducing view_confidence and monitoring for FAIL_CLOSED trigger."
+        )
+    return result
+
+
+def _dynamic_active_regimes(
+    full_period_regime_auc: Dict[str, object],
+    rolling_regime_auc: Dict[str, object],
+) -> List[str]:
+    """Derive the authoritative active_regimes list using rolling AUC when available.
+
+    FIX (F1, Quant-Guild Part 40 Audit):
+    The static active_regimes=[calm, high_vol, risk_on] was set using full-period AUC.
+    When rolling AUC is available (rolling_regime_auc is non-empty), use the INTERSECTION
+    of full-period and rolling active regimes. A regime must be positive on BOTH timescales
+    to count as active. This prevents decayed regimes from receiving BL optimizer views.
+
+    If rolling AUC is unavailable or has insufficient data for a regime, fall back to
+    the full-period AUC for that regime (conservative: do not remove a regime from the
+    active list just because rolling data is sparse).
+    """
+    fp_active = set(full_period_regime_auc.get("active_regimes", []))
+    rolling_active = set(rolling_regime_auc.get("active_regimes_rolling", []))
+    insufficient = set(rolling_regime_auc.get("insufficient_data_regimes", []))
+
+    # Regimes with sufficient rolling data: use rolling result
+    # Regimes with insufficient rolling data: use full-period result (fallback)
+    result: List[str] = []
+    for regime in fp_active:
+        if regime in insufficient:
+            # Not enough recent data to evaluate — keep from full period (conservative)
+            result.append(regime)
+        elif regime in rolling_active:
+            # Both full-period and rolling are positive — keep
+            result.append(regime)
+        # else: full-period active but rolling < 0.50 and sufficient data → remove
+    return sorted(result)
+
+
 def _gamma_to_uncertainty(gamma_val: float) -> float:
     """
     Safe gamma → uncertainty inversion.
@@ -2891,7 +3038,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "drift_alarm_rate": drift_alarm_rate,
         "deploy_downside_rate": float(deploy_gate["rate"]),
         "deploy_downside_count_total": int(deploy_gate["total_count"]),
-        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on'))),  # F2, Part 26
+        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('crisis',))),  # FIX F2 Part 40: was ('calm','risk_on')
         "deploy_downside_count_recent": int(deploy_gate["recent_count"]),
         "deploy_downside_recent_lookback": int(cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK),
         "deploy_downside_rate_min": float(cfg.DEPLOY_DOWNSIDE_RATE_MIN),
@@ -2924,11 +3071,20 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "shuffle_auc_median": shuffle_auc,
         "suspicious_perf_flag": suspicious_perf_flag,
         # FIX (Audit 2026-05-10 — Quant-Guild Part 16):
-        # Per-regime AUC breakdown. Audit found the model is anti-predictive in
-        # calm (AUC=0.452) and near-random in crisis (AUC=0.489). This field makes
-        # the breakdown visible in the summary JSON and dashboard on every run so
-        # regime-level concept drift is caught before it compounds.
+        # Per-regime AUC breakdown (full period, 2020-2026).
         "regime_auc_breakdown": _compute_regime_auc(realized, bins=cfg.ECE_BINS),
+        # FIX (F1, Quant-Guild Part 40 Audit): rolling per-regime AUC monitor.
+        # Full-period AUC masks severe temporal decay: calm 2025=0.257,
+        # high_vol 2026=0.333, risk_on 2024=0.417.  The rolling 252-day window
+        # gives the CURRENT picture.  regime_auc_rolling_decay_alarm=True means
+        # at least one previously-active regime is now anti-predictive on recent
+        # data → Part 3 reduces view_confidence; Part 7 excludes from BL gate.
+        "regime_auc_rolling": _compute_regime_auc_rolling(
+            realized,
+            window_days=252,
+            min_regime_obs=30,
+            bins=cfg.ECE_BINS,
+        ),
         "stress_panel": stress_panel,
         "tail_event_threshold": tail_threshold,
         "part1_version_consumed": str(part1_meta.get("version")),
