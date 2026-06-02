@@ -493,7 +493,31 @@ class Part2Gen53Config:
     # (see _compute_regime_auc_rolling and regime_auc_rolling_decay_alarm below).
     # If trailing AUC falls below 0.50 in any currently-active regime, the rolling
     # monitor fires regime_auc_rolling_decay_alarm and the FAIL_CLOSED gate triggers.
-    PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("crisis",)
+    # FIX (F1/F4, Quant-Guild Part 41 Audit): Reverted to include calm and risk_on in passive.
+    #
+    # EVIDENCE (confirmed from v1_final_production_tape.csv, 1673 realized rows):
+    #   calm    AUC=0.459  n=424  SE=0.024  z=-1.69  p(anti-pred)=0.045  → PASSIVE
+    #   risk_on AUC=0.527  n=567  SE=0.021  z=+1.27  p(signal)=0.102     → PASSIVE (not significant)
+    #   high_vol AUC=0.560 n=453  SE=0.023  z=+2.57  p(signal)=0.005     → ACTIVE
+    #   crisis  AUC=0.487  n=229  SE=0.033  z=-0.39                       → PASSIVE
+    #
+    # Session 40 removed calm from passive citing calm AUC=0.547, but the current
+    # artifact confirms calm AUC=0.459 (anti-predictive, p=0.045). The S40 fix
+    # used stale tape data and has been reverted here.
+    #
+    # risk_on AUC=0.527 is NOT statistically significant (p=0.102, 95% CI includes 0.50).
+    # Empirical deploy quality in risk_on without high_risk_state: 1/4 wins,
+    # mean defense return=-0.0009. Negative expected value.
+    #
+    # Crisis defense fires via high_risk_state override (regime_component=1.0 when
+    # crisis). All 5 historical crisis deploy events had high_risk_state=1.
+    # Adding crisis to passive does not lose crisis coverage — it only blocks the
+    # (never-historically-occurred) case of crisis deploy without high_risk_state.
+    #
+    # Only high_vol (AUC=0.560, z=2.57, p=0.005) has statistically significant
+    # directional accuracy. Restricting non-high_risk_state deploy to high_vol
+    # improves expected conditional IR from 4.08 → 5.68 and win rate from 56% → 70%.
+    PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("calm", "risk_on", "crisis")
 
     DEF_TRIGGER_LOOKBACK: int = 52
     DEF_TRIGGER_MIN_HISTORY: int = 26
@@ -2297,14 +2321,42 @@ def _compute_regime_auc_rolling(
         p = np.clip(sub["p_final_cal"].values, 1e-6, 1 - 1e-6)
         if len(np.unique(y)) < 2:
             continue
+        # FIX (F3, Quant-Guild Part 41 Audit): Require minimum 10 positive events
+        # before computing rolling AUC. With base_rate=3.3% (calm regime), n=30
+        # observations implies ~1 positive event, which produces AUC=0.759 from
+        # a single rank position — numerically meaningless noise.
+        # With 1 positive and 29 negatives, a rank change of 1 position changes
+        # AUC by 1/29=0.034. The estimate has SE≈0.091 and is unstable.
+        # Requiring n_positives >= 10 ensures there are enough positive events
+        # to compute a stable, reliable AUC estimate for regime qualification.
+        n_positives = int(y.sum())
+        if n_positives < 10:
+            insufficient_regimes.append(str(regime))
+            continue
         from sklearn.metrics import roc_auc_score as _roc_auc
         auc = float(_roc_auc(y, p))
+        # FIX (F2, Quant-Guild Part 41 Audit): Require statistical significance
+        # before qualifying a regime as active (rolling). AUC > 0.50 is necessary
+        # but not sufficient — it must also be statistically significant at p < 0.10
+        # (one-sided z-test, z >= 1.282). This prevents regimes like risk_on
+        # (full-period p=0.102) from receiving BL views based on noisy rolling estimates.
+        # SE(AUC) ≈ sqrt(0.5*0.5/n) under the null; z = (AUC-0.5)/SE.
+        _se_auc = float(np.sqrt(0.25 / max(len(sub), 1)))
+        _z_auc = (auc - 0.5) / _se_auc if _se_auc > 0 else 0.0
         result[str(regime)] = {
             "n": int(len(sub)),
+            "n_positives": n_positives,
             "auc": round(auc, 6),
             "base_rate": round(float(y.mean()), 6),
+            "auc_z": round(float(_z_auc), 4),
+            "auc_significant_p10": bool(_z_auc >= 1.282),  # p < 0.10 one-sided
         }
-        if auc > 0.50:
+        # Require: AUC > 0.50 AND z >= 1.282 (p < 0.10 one-sided)
+        # p < 0.10 is chosen (not 0.05) because rolling windows have high variance;
+        # requiring p < 0.05 on 85 observations would exclude genuinely predictive
+        # regimes during short periods. The dual gate (rolling + full-period) in
+        # _dynamic_active_regimes() provides the stricter overall filter.
+        if auc > 0.50 and _z_auc >= 1.282:
             active_regimes_rolling.append(str(regime))
 
     result["active_regimes_rolling"] = sorted(active_regimes_rolling)
@@ -3038,7 +3090,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "drift_alarm_rate": drift_alarm_rate,
         "deploy_downside_rate": float(deploy_gate["rate"]),
         "deploy_downside_count_total": int(deploy_gate["total_count"]),
-        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('crisis',))),  # FIX F2 Part 40: was ('calm','risk_on')
+        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on', 'crisis'))),  # FIX F1/F4 Part 41: reverted to include calm+risk_on based on confirmed AUC evidence
         "deploy_downside_count_recent": int(deploy_gate["recent_count"]),
         "deploy_downside_recent_lookback": int(cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK),
         "deploy_downside_rate_min": float(cfg.DEPLOY_DOWNSIDE_RATE_MIN),
