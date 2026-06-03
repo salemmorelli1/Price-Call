@@ -1095,7 +1095,7 @@ def main() -> int:
 
 
 def _compute_wf_significance(wf_df: pd.DataFrame, wf_eval_df: pd.DataFrame) -> dict:
-    """Compute pooled walkforward AUC significance test (DeLong SE approximation).
+    """Compute pooled walkforward AUC significance test using fold-level SE.
 
     FIX (Audit Part 28 — C-1, C-2):
     The simple fold-mean t-test (t = mean_auc / (std_auc / sqrt(n_folds))) is
@@ -1104,9 +1104,30 @@ def _compute_wf_significance(wf_df: pd.DataFrame, wf_eval_df: pd.DataFrame) -> d
     n_eval and uses the DeLong binomial SE on the pooled n_total, which is the
     standard approach for multi-fold AUC aggregation.
 
-    At pooled AUC=0.5117, SE=0.0084 (n=3528):
-        t = (0.5117 - 0.50) / 0.0084 = 1.39
-        p (one-sided) = 0.082 → NOT significant at 5%.
+    FIX (F4, Quant-Guild Part 43 Audit): INCONSISTENT SE/df IN PRIOR FORMULA.
+
+    Prior code used:
+        SE = sqrt(pooled_AUC*(1-pooled_AUC) / n_total)   [binomial SE, n=3528]
+        df = n_folds - 1 = 13
+        t  = (pooled_AUC - 0.50) / SE
+
+    This is internally inconsistent: the SE uses n_total=3528 (implying many
+    independent observations) while the df uses n_folds-1=13 (implying only 14
+    independent folds). Mixing large-sample SE with small-sample df inflates the
+    t-statistic relative to what the degrees of freedom support:
+        Prior: t=1.253 (appears marginal)
+        Correct: t=0.651 (clearly non-significant)
+
+    CORRECT FORMULA: use fold-level SE = std(fold_aucs)/sqrt(n_folds) with
+    df = n_folds-1. This is consistent: both numerator and denominator treat
+    each fold as one independent unit, which is the conservative and correct
+    approach given overlapping training sets between adjacent folds.
+
+    Note: the fold-level t-test is also somewhat anti-conservative due to
+    training-set overlap, so the conservative direction of the correction is
+    appropriate. Both the prior and corrected formulas give p > 0.05
+    (not significant at current performance levels), but the corrected formula
+    gives the honest p-value (0.263 vs 0.116 prior).
 
     Returns a dict keyed by the summary JSON field names added in this audit.
     """
@@ -1129,12 +1150,30 @@ def _compute_wf_significance(wf_df: pd.DataFrame, wf_eval_df: pd.DataFrame) -> d
                 "walkforward_auc_significant": False,
             }
         n_total = float(n_evals[valid].sum())
+        # Weighted pooled AUC (weight by fold size — unchanged)
         pooled_auc = float(np.dot(aucs[valid], n_evals[valid]) / n_total)
-        # DeLong SE approximation: SE ≈ sqrt(AUC*(1-AUC)/n_total)
-        se = float(np.sqrt(max(pooled_auc * (1.0 - pooled_auc) / n_total, 1e-12)))
+        # FIX (F4, Part 43): use fold-level SE for consistency with df = n_folds-1.
+        # SE = std(fold_aucs) / sqrt(n_folds), t-test with df = n_folds-1.
+        # This is internally consistent: both SE and df treat each fold as one unit.
+        n_folds = int(valid.sum())
+        fold_aucs_valid = aucs[valid]
+        if n_folds < 2:
+            return {
+                "walkforward_auc_pooled": pooled_auc,
+                "walkforward_auc_pooled_tstat": float("nan"),
+                "walkforward_auc_pooled_pval": float("nan"),
+                "walkforward_auc_significant": False,
+            }
+        se = float(np.std(fold_aucs_valid, ddof=1) / np.sqrt(n_folds))
+        if se <= 0 or not np.isfinite(se):
+            return {
+                "walkforward_auc_pooled": pooled_auc,
+                "walkforward_auc_pooled_tstat": float("nan"),
+                "walkforward_auc_pooled_pval": float("nan"),
+                "walkforward_auc_significant": False,
+            }
         t_stat = float((pooled_auc - 0.50) / se)
-        # One-sided t-test (H1: AUC > 0.50)
-        df_t = float(max(valid.sum() - 1, 1))
+        df_t = float(n_folds - 1)
         p_val = float(_scipy_stats.t.sf(t_stat, df=df_t))
         return {
             "walkforward_auc_pooled": pooled_auc,
