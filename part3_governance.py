@@ -1935,6 +1935,59 @@ def main(cfg: Part3Config = CFG) -> None:
     else:
         print("[Part 3] current_target_weights.json not found — skipping governance label sync.")
 
+    # FIX (F3, Quant-Guild Part 43 Audit): Sync deployment_mode back to portfolio_weights_tape.csv.
+    #
+    # ROOT CAUSE: Part7 writes portfolio_weights_tape.csv BEFORE Part3 runs, copying
+    # publish_mode from Part2's intermediate state (NORMAL, set before the
+    # conditional_active_ir gate evaluates final_pass). Part3 then overrides to
+    # FAIL_CLOSED_NEUTRAL / DEFENSE_ONLY but never writes this decision back to the
+    # weights tape. Result: tape shows publish_mode=NORMAL for all rows written during
+    # DEFENSE_ONLY periods — a misleading historical record that can corrupt downstream
+    # analysis of when the system was actively managed vs passive.
+    #
+    # Evidence: 2026-06-01/02/03 tape rows show publish_mode=NORMAL but Part3 summary
+    # shows deployment_mode=DEFENSE_ONLY (final_pass=False, cond_ir=-0.622 < -0.50).
+    #
+    # Fix: after Part3's governance decision is final, reopen portfolio_weights_tape.csv,
+    # add/update the 'deployment_mode' column for today's date row, and write back.
+    # This is a targeted single-row update: only today's date is changed.
+    # Historical rows are left unchanged (they reflect the governance at their run time).
+    _pw_tape_path = _first_existing_path(["artifacts_part7/portfolio_weights_tape.csv"], root)
+    if _pw_tape_path is not None:
+        try:
+            import pandas as _pd_p3
+            _pw_df = _pd_p3.read_csv(_pw_tape_path)
+            _today_str = str(decision_date.date())
+            # Normalize Date column for matching
+            _pw_df["Date"] = _pd_p3.to_datetime(_pw_df["Date"], errors="coerce").dt.date.astype(str)
+            _today_mask = _pw_df["Date"] == _today_str
+            if _today_mask.any():
+                _deploy_mode_val = (
+                    "DEFENSE_ONLY" if publish_mode == "FAIL_CLOSED_NEUTRAL"
+                    else publish_mode
+                )
+                if "deployment_mode" not in _pw_df.columns:
+                    _pw_df["deployment_mode"] = ""
+                _pw_df.loc[_today_mask, "deployment_mode"] = _deploy_mode_val
+                # Also correct publish_mode for today's row to reflect Part3's final decision
+                _pw_df.loc[_today_mask, "publish_mode"] = publish_mode
+                _pw_df.loc[_today_mask, "final_pass"] = int(final_pass)
+                _pw_df.to_csv(_pw_tape_path, index=False)
+                print(
+                    f"[Part 3] portfolio_weights_tape.csv updated for {_today_str}: "
+                    f"deployment_mode={_deploy_mode_val}, publish_mode={publish_mode}, "
+                    f"final_pass={int(final_pass)}"
+                )
+            else:
+                print(
+                    f"[Part 3] portfolio_weights_tape.csv: no row for {_today_str} — "
+                    "skipping deployment_mode sync."
+                )
+        except Exception as _pw_exc:
+            print(f"[Part 3] WARNING: could not update portfolio_weights_tape.csv: {_pw_exc}")
+    else:
+        print("[Part 3] portfolio_weights_tape.csv not found — skipping deployment_mode sync.")
+
     print(f"✅ DEFENSE TAPE DISCOVERED: {part2_tape}")
     print(f"Decision-time 1D price call: VOO={voo_call:.4f} (explicit_call) | IEF={ief_call:.4f} (explicit_call)" if voo_call is not None and ief_call is not None else "Decision-time 1D price call: NA")
     print(f"Part 3 V1 defense_source: {part2_tape}")
