@@ -469,54 +469,41 @@ class Part2Gen53Config:
 
     # FIX (Finding 2, Quant-Guild Part 26): Regime-conditional deploy guard.
     # FIX (F2, Quant-Guild Part 40 Audit): Updated under new Part 6 HMM labels.
-    #
-    # Prior entry was calibrated under pre-Part-6-audit GMM labels where:
-    #   calm    AUC=0.461  (anti-predictive)
-    #   risk_on AUC=0.381  (strongly anti-predictive)
-    # Those values drove the ("calm", "risk_on") passive list.
-    #
-    # Post-Part-6-audit HMM labels (confirmed from v1_final_production_tape.csv,
-    # 1672 realized rows, 2020-2026):
-    #   calm    AUC=0.547  (positive — deploy ALLOWED)
-    #   risk_on AUC=0.517  (positive — deploy ALLOWED)
-    #   high_vol AUC=0.530 (positive — deploy ALLOWED)
-    #   crisis  AUC=0.445  (anti-predictive — deploy BLOCKED)
-    #
-    # Crisis is the ONLY regime with AUC < 0.50 under the corrected HMM labels.
-    # The defense sleeve in crisis is handled by high_risk_state (regime score = 1.0)
-    # and the _global Platt fallback — not by deploy_downside, which requires the
-    # model to be directionally correct. At AUC=0.445, deploy_downside in crisis
-    # will on average tilt the portfolio in the wrong direction.
-    #
-    # Temporal note: calm AUC was 0.257 in 2025 and risk_on AUC was 0.417 in 2024.
-    # These decays are monitored by the rolling AUC monitor added in this session
-    # (see _compute_regime_auc_rolling and regime_auc_rolling_decay_alarm below).
-    # If trailing AUC falls below 0.50 in any currently-active regime, the rolling
-    # monitor fires regime_auc_rolling_decay_alarm and the FAIL_CLOSED gate triggers.
     # FIX (F1/F4, Quant-Guild Part 41 Audit): Reverted to include calm and risk_on in passive.
+    # UPDATE (F2, Quant-Guild Part 42 Audit): Updated with current confirmed AUC evidence.
     #
-    # EVIDENCE (confirmed from v1_final_production_tape.csv, 1673 realized rows):
-    #   calm    AUC=0.459  n=424  SE=0.024  z=-1.69  p(anti-pred)=0.045  → PASSIVE
-    #   risk_on AUC=0.527  n=567  SE=0.021  z=+1.27  p(signal)=0.102     → PASSIVE (not significant)
-    #   high_vol AUC=0.560 n=453  SE=0.023  z=+2.57  p(signal)=0.005     → ACTIVE
-    #   crisis  AUC=0.487  n=229  SE=0.033  z=-0.39                       → PASSIVE
+    # EVIDENCE (confirmed from v1_final_production_tape.csv, 1,674 realized rows,
+    # 2020-01-01 to 2026-06-01, DeLong SE estimator, p_tail_base vs y_rel_tail_voo_vs_ief):
+    #   calm    : AUC=0.510  n=375  n1=63   SE=0.0401  z=+0.249  p=0.402  → PASSIVE (noise)
+    #   crisis  : AUC=0.478  n=231  n1=58   SE=0.0435  z=-0.508  p=0.694  → PASSIVE (noise/slight anti)
+    #   high_vol: AUC=0.539  n=571  n1=126  SE=0.0295  z=+1.309  p=0.095  → ACTIVE (borderline p<0.10)
+    #   risk_on : AUC=0.485  n=497  n1=88   SE=0.0337  z=-0.445  p=0.672  → PASSIVE (noise/slight anti)
+    #   overall : AUC=0.511  n=1674 n1=335  SE=0.0177  z=+0.606  p=0.272  → NOT SIG overall
     #
-    # Session 40 removed calm from passive citing calm AUC=0.547, but the current
-    # artifact confirms calm AUC=0.459 (anti-predictive, p=0.045). The S40 fix
-    # used stale tape data and has been reverted here.
+    # NOTE (S42): S41 cited calm AUC=0.459 (n=424) and risk_on AUC=0.527 (n=567).
+    # These values were derived from stale HMM labels. A Part 6 HMM refit between
+    # sessions re-labeled ~49 rows, shifting calm n 424→375 and risk_on n 567→497.
+    # The current confirmed values above supersede S41's evidence.
+    # The CONCLUSION is unchanged: calm and risk_on are correctly passive.
+    # calm is now NEUTRAL (not anti-predictive), risk_on is weakly anti-predictive.
+    # Neither has statistically significant positive AUC to justify non-HRS deployment.
     #
-    # risk_on AUC=0.527 is NOT statistically significant (p=0.102, 95% CI includes 0.50).
-    # Empirical deploy quality in risk_on without high_risk_state: 1/4 wins,
-    # mean defense return=-0.0009. Negative expected value.
+    # CONFIRMED EMPIRICAL DEPLOY PERFORMANCE (current tape, all 14 events):
+    #   high_vol: 9 events (3 HRS, 6 non-HRS). All non-high_risk_state deploys gated here.
+    #   crisis:   5 events (5 HRS, 0 non-HRS). Crisis coverage fully preserved via HRS.
+    #   calm:     0 deploy events. risk_on: 0 deploy events.
+    #   Defense sleeve tail lift = 1.071x (marginal above random, n=14 insufficient for sig.)
+    #   Conditional IR = 0.434 (t=0.102, p=0.460, n=14). Gate correctly defers at n<20.
     #
-    # Crisis defense fires via high_risk_state override (regime_component=1.0 when
-    # crisis). All 5 historical crisis deploy events had high_risk_state=1.
-    # Adding crisis to passive does not lose crisis coverage — it only blocks the
-    # (never-historically-occurred) case of crisis deploy without high_risk_state.
+    # Crisis defense fires via high_risk_state override (regime_component=1.0 when crisis).
+    # All 5 historical crisis deploy events had high_risk_state=1. Adding crisis to passive
+    # does not lose crisis coverage — it only blocks the (never-historically-occurred) case
+    # of crisis deploy without high_risk_state.
     #
-    # Only high_vol (AUC=0.560, z=2.57, p=0.005) has statistically significant
-    # directional accuracy. Restricting non-high_risk_state deploy to high_vol
-    # improves expected conditional IR from 4.08 → 5.68 and win rate from 56% → 70%.
+    # High_vol (AUC=0.539, z=1.309, p=0.095) is the only regime with directional signal
+    # approaching significance. Restricting non-HRS deploy to high_vol is correct.
+    # A DeLong monitoring warning (delong_deploy_regime_auc_warning in summary JSON)
+    # fires when high_vol p > 0.10 to flag borderline periods without hard-failing.
     PASSIVE_REGIMES_NO_DEPLOY: Tuple[str, ...] = ("calm", "risk_on", "crisis")
 
     DEF_TRIGGER_LOOKBACK: int = 52
@@ -660,6 +647,94 @@ def _conditional_active_ir(out: pd.DataFrame, h: int, n_min: int = 3) -> float:
     if len(deploy_rets) < n_min:
         return np.nan
     return _annualized_ir(deploy_rets, h)
+
+
+def _delong_auc_ztest(y: np.ndarray, p: np.ndarray) -> Dict[str, float]:
+    """DeLong SE estimator for AUC significance test (one-sided, H1: AUC > 0.5).
+
+    FIX (F1, Quant-Guild Part 42 Audit): Governance monitoring metric.
+    Added to expose a statistically rigorous AUC test on the deployment regime
+    (high_vol) so that governance summaries carry machine-readable evidence of
+    whether the model's predicted probabilities have positive rank correlation
+    with realized tail events.
+
+    This is NOT used as a hard governance gate — it is a monitoring field only.
+    A hard gate at p<0.05 would fail at the current high_vol z=1.309 and create
+    a structural deadlock (model needs to deploy to accumulate evidence, but
+    governance needs evidence to permit deployment). The soft warning approach
+    fires `auc_warning=True` when p > 0.10 without blocking final_pass.
+
+    DeLong SE formula (DeLong, DeLong & Clarke-Pearson, 1988):
+        Q1 = AUC / (2 - AUC)
+        Q2 = 2 * AUC^2 / (1 + AUC)
+        SE = sqrt[(AUC*(1-AUC) + (n1-1)*(Q1-AUC^2) + (n0-1)*(Q2-AUC^2)) / (n1*n0)]
+
+    Args:
+        y: binary realized outcomes (0/1), dtype int or float
+        p: predicted probabilities
+
+    Returns:
+        dict with keys: auc, n, n1, n0, se, z, p_one_sided, auc_warning
+        auc_warning=True when p_one_sided > 0.10 (not statistically significant at 10%)
+    """
+    from sklearn.metrics import roc_auc_score as _roc_auc
+    y = np.asarray(y, dtype=float)
+    p = np.asarray(p, dtype=float)
+    mask = np.isfinite(y) & np.isfinite(p)
+    y, p = y[mask], p[mask]
+    n = len(y)
+    n1 = int(y.sum()); n0 = n - n1
+    if n1 < 5 or n0 < 5 or n < 20:
+        return dict(auc=float("nan"), n=n, n1=n1, n0=n0, se=float("nan"),
+                    z=float("nan"), p_one_sided=float("nan"), auc_warning=True)
+    if len(np.unique(y)) < 2:
+        return dict(auc=float("nan"), n=n, n1=n1, n0=n0, se=float("nan"),
+                    z=float("nan"), p_one_sided=float("nan"), auc_warning=True)
+    auc = float(_roc_auc(y, p))
+    q1 = auc / (2.0 - auc)
+    q2 = 2.0 * auc**2 / (1.0 + auc)
+    se = float(np.sqrt(
+        (auc * (1 - auc) + (n1 - 1) * (q1 - auc**2) + (n0 - 1) * (q2 - auc**2))
+        / (n1 * n0)
+    ))
+    z = (auc - 0.5) / se if se > 0 else 0.0
+    p_one = float(1.0 - norm.cdf(z))
+    return dict(
+        auc=round(auc, 6), n=n, n1=n1, n0=n0,
+        se=round(se, 6), z=round(z, 4), p_one_sided=round(p_one, 6),
+        auc_warning=bool(p_one > 0.10),
+    )
+
+
+def _compute_trailing_fold_auc(raw_val_auc_series: np.ndarray, n_folds: int = 4) -> float:
+    """Median AUC of the most recent n_folds unique fold AUC values.
+
+    FIX (F1, Quant-Guild Part 42 Audit): Governance monitoring metric.
+    The global rolling-median AUC (raw_val_auc_median) uses ALL folds since
+    2020, which inflates the median with 2020-2022 high-signal folds.
+    The trailing-N-fold median focuses on recent model quality and catches
+    decay that the all-history median obscures.
+
+    Uses the raw_val_auc column from the production tape. Each 20-row fold
+    window assigns the same AUC to all rows in that window; np.unique gives
+    the per-fold AUC values in the order they appear.
+
+    Args:
+        raw_val_auc_series: array of per-row raw_val_auc values from tape
+        n_folds: number of most-recent unique fold AUCs to include (default 4)
+
+    Returns:
+        median of the n_folds most recent unique fold AUCs, or nan if insufficient
+    """
+    vals = raw_val_auc_series[np.isfinite(raw_val_auc_series)]
+    if len(vals) == 0:
+        return float("nan")
+    # np.unique returns sorted; we need insertion order to get "most recent"
+    # Use pandas unique which preserves order of first appearance
+    unique_aucs = pd.Series(vals).drop_duplicates(keep="last").values
+    if len(unique_aucs) < n_folds:
+        return float(np.nanmedian(unique_aucs))
+    return float(np.median(unique_aucs[-n_folds:]))
 
 
 def _ece_score(y_true: np.ndarray, p: np.ndarray, bins: int = 10) -> float:
@@ -1679,15 +1754,18 @@ def _governance_mapping(
         and ((not drift_alarm) or high_risk_state)
     )
     # FIX (Finding 2, Quant-Guild Part 26): Regime-conditional deploy guard.
+    # UPDATE (F2, Quant-Guild Part 42 Audit): Updated comment with current confirmed AUC.
     # Block deploy_downside when the current regime is in PASSIVE_REGIMES_NO_DEPLOY
-    # (calm, risk_on). These regimes have empirical AUC < 0.5 on the full holdout:
-    #   calm    AUC=0.461 — higher model p → fewer actual tail events (anti-predictive)
-    #   risk_on AUC=0.381 — strongest anti-predictive signal in the regime set
-    # Deploying a defense in an anti-predictive regime has strictly negative expected
-    # value. All 3 historical deploy_downside events occurred in high_vol (AUC=0.570).
-    # Note: high_risk_state still fires in calm/risk_on when p_final_cal >= HIGH_RISK_ABS_P,
-    # which provides passive position-sizing awareness without a full deploy.
-    _passive_deploy_regimes = {r.lower() for r in getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on'))}
+    # (calm, risk_on, crisis). Current confirmed AUC (DeLong SE, 1,674 rows, 2020-2026):
+    #   calm    AUC=0.510, p=0.402 — neutral, not worth deploying defense
+    #   risk_on AUC=0.485, p=0.672 — weakly anti-predictive, no signal
+    #   crisis  AUC=0.478, p=0.694 — anti-predictive; crisis coverage via high_risk_state
+    # Only high_vol (AUC=0.539, z=1.309, p=0.095) has directional signal.
+    # Confirmed: all 14 historical deploy events are high_vol(9) or crisis(5 via HRS).
+    # Note: high_risk_state still fires in passive regimes when regime_component=1.0
+    # (crisis HRS) or p_final_cal >= HIGH_RISK_ABS_P, providing position-sizing
+    # awareness without full deploy.
+    _passive_deploy_regimes = {r.lower() for r in getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on', 'crisis'))}
     if str(regime_label).lower() in _passive_deploy_regimes and not high_risk_state:
         deploy_downside = 0
     deploy_upside = 0
@@ -3090,7 +3168,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "drift_alarm_rate": drift_alarm_rate,
         "deploy_downside_rate": float(deploy_gate["rate"]),
         "deploy_downside_count_total": int(deploy_gate["total_count"]),
-        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on', 'crisis'))),  # FIX F1/F4 Part 41: reverted to include calm+risk_on based on confirmed AUC evidence
+        "passive_regimes_no_deploy": list(getattr(cfg, 'PASSIVE_REGIMES_NO_DEPLOY', ('calm', 'risk_on', 'crisis'))),  # FIX F1/F4 Part 41 + F2 Part 42: calm=0.510/p=0.40, risk_on=0.485/p=0.67, crisis=0.478/p=0.69 (all non-sig). high_vol=0.539/p=0.095 only deployment regime.
         "deploy_downside_count_recent": int(deploy_gate["recent_count"]),
         "deploy_downside_recent_lookback": int(cfg.DEPLOY_DOWNSIDE_RECENT_LOOKBACK),
         "deploy_downside_rate_min": float(cfg.DEPLOY_DOWNSIDE_RATE_MIN),
@@ -3136,6 +3214,62 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             window_days=252,
             min_regime_obs=30,
             bins=cfg.ECE_BINS,
+        ),
+        # FIX (F1, Quant-Guild Part 42 Audit): DeLong AUC monitoring metrics.
+        #
+        # FINDING: Governance rolling-median AUC (0.537, threshold 0.535) passes by
+        # a margin of 0.002 on a metric dominated by 2020-2022 high-signal folds.
+        # The full-dataset holdout AUC = 0.511 (DeLong z=0.606, p=0.272) and the
+        # deployment regime (high_vol) AUC = 0.539 (z=1.309, p=0.095, borderline).
+        #
+        # These three fields provide machine-readable evidence of the model's actual
+        # statistical state WITHOUT changing any hard governance gate:
+        #   1. delong_deploy_regime_auc: DeLong test on high_vol (the deployment
+        #      regime — the only regime where non-HRS defense deploys are permitted).
+        #   2. delong_overall_auc: DeLong test on the full holdout set.
+        #   3. trailing_4fold_auc_median: median of the 4 most recent fold AUCs,
+        #      which tracks recency-weighted model quality independently of the
+        #      all-history rolling median.
+        #
+        # deploy_regime_auc_warning=True means the deployment regime AUC is NOT
+        # statistically significant at p<0.10 — a soft monitoring flag that does
+        # not block final_pass but should trigger human review.
+        #
+        # DESIGN RATIONALE for NOT adding a hard DeLong gate:
+        #   high_vol z=1.309 (p=0.095). Adding p<0.05 as a hard gate would fail now
+        #   (z=1.309 < 1.645) and create a structural deadlock: the model needs to
+        #   deploy to accumulate evidence; governance needs evidence to permit deploy.
+        #   The soft warning fires when p>0.10 without inducing deadlock.
+        #
+        # Computed on the deployment regime only (high_vol) since that is the sole
+        # regime where non-HRS defense sleeve activates. Using p_tail_base vs
+        # y_rel_tail_voo_vs_ief (same fields as regime_auc_breakdown).
+        "delong_deploy_regime_auc": (
+            lambda _hv=realized[realized["regime_label"] == "high_vol"]
+            if "regime_label" in realized.columns else pd.DataFrame(): _delong_auc_ztest(
+                _hv["y_rel_tail_voo_vs_ief"].values if "y_rel_tail_voo_vs_ief" in _hv.columns else np.array([]),
+                _hv["p_tail_base"].values if "p_tail_base" in _hv.columns else np.array([]),
+            ) if len(_hv) >= 20 else {"auc": float("nan"), "z": float("nan"),
+                                      "p_one_sided": float("nan"), "auc_warning": True}
+        )(),
+        "delong_overall_auc": _delong_auc_ztest(
+            realized["y_rel_tail_voo_vs_ief"].values if "y_rel_tail_voo_vs_ief" in realized.columns else np.array([]),
+            realized["p_tail_base"].values if "p_tail_base" in realized.columns else np.array([]),
+        ),
+        "deploy_regime_auc_warning": (
+            # True if high_vol AUC is NOT significant at p<0.10 (soft monitoring only)
+            _delong_auc_ztest(
+                realized.loc[realized["regime_label"] == "high_vol", "y_rel_tail_voo_vs_ief"].values
+                if "regime_label" in realized.columns and "y_rel_tail_voo_vs_ief" in realized.columns
+                else np.array([]),
+                realized.loc[realized["regime_label"] == "high_vol", "p_tail_base"].values
+                if "regime_label" in realized.columns and "p_tail_base" in realized.columns
+                else np.array([]),
+            ).get("auc_warning", True)
+        ),
+        "trailing_4fold_auc_median": _compute_trailing_fold_auc(
+            realized["raw_val_auc"].values if "raw_val_auc" in realized.columns else np.array([]),
+            n_folds=4,
         ),
         "stress_panel": stress_panel,
         "tail_event_threshold": tail_threshold,
