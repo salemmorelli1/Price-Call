@@ -1,0 +1,17 @@
+{
+  "Date": "2026-06-03T00:00:00",
+  "w_target_voo": 0.6479184979711753,
+  "w_target_ief": 0.35208150202882477,
+  "regime_label": "risk_on",
+  "p_tail_base": 0.1954592881339275,
+  "base_rate": 0.2057016465962153,
+  "raw_val_auc": 0.5,
+  "optimizer": "black_litterman_cvar",
+  "portfolio_vol_ann": 0.08367449516502579,
+  "view_confidence": 0.0,
+  "edge": 0.010242358462287798,
+  "dead_band_hold": 1,
+  "publish_mode": "NORMAL",
+  "final_pass": 1,
+  "deployment_mode": "NORMAL"
+}
