@@ -250,6 +250,67 @@ def download_market_data(cfg: Part0Config):
     close = _standardize_index(close)
     volume = _standardize_index(volume)
 
+    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Retry individual tickers that returned
+    # all-NaN from the bulk download. Root cause: yf.download(threads=True) causes
+    # concurrent writes to yfinance's SQLite cache, producing OperationalError('database
+    # is locked'). The failed ticker ends up with all-NaN in the output even though the
+    # data exists. Example: RSP returning 100% NaN due to lock contention on 2026-06-13.
+    #
+    # Fix: after the bulk download, identify any non-core ticker whose close price is
+    # all-NaN (unambiguous download failure, not a history-start issue) and retry it
+    # individually with threads=False (no concurrent cache writes). Core tickers (VOO,
+    # IEF) are already guarded below with a hard RuntimeError — they don't need retry.
+    _core_set = set(cfg.core_tickers)
+    _all_nan_tickers = [
+        t for t in tickers
+        if t in close.columns and close[t].isna().all() and t not in _core_set
+    ]
+    if _all_nan_tickers:
+        import time as _time
+        print(f"[Part 0] Retrying {len(_all_nan_tickers)} all-NaN ticker(s) individually: {_all_nan_tickers}")
+        for _t in _all_nan_tickers:
+            for _attempt in range(1, 4):  # up to 3 retry attempts
+                try:
+                    _time.sleep(1.5 * _attempt)  # back-off: 1.5s, 3.0s, 4.5s
+                    _r = yf.download(
+                        tickers=[_t],
+                        start=cfg.start,
+                        end=cfg.end,
+                        auto_adjust=True,
+                        progress=False,
+                        threads=False,   # single-threaded: no SQLite lock contention
+                    )
+                    if _r is None or _r.empty:
+                        print(f"[Part 0]   {_t} attempt {_attempt}: empty response")
+                        continue
+                    # Extract close price — handle both single- and multi-ticker schemas
+                    if isinstance(_r.columns, pd.MultiIndex):
+                        _c = _r[_t]["Close"] if _t in _r.columns.get_level_values(0) else None
+                    else:
+                        _c = _r["Close"] if "Close" in _r.columns else None
+                    if _c is None or pd.Series(_c).isna().all():
+                        print(f"[Part 0]   {_t} attempt {_attempt}: still all-NaN")
+                        continue
+                    _c = pd.Series(_c.values, index=pd.to_datetime(_c.index), name=_t)
+                    _c = _c.reindex(bidx)
+                    _n_valid = int(_c.notna().sum())
+                    close[_t] = _standardize_index(pd.DataFrame({_t: _c}))[_t]
+                    # Rebuild quality entry
+                    _fv = _c.dropna().index.min()
+                    quality[_t] = {
+                        "missing_pre_clean": float(_c.isna().mean()),
+                        "max_equal_close_run": _max_consecutive_equal(_c),
+                        "first_valid_date": str(_fv.date()) if pd.notna(_fv) else None,
+                        "years_history": round((bidx.max() - _fv).days / 365.25, 2) if pd.notna(_fv) else 0.0,
+                        "usable_for_model": True,
+                    }
+                    print(f"[Part 0]   {_t} attempt {_attempt}: recovered {_n_valid} valid rows ✅")
+                    break
+                except Exception as _retry_e:
+                    print(f"[Part 0]   {_t} attempt {_attempt}: {_retry_e}")
+            else:
+                print(f"[Part 0]   {_t}: all retry attempts failed — will remain all-NaN.")
+
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
         raise RuntimeError(
