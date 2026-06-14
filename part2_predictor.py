@@ -2441,19 +2441,27 @@ def _compute_regime_auc(realized: pd.DataFrame, bins: int = 10) -> Dict[str, obj
         #   crisis:   AUC=0.445, z=-1.284, p=0.900 → excluded (AUC < 0.50)
         #   high_vol: AUC=0.547, z=1.578, p=0.057 → INCLUDED (p < 0.10)
         #   risk_on:  AUC=0.491, z=-0.264, p=0.604 → excluded (AUC < 0.50)
-        n1_r = int(y.sum()); n0_r = len(y) - n1_r
-        _auc_sig = False
-        if n1_r >= 5 and n0_r >= 5 and auc > 0.50:
-            _q1 = auc / (2.0 - auc)
-            _q2 = 2.0 * auc**2 / (1.0 + auc)
-            _se_r = float(np.sqrt(
-                (auc * (1 - auc) + (n1_r - 1) * (_q1 - auc**2) + (n0_r - 1) * (_q2 - auc**2))
-                / (n1_r * n0_r)
-            ))
-            if _se_r > 0:
-                _z_r = (auc - 0.5) / _se_r
-                _p_r = 1.0 - float(norm.cdf(_z_r))
-                _auc_sig = bool(_p_r < 0.10)
+        # FIX (F3, Quant-Guild Part 44 Audit): Replace inline Hanley-McNeil SE with
+        # _delong_auc_ztest (exact Mann-Whitney DeLong) for AUC significance gate.
+        #
+        # ROOT CAUSE: The S43 F5 fix upgraded _delong_auc_ztest to exact DeLong SE but
+        # left _compute_regime_auc's inline active_regimes significance test using the
+        # old Hanley-McNeil Q1/Q2 approximation. This created an internal inconsistency:
+        # two SE formulas for the same significance test in the same file.
+        #
+        # Measured discrepancy for high_vol (n1=125, n0=446, AUC=0.5470):
+        #   HM:    SE=0.02959, z=1.589, p=0.056
+        #   DeLong: SE=0.02878, z=1.634, p=0.051
+        # Both p < 0.10 → same governance decision currently.
+        # Using DeLong throughout is correct and consistent with _delong_auc_ztest.
+        #
+        # Fix: call _delong_auc_ztest(y, p) here; classify as active if AUC > 0.50
+        # AND DeLong p_one_sided < 0.10.
+        _delong_result = _delong_auc_ztest(y, p)
+        _auc_sig = bool(
+            auc > 0.50
+            and not _delong_result.get("auc_warning", True)  # auc_warning=False means p < 0.10
+        )
         result[str(regime)] = {
             "n": int(len(sub)),
             "auc": round(auc, 6),
@@ -2490,6 +2498,7 @@ def _compute_regime_auc_rolling(
     window_days: int = 252,
     min_regime_obs: int = 30,
     bins: int = 10,
+    full_period_active_regimes: Optional[set] = None,
 ) -> Dict[str, object]:
     """Compute trailing-window per-regime AUC on the most-recent `window_days` rows.
 
@@ -2518,6 +2527,23 @@ def _compute_regime_auc_rolling(
     Requires at least min_regime_obs rows per regime to compute AUC (avoids noise at low n).
     If a regime has fewer than min_regime_obs rows in the trailing window, it is treated
     as 'insufficient data' (not alarmed but not confidently active either).
+
+    FIX (F1, Quant-Guild Part 44 Audit): The prior code hardcoded
+        _full_period_active = {"calm", "high_vol", "risk_on"}
+    This was calibrated before the S43 F2 DeLong significance gate, which reduced
+    active_regimes to ['high_vol'] only. With the hardcoded set including calm and risk_on,
+    the decay alarm fired spuriously for risk_on (AUC=0.4501) even though risk_on was
+    never in the computed active_regimes. This produced regime_auc_rolling_decay_alarm=True
+    as a false positive, misleading monitoring and Part 7's decay alarm logic.
+    Fix: pass full_period_active_regimes as a parameter from the call site, which
+    receives the dynamically computed set from _compute_regime_auc.
+
+    FIX (F4, Quant-Guild Part 44 Audit): Replace null-hypothesis SE (sqrt(0.25/n))
+    with exact DeLong SE for rolling AUC significance test. Previously this function
+    used a different SE formula than _compute_regime_auc (which after F3 uses DeLong)
+    and _delong_auc_ztest (which uses exact DeLong since S43 F5). Three distinct SE
+    formulas in one file for the same test is a maintenance hazard. All significance
+    tests now use _delong_auc_ztest for consistency.
     """
     if realized.empty:
         return {"regime_auc_rolling_decay_alarm": False, "active_regimes_rolling": []}
@@ -2566,14 +2592,12 @@ def _compute_regime_auc_rolling(
             continue
         from sklearn.metrics import roc_auc_score as _roc_auc
         auc = float(_roc_auc(y, p))
-        # FIX (F2, Quant-Guild Part 41 Audit): Require statistical significance
-        # before qualifying a regime as active (rolling). AUC > 0.50 is necessary
-        # but not sufficient — it must also be statistically significant at p < 0.10
-        # (one-sided z-test, z >= 1.282). This prevents regimes like risk_on
-        # (full-period p=0.102) from receiving BL views based on noisy rolling estimates.
-        # SE(AUC) ≈ sqrt(0.5*0.5/n) under the null; z = (AUC-0.5)/SE.
-        _se_auc = float(np.sqrt(0.25 / max(len(sub), 1)))
-        _z_auc = (auc - 0.5) / _se_auc if _se_auc > 0 else 0.0
+        # FIX (F4, Quant-Guild Part 44 Audit): Use exact DeLong SE for rolling
+        # significance test. Replaces null-hypothesis SE = sqrt(0.25/n) which was
+        # inconsistent with _compute_regime_auc (HM→DeLong after F3) and
+        # _delong_auc_ztest (DeLong since S43 F5). All three uses now use DeLong.
+        _delong_roll = _delong_auc_ztest(y, p)
+        _z_auc = float(_delong_roll.get("z", 0.0) or 0.0)
         result[str(regime)] = {
             "n": int(len(sub)),
             "n_positives": n_positives,
@@ -2594,14 +2618,23 @@ def _compute_regime_auc_rolling(
     result["insufficient_data_regimes"] = sorted(insufficient_regimes)
 
     # Decay alarm: any regime that the FULL-period analysis listed as active
-    # but the rolling window shows < 0.50
-    # The full-period active_regimes are: calm, high_vol, risk_on (confirmed artifact)
-    _full_period_active = {"calm", "high_vol", "risk_on"}
+    # but the rolling window shows < 0.50.
+    # FIX (F1, Quant-Guild Part 44 Audit): Use the DYNAMICALLY COMPUTED
+    # full_period_active_regimes parameter instead of the hardcoded set
+    # {"calm", "high_vol", "risk_on"} which was stale after the S43 F2
+    # DeLong significance gate reduced active_regimes to ['high_vol'] only.
+    # Passing None falls back to an empty set (no decay alarm) rather than
+    # using a hardcoded guess — safe for backward-compatible cold starts.
+    if full_period_active_regimes is None:
+        _fp_active = set()
+    else:
+        _fp_active = set(full_period_active_regimes)
+
     decay_alarm_regimes: List[str] = []
     for regime, stats_dict in result.items():
         if not isinstance(stats_dict, dict):
             continue
-        if regime in _full_period_active and stats_dict.get("auc", 1.0) < 0.50:
+        if regime in _fp_active and stats_dict.get("auc", 1.0) < 0.50:
             decay_alarm_regimes.append(regime)
 
     result["decay_alarm_regimes"] = sorted(decay_alarm_regimes)
@@ -2688,6 +2721,17 @@ def _json_safe(obj):
     non-RFC-8259-safe value with None BEFORE json.dump is called.
     json.dump is then called WITHOUT a custom default= (using the safe
     allow_nan=False mode via the cleaned dict).
+
+    FIX (F2, Quant-Guild Part 44 Audit): Add Python native int handler.
+    Previously Python native int fell through to return str(obj), because
+    only np.integer was explicitly handled. This caused all integer-valued
+    dict entries — rows_rebalance, deploy_downside_count_total, delong n/n1/n0,
+    regime_auc_breakdown n, and 15+ other fields — to be serialized as JSON
+    strings (e.g. "1676" instead of 1676). Any downstream arithmetic on these
+    fields raises TypeError; JavaScript numeric comparisons break silently.
+    Fix: add isinstance(obj, int) and not isinstance(obj, bool) guard before
+    the str() fallback. bool subclasses int in Python, so the bool check
+    must remain first (already covered by the bool/np.bool_ branch above).
     """
     import math
     import numpy as np
@@ -2699,6 +2743,11 @@ def _json_safe(obj):
         return bool(obj)
     if isinstance(obj, np.integer):
         return int(obj)
+    # FIX (F2, Quant-Guild Part 44 Audit): Python native int not previously handled.
+    # bool subclasses int; the bool branch above must appear first so True/False are not
+    # returned as 1/0 integers.
+    if isinstance(obj, int):
+        return obj
     if isinstance(obj, (float, np.floating)):
         v = float(obj)
         return None if (math.isnan(v) or math.isinf(v)) else v
@@ -3296,6 +3345,22 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             f"lift={cls_base_lift:.4f} in (1.01, 1.03] or ECE={cls_base_ece:.4f} in [0.03, 0.05); "
             f"prior run was NORMAL+final_pass=True → staying quality-ok."
         )
+    # FIX (F1, Quant-Guild Part 44 Audit): Pre-compute regime AUC breakdown BEFORE
+    # the summary dict so full_period_active_regimes can be passed to
+    # _compute_regime_auc_rolling. The stale hardcoded {"calm","high_vol","risk_on"}
+    # inside _compute_regime_auc_rolling was calibrated before S43's DeLong gate
+    # reduced active_regimes to ['high_vol'] only, causing a spurious decay alarm
+    # for risk_on (which was never in computed active_regimes).
+    _regime_auc_bd = _compute_regime_auc(realized, bins=cfg.ECE_BINS)
+    _regime_auc_full_active = set(_regime_auc_bd.get("active_regimes", []))
+    _regime_auc_rolling = _compute_regime_auc_rolling(
+        realized,
+        window_days=252,
+        min_regime_obs=30,
+        bins=cfg.ECE_BINS,
+        full_period_active_regimes=_regime_auc_full_active,
+    )
+
     summary = {
         "part": "part2",
         "version": "GEN5_PART2_GEN532_SOFT_CAUTION_OVERLAY",
@@ -3360,19 +3425,18 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "suspicious_perf_flag": suspicious_perf_flag,
         # FIX (Audit 2026-05-10 — Quant-Guild Part 16):
         # Per-regime AUC breakdown (full period, 2020-2026).
-        "regime_auc_breakdown": _compute_regime_auc(realized, bins=cfg.ECE_BINS),
+        # FIX (F1, Quant-Guild Part 44 Audit): pre-computed above as _regime_auc_bd
+        # so active_regimes can be passed to _compute_regime_auc_rolling.
+        "regime_auc_breakdown": _regime_auc_bd,
         # FIX (F1, Quant-Guild Part 40 Audit): rolling per-regime AUC monitor.
         # Full-period AUC masks severe temporal decay: calm 2025=0.257,
         # high_vol 2026=0.333, risk_on 2024=0.417.  The rolling 252-day window
         # gives the CURRENT picture.  regime_auc_rolling_decay_alarm=True means
         # at least one previously-active regime is now anti-predictive on recent
         # data → Part 3 reduces view_confidence; Part 7 excludes from BL gate.
-        "regime_auc_rolling": _compute_regime_auc_rolling(
-            realized,
-            window_days=252,
-            min_regime_obs=30,
-            bins=cfg.ECE_BINS,
-        ),
+        # FIX (F1, Quant-Guild Part 44 Audit): pre-computed above as _regime_auc_rolling
+        # with full_period_active_regimes=_regime_auc_full_active (dynamic, not hardcoded).
+        "regime_auc_rolling": _regime_auc_rolling,
         # FIX (F1, Quant-Guild Part 42 Audit): DeLong AUC monitoring metrics.
         #
         # FINDING: Governance rolling-median AUC (0.537, threshold 0.535) passes by
