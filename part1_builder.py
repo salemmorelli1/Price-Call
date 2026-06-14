@@ -175,6 +175,39 @@ def build_part1_v20(cfg: Part1Config):
     if bad:
         print(f"⚠️ Missingness warning (> {cfg.max_missing_frac:.0%}): {bad}")
 
+    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Substitute fallback prices for non-core
+    # tickers that are all-NaN due to transient download failures (e.g., SQLite lock
+    # contention in yfinance's cache layer). RSP had 100% NaN on 2026-06-13 because
+    # OperationalError('database is locked') during yf.download(threads=True).
+    #
+    # Without this fix: data.dropna(subset=REQ_TICKERS) at line 179 drops ALL rows
+    # (since RSP is in REQ_TICKERS and is all-NaN) → X_live is empty → crash at line 303
+    # with AttributeError: 'NaTType' object has no attribute 'normalize'.
+    #
+    # Fallback policy:
+    #   RSP → VOO: breadth = log(VOO/VOO) = 0 (neutral; RSP ≈ equal-weight S&P 500)
+    #   JNK → IEF: credit_spread = log(IEF/IEF) = 0 (neutral; JNK ≈ high-yield proxy)
+    #   QQQ → VOO: tech_relative = log(VOO/VOO) = 0 (neutral; QQQ ≈ growth proxy)
+    #   ^VIX3M → ^VIX: vix_term = VIX/VIX = 1 (neutral term structure)
+    #
+    # Threshold: > 80% NaN is unambiguous download failure. Partial NaN (e.g. 17% for
+    # JNK which launched in 2007) is expected history-start behavior — not substituted.
+    _NON_CORE_FALLBACKS = [
+        ("RSP",    "VOO",        "breadth features → neutral (log=0)"),
+        ("JNK",    "IEF",        "credit_spread features → neutral (log=0)"),
+        ("QQQ",    "VOO",        "tech_relative features → neutral (log=0)"),
+        ("^VIX3M", "^VIX",      "vix_term → 1 (no term structure signal)"),
+    ]
+    for _tk, _sub, _desc in _NON_CORE_FALLBACKS:
+        if _tk in data.columns and _sub in data.columns:
+            _nan_frac = float(data[_tk].isna().mean())
+            if _nan_frac > 0.80:
+                print(
+                    f"[Part 1] WARNING: {_tk} is {_nan_frac:.1%} NaN (likely download failure). "
+                    f"Substituting {_sub} as fallback. Effect: {_desc}."
+                )
+                data[_tk] = data[_sub].copy()
+
     data = data.ffill(limit=cfg.allow_ffill_limit)
     data = data.dropna(subset=list(REQ_TICKERS)).copy()
 
@@ -249,6 +282,20 @@ def build_part1_v20(cfg: Part1Config):
     X["tech_relative_z21"] = tech_relative_z21
 
     X_live = X.dropna().copy()
+    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Explicit guard for empty X_live.
+    # Without the non-core fallback substitution above, a single all-NaN ticker in
+    # REQ_TICKERS causes X.dropna() to produce 0 rows, and X_live.index.max() returns
+    # NaT. pd.Timestamp(NaT).normalize() then raises AttributeError with no useful
+    # diagnostic. This guard surfaces the actual per-feature NaN rates so the operator
+    # can diagnose which ticker(s) caused the failure.
+    if len(X_live) == 0:
+        _nan_rates = X.isna().mean().sort_values(ascending=False)
+        raise RuntimeError(
+            f"[Part 1] FATAL: X_live is empty after dropna() — all {len(X)} rows have "
+            f"at least one NaN feature. This usually means a ticker download failed.\n"
+            f"Per-feature NaN rates (top 5):\n{_nan_rates.head(5).to_string()}\n"
+            f"Check Part 0 output for download errors (e.g. SQLite lock on yfinance cache)."
+        )
     # NOTE: 14-feature contract is unchanged — same features, different horizon
     if len(X_live.columns) != 14:
         raise RuntimeError(f"Part 1 locked contract expects 14 features, found {len(X_live.columns)}.")
