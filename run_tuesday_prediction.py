@@ -22,6 +22,7 @@ Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -133,6 +134,49 @@ def first_existing(project_dir: Path, candidates: Sequence[str]) -> Optional[Pat
     return None
 
 
+# FIX (Quant-Guild Part 46 Audit): Part 2C must only run when Part 2B recommends it.
+#
+# ROOT CAUSE: the module docstring above has always stated "Part 2C should only be
+# activated after Part 2B's gate_validation_passed = true," and part2c_bnn_sleeve.py
+# itself prints "Gate check: ... bnn_sleeve_recommended = True" — but NEITHER file
+# actually enforces this anywhere in code. The only real gate Part 2C checks is whether
+# PyTorch is importable (HAVE_TORCH); once requirements.txt uncommented torch (audit
+# 2026-05-07, justified at the time by bnn_sleeve_recommended=True), Part 2C began
+# running unconditionally on every cycle, regardless of Part 2B's CURRENT recommendation.
+#
+# CONFIRMED IMPACT (S46 artifact): part2b_xgb_summary.json now reports
+# bnn_sleeve_recommended=False (gate_validation_passed=False: Platt slope degenerate,
+# walk-forward AUC not significant) — the exact opposite of the condition that
+# justified uncommenting torch. With torch now permanently installed and no runtime
+# check, Part 2C would run anyway, burning ~5 minutes of CI wall time per day on a
+# sleeve its own upstream gate says is not currently viable, and writing a fresh
+# part2c_bnn_tape.csv/summary every day that Part 3 then has to separately re-evaluate
+# and discard via its own internal gate (part3_governance.py already does this
+# correctly downstream — this fix prevents the wasted, gate-contradicting run upstream).
+#
+# Fix: read part2b_xgb_summary.json's bnn_sleeve_recommended flag (Part 2B always runs
+# first in DIRECT_PIPELINE_ORDER, so a fresh summary is available by the time PART2C's
+# turn comes up) and skip PART2C when it is not True. Fails safe: any error reading the
+# flag (missing file, bad JSON, missing key) also skips PART2C, since "don't run an
+# unrecommended, optional experimental sleeve" is the safe default in all uncertain cases.
+def _part2b_recommends_bnn(project_dir: Path) -> Tuple[bool, str]:
+    summary_path = (project_dir / "artifacts_part2b_xgb" / "predictions" / "part2b_xgb_summary.json").resolve()
+    if not summary_path.exists():
+        return False, f"part2b_xgb_summary.json not found at {summary_path}"
+    try:
+        with open(summary_path, "r", encoding="utf-8") as f:
+            summary = json.load(f)
+    except Exception as exc:
+        return False, f"could not parse {summary_path}: {exc}"
+    recommended = bool(summary.get("bnn_sleeve_recommended", False))
+    gate_ok = bool(summary.get("gate_validation_passed", False))
+    reason = (
+        f"bnn_sleeve_recommended={recommended}, gate_validation_passed={gate_ok} "
+        f"(source={summary_path})"
+    )
+    return recommended, reason
+
+
 def check_files(project_dir: Path) -> Tuple[List[str], List[Tuple[str, Path, bool]]]:
     audit: List[Tuple[str, Path, bool]] = []
     missing: List[str] = []
@@ -229,6 +273,16 @@ def run_direct_pipeline(project_dir: Path) -> int:
             if not script.exists():
                 print(f"\n[INFO] {label} ({script_name}) not found — skipping.")
                 continue
+            # FIX (Quant-Guild Part 46 Audit): only launch Part 2C when Part 2B's
+            # bnn_sleeve_recommended flag is True. Part 2B always runs first in
+            # DIRECT_PIPELINE_ORDER, so its fresh summary is available here.
+            if label == "PART2C":
+                recommended, reason = _part2b_recommends_bnn(project_dir)
+                if not recommended:
+                    print(f"\n[INFO] {label} ({script_name}) skipped — Part 2B does not "
+                          f"currently recommend the BNN sleeve ({reason}).")
+                    continue
+                print(f"\n[INFO] {label} activation gate passed ({reason}).")
             rc_exp = run_subprocess([sys.executable, str(script)], project_dir, extra_env=common_env)
             if rc_exp != 0:
                 print(f"\n[WARN] {label} exited with code {rc_exp} — continuing (experimental sleeve).")
