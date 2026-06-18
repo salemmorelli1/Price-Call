@@ -379,6 +379,46 @@ class Part2Gen53Config:
     # (CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED = -1.50) — unchanged from S43.
     CONDITIONAL_ACTIVE_IR_TFLOOR: float = -1.645     # FIX F1/S45: t-stat floor for final_pass gate
 
+    # FIX (F1, Quant-Guild Part 46 Audit): CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED (-1.50)
+    # is THE SAME DISEASE THE S45 AUDIT FIXED, recurring in a different gate.
+    #
+    # ROOT CAUSE: _should_fail_closed() compares the raw annualized conditional_active_ir
+    # against a FIXED threshold of -1.50. This threshold is not sample-size invariant —
+    # exactly the defect S45 (F1) identified and fixed in the final_pass gate, but the
+    # S45 fix only replaced the final_pass usage. The emergency _should_fail_closed floor
+    # was deliberately left on the old annualized-IR scale "for catastrophic cases," on
+    # the (incorrect) assumption that a harder fixed threshold would be safe regardless
+    # of n. It is not: SE(IR_annual) = sqrt(252/n) grows without bound as n shrinks, so
+    # ANY fixed IR threshold has an n-dependent false-alarm rate.
+    #
+    # MEASURED IMPACT (S46, n=11 deploy events, recomputed independently from
+    # g532_final_consensus_tape.csv and exactly matching the artifact):
+    #   conditional_active_ir = -2.0238   (FAILS the -1.50 floor -> fail_closed=True)
+    #   t_mean                = -0.4228   (only 0.42 SE from zero -- not significant)
+    #   p_mean (H1: mean>0)   = 0.6593    (no evidence of a real negative defense return)
+    #   SE_ann                = 4.7863
+    #   P(false alarm | true IR=0, threshold=-1.50, n=11) = Phi(-1.50/4.7863) = 37.7%
+    #
+    # A 37.7% false-alarm rate is barely better than the 42.1% rate S45 fixed in the
+    # OTHER gate. The system swapped one mis-calibrated fixed-IR gate for another and
+    # locked back into FAIL_CLOSED_NEUTRAL on pure sampling noise, even though final_pass
+    # correctly evaluated to True via the S45 t-floor fix.
+    #
+    # FIX: gate on the t-statistic of the mean daily defense return (sample-size
+    # invariant), exactly as done for the final_pass gate, but at a STRICTER one-sided
+    # significance level appropriate for an emergency/catastrophic-failure gate.
+    # CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR = -2.326 corresponds to a one-sided 1%
+    # test (Phi^-1(0.01) = -2.326), versus the 5% test (-1.645) used for the routine
+    # final_pass gate. This preserves the original design intent -- the fail-closed
+    # emergency gate should be harder to trip than the routine gate -- using a
+    # statistically principled ratio instead of an arbitrary fixed-IR multiplier that
+    # silently drifts in strictness as n changes.
+    #
+    # Validation: t_mean = -0.4228 >= -2.326 -> emergency gate does NOT trigger.
+    # The raw annualized conditional_active_ir field is retained in the summary dict
+    # for monitoring/display purposes; it is no longer used as a gating value anywhere.
+    CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR: float = -2.326  # FIX F1/S46: t-stat floor, 1% one-sided
+
     PROB_SHRINK_MIN: float = 0.42
     PROB_SHRINK_MAX: float = 0.80
     SIGNAL_LOOKBACK: int = 52
@@ -2315,14 +2355,24 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
     # conditional_active_ir (IR on deployed rows only) with a harder floor of -1.50.
     # This blocks deployment only if the defense events are severely directionally
     # wrong, rather than blocking due to the structurally near-zero full-series IR.
-    cond_ir = summary.get("conditional_active_ir", np.nan)
-    if not isinstance(cond_ir, float):
+    #
+    # FIX (F1, Quant-Guild Part 46 Audit): the raw annualized-IR floor below was
+    # found to have a 37.7% false-alarm rate at the current n=11 deploy-event count
+    # (Phi(-1.50/sqrt(252/11)) = Phi(-0.3134) = 0.377) -- essentially the same disease
+    # the S45 audit fixed in the final_pass gate. Gating now uses the t-statistic of
+    # the mean daily defense return (conditional_active_ir_tmean), which is invariant
+    # to n, at a stricter 1% one-sided floor (CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR)
+    # appropriate for an emergency/catastrophic-failure gate. NaN (insufficient n)
+    # passes the gate, deferring to the deploy-count gate elsewhere, exactly mirroring
+    # the existing final_pass t-floor semantics.
+    cond_ir_tmean = summary.get("conditional_active_ir_tmean", np.nan)
+    if not isinstance(cond_ir_tmean, float):
         try:
-            cond_ir = float(cond_ir)
+            cond_ir_tmean = float(cond_ir_tmean)
         except Exception:
-            cond_ir = np.nan
-    cond_ir_floor = float(summary.get("conditional_active_ir_floor_fail_closed",
-                                       cfg.CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED))
+            cond_ir_tmean = np.nan
+    cond_ir_tfloor = float(summary.get("conditional_active_ir_failclosed_tfloor",
+                                        cfg.CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR))
     return bool(
         # FIX (F2, Audit 2026-05-09 — Quant-Guild Part 15):
         # FAIL_CLOSED_ON_FALSE_PASS condition REMOVED.
@@ -2342,7 +2392,9 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
         # when calibration was GOOD (e.g. 98.8% > 85%). The intent is to fail closed
         # when calibration is too POOR — i.e., when the rate is too LOW.
         or (np.isfinite(summary.get("calibration_gate_on_rate", np.nan)) and float(summary.get("calibration_gate_on_rate")) < cal_limit)
-        or (np.isfinite(cond_ir) and cond_ir < cond_ir_floor)
+        # FIX (F1, Quant-Guild Part 46 Audit): t-stat floor replaces the raw annualized
+        # IR floor (see CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR comment for derivation).
+        or (np.isfinite(cond_ir_tmean) and cond_ir_tmean < cond_ir_tfloor)
     )
 
 
@@ -3546,6 +3598,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "conditional_active_ir": conditional_active_ir,
         "conditional_active_ir_min": float(cfg.CONDITIONAL_ACTIVE_IR_MIN),
         "conditional_active_ir_tfloor": float(cfg.CONDITIONAL_ACTIVE_IR_TFLOOR),  # FIX F1/S45: t-stat floor for final_pass gate
+        "conditional_active_ir_failclosed_tfloor": float(cfg.CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR),  # FIX F1/S46: t-stat floor for _should_fail_closed emergency gate
         "conditional_active_ir_min_n": int(cfg.CONDITIONAL_ACTIVE_IR_MIN_N),  # FIX: minimum event count before gate activates
         "conditional_active_ir_floor_fail_closed": float(cfg.CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED),
         # FIX (F1, Quant-Guild Part 43 Audit): monitoring diagnostics for the conditional IR gate.
@@ -3617,8 +3670,11 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             #   t_mean = mean_ret / (std / sqrt(n)) — proper one-sided 5% t-test.
             #   NaN (n < MIN_N) → gate passes (insufficient data, defer to deploy_gate).
             #
-            # Annualized IR is retained in _should_fail_closed as emergency FAIL_CLOSED trigger
-            # at the harder floor CONDITIONAL_ACTIVE_IR_FLOOR_FAIL_CLOSED = -1.50.
+            # Annualized IR is retained in the summary purely for monitoring/display.
+            # FIX (F1, Quant-Guild Part 46 Audit): _should_fail_closed() no longer gates
+            # on the raw annualized IR floor (it had the same n-dependence problem this
+            # t-floor fixes here — see CONDITIONAL_ACTIVE_IR_FAILCLOSED_TFLOOR comment).
+            # It now uses a stricter (1% one-sided) t-stat floor on the same t_mean value.
             (not np.isfinite(_cond_ir_diag.get("conditional_active_ir_tmean", float("nan")))
              or float(_cond_ir_diag.get("conditional_active_ir_tmean", float("nan")))
                 >= float(cfg.CONDITIONAL_ACTIVE_IR_TFLOOR)) and
