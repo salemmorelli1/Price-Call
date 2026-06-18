@@ -1387,6 +1387,55 @@ def main(cfg: Part3Config = CFG) -> None:
         )
         publish_mode = "FAIL_CLOSED_NEUTRAL"
 
+    # FIX (Quant-Guild Part 46 Audit): apply the authoritative governance decision to
+    # the EXECUTABLE allocation weights, not just to the publish_mode/deployment_mode
+    # labels.
+    #
+    # ROOT CAUSE: part7_weights (loaded above at L1354, BEFORE publish_mode is
+    # finalized) was passed unchanged into _build_fusion_allocations() regardless of
+    # the publish_mode determined here. Part 7's "base" weights may reflect its
+    # soft-clearance pass-through (raw_val_auc_median >= 0.52 lets the BL optimizer
+    # run even while Part 2's publish_mode = FAIL_CLOSED_NEUTRAL) — those weights are
+    # a genuine model view for diagnostic purposes, but were never meant to be the
+    # EXECUTABLE allocation once governance has determined FAIL_CLOSED_NEUTRAL.
+    #
+    # A parallel fix already exists below (L1921-1923 in the current_target_weights.json
+    # sync block, F3/Part 34 Audit) that overwrites w_target_voo/w_target_ief to 60/40
+    # in that one file. But v1_fusion_allocations.csv — built by _build_fusion_allocations()
+    # using the UNCORRECTED part7_weights — was never covered by that fix, and it is the
+    # file Part 8's load_part7_instructions() PREFERS over current_target_weights.json
+    # (it checks v1_fusion_allocations.csv first and only falls back to
+    # current_target_weights.json if that file is missing). It is also rendered directly
+    # on the public GitHub Pages dashboard ("Latest Fusion Allocations" panel / allocTape).
+    #
+    # CONFIRMED IMPACT (S46 artifact): with publish_mode=FAIL_CLOSED_NEUTRAL,
+    # current_target_weights.json correctly showed w_target_voo=0.60 (the F3/Part-34 fix
+    # working as intended), while v1_fusion_allocations.csv for the SAME date showed
+    # w_target_voo=0.650750 — Part 7's raw soft-clearance BL output. Two artifacts
+    # written in the same Part 3 run contradicted each other and the stated governance
+    # state, and Part 8 silently consumed the wrong (un-overridden) one every time.
+    #
+    # FIX: derive a separate, governance-corrected weight pair used ONLY for
+    # _build_fusion_allocations(). part7_voo/part7_ief themselves are left untouched —
+    # they remain the raw Part 7 diagnostic values surfaced in part3_summary.json as
+    # part7_voo_base/part7_ief_base, which is intentionally informational (it shows
+    # what Part 7's optimizer actually proposed, for monitoring/audit purposes).
+    fusion_base_weights = part7_weights
+    if publish_mode == "FAIL_CLOSED_NEUTRAL" and part7_weights is not None:
+        _needs_override = (
+            abs(part7_weights[0] - CFG.default_voo_weight) > 1e-9
+            or abs(part7_weights[1] - CFG.default_ief_weight) > 1e-9
+        )
+        if _needs_override:
+            print(
+                f"[Part 3] FAIL_CLOSED_NEUTRAL: fusion allocation weights overridden for "
+                f"v1_fusion_allocations.csv consistency — "
+                f"VOO {part7_weights[0]:.4f}->{CFG.default_voo_weight:.4f}, "
+                f"IEF {part7_weights[1]:.4f}->{CFG.default_ief_weight:.4f}. "
+                f"(Part 7's raw proposal remains visible in part7_voo_base/part7_ief_base.)"
+            )
+        fusion_base_weights = (float(CFG.default_voo_weight), float(CFG.default_ief_weight))
+
     defense_row = _last_valid_row(defense_df)
     decision_date = pd.to_datetime(_row_value(defense_row, ["Date", "decision_date", "asof_date"]), errors="coerce")
     if pd.isna(decision_date):
@@ -1685,7 +1734,10 @@ def main(cfg: Part3Config = CFG) -> None:
         publish_mode_override=publish_mode,
         final_pass_override=final_pass,
     )
-    alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, part7_weights)
+    # FIX (Quant-Guild Part 46 Audit): use fusion_base_weights (governance-corrected
+    # above), not the raw part7_weights, so v1_fusion_allocations.csv is consistent
+    # with publish_mode/deployment_mode whenever FAIL_CLOSED_NEUTRAL is in effect.
+    alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, fusion_base_weights)
 
     out_dir = root / cfg.out_dir_relative
     predlog_dir = root / cfg.predlog_dir_relative
