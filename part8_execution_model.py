@@ -180,6 +180,12 @@ class Part8Config:
     # Synchronized to 0.005 to match Part 7.
     min_rebalance_threshold: float = 0.005  # FIX: was 0.02 — synchronized with Part 7
 
+    # FIX (Quant-Guild Part 46 Audit): safe-default allocation used by the independent
+    # fail-closed override below. Matches Part 2's BASE_WEIGHT_VOO/IEF and Part 7's/
+    # Part 3's CFG.default_voo_weight/default_ief_weight (0.60 / 0.40 system-wide).
+    default_voo_weight: float = 0.60
+    default_ief_weight: float = 0.40
+
     # Annual TC drag warning threshold.
     max_annual_tc_drag_bps: float = 50.0
 
@@ -1102,6 +1108,58 @@ def main() -> int:
     w_voo = float(latest.get("w_target_voo", latest.get("VOO", 0.60)))
     w_ief = float(latest.get("w_target_ief", latest.get("IEF", 0.40)))
 
+    # FIX (Quant-Guild Part 46 Audit): independent fail-closed governance override.
+    #
+    # ROOT CAUSE: load_part7_instructions() prefers artifacts_part3_v1/v1_fusion_allocations.csv
+    # over Part 7's current_target_weights.json. That fusion file is built from Part 7's
+    # RAW base weights, which may reflect Part 7's "soft-clearance" BL pass-through
+    # (e.g. 0.6507/0.3493) even while governance is FAIL_CLOSED_NEUTRAL — a sibling fix in
+    # part3_governance.py (same audit) now corrects that file going forward. But Part 8
+    # runs BEFORE Part 3 in the canonical pipeline order (Part7 -> Part8 -> Part3), so even
+    # after that fix lands, Part 8 would only ever see YESTERDAY's corrected fusion file on
+    # any given day, not today's. Result: example_order_instructions.json and
+    # execution_cost_tape.csv were computed against an allocation that governance was about
+    # to veto and replace with the safe 60/40 default — a real risk if a human operator acts
+    # on these instructions (they include explicit execution windows and broker-style trade
+    # schedules), and a confirmed source of contradictory numbers between the GitHub Pages
+    # dashboard's "Portfolio Snapshot" panel (current_target_weights.json, correctly 60/40)
+    # and "Latest Fusion Allocations" panel (v1_fusion_allocations.csv, incorrectly 65/35)
+    # for the same decision date.
+    #
+    # FIX: mirror Part 7's defense-in-depth pattern (part7_portfolio_construction.py,
+    # fail_closed_override) by checking Part 2's summary directly — the earliest and most
+    # reliable governance signal available by the time Part 8 runs in the pipeline — and
+    # override to the safe 60/40 default whenever Part 2 has not unambiguously cleared.
+    # Unlike Part 7, Part 8 deliberately does NOT apply Part 7's soft-clearance carve-out:
+    # that carve-out exists so Part 7's diagnostic tape still shows a meaningful
+    # regime-conditional view, not so a downstream cost/order-instruction layer treats it
+    # as capital that will actually be deployed.
+    _p2_gov_path = os.path.join(cfg.part2_dir, "part2_g532_summary.json")
+    _p2_publish_mode = "UNKNOWN"
+    _p2_final_pass = False
+    if os.path.exists(_p2_gov_path):
+        try:
+            with open(_p2_gov_path, "r", encoding="utf-8") as _p2_f:
+                _p2_sum = json.load(_p2_f)
+            _p2_publish_mode = str(_p2_sum.get("publish_mode", "UNKNOWN")).strip().upper()
+            _p2_final_pass = bool(_p2_sum.get("final_pass", False))
+        except Exception as _p2_exc:
+            print(f"[Part 8] WARNING: could not read Part 2 summary for governance check: {_p2_exc}")
+    else:
+        print(f"[Part 8] WARNING: Part 2 summary not found at {_p2_gov_path} — cannot verify governance state.")
+    _fail_closed_modes = {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"}
+    _p8_governance_override = (_p2_publish_mode in _fail_closed_modes) or (not _p2_final_pass)
+    if _p8_governance_override:
+        if abs(w_voo - cfg.default_voo_weight) > 1e-9 or abs(w_ief - cfg.default_ief_weight) > 1e-9:
+            print(
+                f"[Part 8] Governance override: Part 2 publish_mode={_p2_publish_mode}, "
+                f"final_pass={_p2_final_pass} -> using safe default weights "
+                f"VOO={cfg.default_voo_weight:.4f}/IEF={cfg.default_ief_weight:.4f} "
+                f"instead of loaded VOO={w_voo:.4f}/IEF={w_ief:.4f} "
+                f"(source={latest.get('source', 'part7_current_target_weights')})."
+            )
+        w_voo, w_ief = float(cfg.default_voo_weight), float(cfg.default_ief_weight)
+
     # prev_weights: use second-to-last row of Part 7 tape (yesterday's model
     # target).  The fallback of {VOO: 0.60, IEF: 0.40} fires only on the very
     # first run before the tape has ≥ 2 rows; in all live runs the tape row
@@ -1195,6 +1253,12 @@ def main() -> int:
         "annual_drag_summary": annual_drag,
         "min_rebalance_threshold": cfg.min_rebalance_threshold,
         "max_annual_tc_drag_bps": cfg.max_annual_tc_drag_bps,
+        # FIX (Quant-Guild Part 46 Audit): expose the governance check inputs/outcome
+        # so any consumer can see whether the weights above were overridden and why.
+        "governance_check_source": _p2_gov_path,
+        "governance_p2_publish_mode": _p2_publish_mode,
+        "governance_p2_final_pass": _p2_final_pass,
+        "governance_override_applied": bool(_p8_governance_override),
     }
     with open(os.path.join(cfg.out_dir, "part8_meta.json"), "w") as f:
         json.dump(meta, f, indent=2, default=str)
