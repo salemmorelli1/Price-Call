@@ -1204,9 +1204,44 @@ def _fit_regime_platt_scaling(
         y_all = merged["y_rel_tail_voo_vs_ief"].values
         lr_global = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
         lr_global.fit(_logit(p_all).reshape(-1, 1), y_all)
-        params["_global"] = (float(lr_global.coef_[0][0]), float(lr_global.intercept_[0]))
+        _a_global = float(lr_global.coef_[0][0])
+        _b_global = float(lr_global.intercept_[0])
+        params["_global"] = (_a_global, _b_global)
         params_n["_global"] = len(merged)
-        print(f"[Part 3] Platt(_global    ): a={params['_global'][0]:.4f}  b={params['_global'][1]:.4f}  n={len(merged)}")
+
+        # FIX (F1, Quant-Guild Part 47 Audit): _global was fit and stored
+        # unconditionally, with NO check against _PLATT_MIN_SLOPE — even though
+        # every regime-specific fit above is rejected (a < 0.25) and routed to
+        # THIS fallback precisely because it's supposed to be the safe, stable
+        # alternative. There is no further fallback beyond _global; if _global
+        # itself degenerates, nothing in the codebase ever catches it.
+        #
+        # CONFIRMED (S47 artifact, 2026-06-18): _global a=0.230365 < 0.25 floor.
+        # crisis and risk_on are both currently excluded as regime-specific fits
+        # (platt_inverted_regimes_excluded=["crisis","risk_on"]), and risk_on is
+        # TODAY's live regime — meaning every live row was silently being passed
+        # through a degenerate calibrator with no flag raised anywhere. Part 2B's
+        # analogous single global Platt slope IS gated (platt_degenerate flag,
+        # gates bnn_sleeve_recommended); Part 3's _global had no equivalent.
+        #
+        # Fix: flag _global the same way a regime-specific fit would be flagged.
+        # The flag is surfaced via params["__global_degenerate__"] (read by
+        # _apply_regime_platt below and exposed in the persisted JSON via
+        # _persist_platt_params) rather than discarding _global outright, since
+        # discarding it would leave literally nothing to fall back to — the
+        # transparent pass-through (return p_cal unchanged) is applied at the
+        # point of use instead, matching the existing "params empty" behavior.
+        _global_degenerate = _a_global < _PLATT_MIN_SLOPE
+        if _global_degenerate:
+            _reason = "ANTI-PREDICTIVE (a<0)" if _a_global < 0 else f"DEGENERATE SLOPE (a={_a_global:.4f} < {_PLATT_MIN_SLOPE})"
+            print(
+                f"[Part 3] Platt(_global    ): a={_a_global:.4f}  b={_b_global:.4f}  n={len(merged)} "
+                f"-- {_reason}: _global fallback is ALSO degenerate. No further fallback exists; "
+                f"any regime routed to _global will receive UNCALIBRATED p_final_cal this run."
+            )
+        else:
+            print(f"[Part 3] Platt(_global    ): a={_a_global:.4f}  b={_b_global:.4f}  n={len(merged)}")
+        params["__global_degenerate__"] = _global_degenerate  # type: ignore[assignment]
 
         # Attach sample sizes so _persist_platt_params can write them
         # Store as a special key (not a regime) — _persist_platt_params reads it
@@ -1243,6 +1278,16 @@ def _persist_platt_params(params: Dict[str, Tuple[float, float]], out_dir: Path)
     if "__sample_sizes__" in params:
         _sample_sizes = params.get("__sample_sizes__", {})  # type: ignore[assignment]
 
+    # FIX (F1, Quant-Guild Part 47 Audit): surface whether _global itself fell
+    # below _PLATT_MIN_SLOPE this run. Previously this state was invisible in
+    # the persisted artifact — an operator inspecting part3_platt_params.json
+    # would see _global's (a, b) with no indication it was degenerate, since
+    # the same 0.25 floor used to exclude regime-specific fits was never
+    # checked against _global. Written into "_meta" so the dashboard/audit
+    # trail can flag it without affecting the {regime: {a,b,n}} contract any
+    # downstream consumer of part3_platt_params.json already relies on.
+    _global_degenerate = bool(params.get("__global_degenerate__", False))  # type: ignore[arg-type]
+
     payload: Dict[str, object] = {}
     for regime, ab in params.items():
         if regime.startswith("__") or not isinstance(ab, tuple):
@@ -1252,8 +1297,14 @@ def _persist_platt_params(params: Dict[str, Tuple[float, float]], out_dir: Path)
         entry: Dict[str, object] = {"a": round(float(a), 6), "b": round(float(b), 6)}
         if _n is not None:
             entry["n"] = int(_n)
+        if regime == "_global":
+            entry["degenerate"] = _global_degenerate
         payload[regime] = entry
-    payload["_meta"] = {"built_at": datetime.now(timezone.utc).isoformat()}
+    payload["_meta"] = {
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "global_degenerate": _global_degenerate,
+        "platt_min_slope": _PLATT_MIN_SLOPE,
+    }
     try:
         out_path = out_dir / "part3_platt_params.json"
         with open(out_path, "w", encoding="utf-8") as f:
@@ -1271,15 +1322,32 @@ def _apply_regime_platt(
     """Apply regime-conditional Platt scaling to a single probability.
 
     Returns None if p_cal is None or params is empty (transparent fallback).
+
+    FIX (F1, Quant-Guild Part 47 Audit): regime-specific fits below
+    _PLATT_MIN_SLOPE are already excluded upstream in _fit_regime_platt_scaling
+    (never stored under their own regime key), so reaching this function with
+    regime_label present in params already guarantees a >= _PLATT_MIN_SLOPE for
+    THAT branch. The gap was _global: it is unconditionally stored regardless
+    of its own slope, so any regime that falls through to it (today: crisis,
+    risk_on — see platt_inverted_regimes_excluded) could silently receive a
+    degenerate transform with zero discriminative value, exactly as the
+    excluded regime-specific fits would have. _fit_regime_platt_scaling now
+    stamps params["__global_degenerate__"] = True when _global itself is
+    degenerate; this function checks that flag on the _global branch only
+    (other regimes already passed their own floor check upstream) and falls
+    through to transparent pass-through (p_cal unchanged) in that case —
+    the identical safe behavior already used when params is empty.
     """
     if not HAVE_PLATT or not params or p_cal is None or not math.isfinite(p_cal):
         return p_cal
     p_clipped = max(0.01, min(0.99, float(p_cal)))
     logit_p = float(_logit(p_clipped))
-    if regime_label in params:
-        a, b = params[regime_label]
-    elif "_global" in params:
-        a, b = params["_global"]
+    if regime_label in params and isinstance(params.get(regime_label), tuple):
+        a, b = params[regime_label]  # type: ignore[misc]
+    elif "_global" in params and isinstance(params.get("_global"), tuple):
+        if bool(params.get("__global_degenerate__", False)):  # type: ignore[arg-type]
+            return p_cal
+        a, b = params["_global"]  # type: ignore[misc]
     else:
         return p_cal
     return float(_expit(a * logit_p + b))
@@ -1915,6 +1983,14 @@ def main(cfg: Part3Config = CFG) -> None:
             regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
             if regime not in platt_params and regime not in [k for k in platt_params if k.startswith("_")]
         ]),
+        # FIX (F1, Quant-Guild Part 47 Audit): surface whether the _global Platt
+        # fallback itself fell below _PLATT_MIN_SLOPE this run. When True, any
+        # regime listed in platt_inverted_regimes_excluded above received
+        # UNCALIBRATED p_final_cal (transparent pass-through) rather than a
+        # degenerate transform, per the _apply_regime_platt fix. Direct summary
+        # visibility avoids requiring a separate read of part3_platt_params.json
+        # to detect this state.
+        "platt_global_degenerate": bool(platt_params.get("__global_degenerate__", False)),
         # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
         "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
     }
