@@ -1,0 +1,87 @@
+{
+  "part": "PART2B_XGB_ENSEMBLE",
+  "version": "V4_FOLD_ADJACENT_PLATT",
+  "n_ensemble": 10,
+  "n_features": 14,
+  "holdout_start": "2020-01-01",
+  "n_training_rows": 2394,
+  "n_holdout_rows": 1685,
+  "holdout_auc": 0.572977761485826,
+  "holdout_brier": 0.16097900381392938,
+  "holdout_ece": 0.009168387615585385,
+  "holdout_ece_raw": 0.11393086934125032,
+  "holdout_ece_high_spread": 0.04148875716559203,
+  "holdout_ece_low_spread": 0.02609420940662839,
+  "holdout_decision_utility": 0.018869851779381563,
+  "walkforward_auc_pooled": 0.5133965075330437,
+  "walkforward_auc_pooled_tstat": 0.8506652911681764,
+  "walkforward_auc_pooled_pval": 0.20517515008405804,
+  "walkforward_auc_significant": false,
+  "platt_degenerate": true,
+  "walkforward_mean_auc": 0.5133965075330437,
+  "walkforward_mean_brier": 0.16778211508478438,
+  "walkforward_mean_ece": 0.04593864519596775,
+  "walkforward_mean_ece_raw": 0.04593864519596775,
+  "walkforward_ece_gap": 0.032195319920688165,
+  "walkforward_spread_corr_vs_caution": 0.024645319459243618,
+  "n_walkforward_eval_rows": 3528,
+  "row_level_mean_spread": 0.1334646607668914,
+  "epist_overlay_threshold_75pct": 0.15874716639518738,
+  "uncertainty_signal_validated": true,
+  "holdout_ece_platt_contamination_warning": true,
+  "holdout_ece_wf_ece_ratio": 5.010547887163543,
+  "gate_validation_passed": false,
+  "walkforward_calibration_warning": false,
+  "walkforward_calibration_warning_threshold": 0.1,
+  "live_p_xgb_ens_mean": 0.21717036292270908,
+  "live_p_xgb_ens_mean_raw": 0.42788830399513245,
+  "live_p_xgb_ens_std": 0.1999155879020691,
+  "live_xgb_overlay_on": 1,
+  "xgb_single_auc": 0.5115360110319788,
+  "xgb_single_ece": 0.01739727887106198,
+  "platt_global_a": 0.060151510270930665,
+  "platt_global_b": -1.264760633904701,
+  "platt_n_oos_rows": 3528,
+  "bnn_sleeve_recommended": false,
+  "platt_calibration_applied": true,
+  "platt_calibration_mode": "fold_adjacent",
+  "regime_auc_breakdown": {
+    "calm": {
+      "n": 694,
+      "auc": 0.528067,
+      "base_rate": 0.158501,
+      "brier": 0.135813,
+      "ece": 0.050796
+    },
+    "crisis": {
+      "n": 261,
+      "auc": 0.640285,
+      "base_rate": 0.275862,
+      "brier": 0.202593,
+      "ece": 0.06761
+    },
+    "high_vol": {
+      "n": 685,
+      "auc": 0.559733,
+      "base_rate": 0.223358,
+      "brier": 0.173146,
+      "ece": 0.012652
+    },
+    "risk_on": {
+      "n": 45,
+      "auc": 0.358974,
+      "base_rate": 0.133333,
+      "brier": 0.122527,
+      "ece": 0.086066
+    },
+    "active_regimes": [
+      "calm",
+      "crisis",
+      "high_vol"
+    ],
+    "passive_regimes": [
+      "risk_on"
+    ]
+  },
+  "built_at": "2026-06-19T18:33:21.374267+00:00"
+}
