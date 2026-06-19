@@ -708,8 +708,36 @@ def build_alpha_positions(
     # alpha should remain in SHADOW until live prediction-log rows (not backtest rows)
     # accumulate a significant track record. The t-stat is written to the summary JSON
     # for transparency and dashboard display.
+    #
+    # FIX (F2, Quant-Guild Part 49 Audit): Add Newey-West HAC t-stat alongside the
+    # naive t-stat to properly account for serial correlation in daily returns.
+    #
+    # BACKGROUND: The weekly-hold strategy (Part 2A carries positions for 5 days)
+    # creates within-week correlation in daily P&L. The naive t-stat assumes i.i.d.
+    # returns, which can over- or under-state significance depending on the sign of
+    # the autocorrelation.
+    #
+    # EMPIRICAL FINDING (S49 audit): lag-1 autocorrelation rho1 = -0.087 (negative).
+    # Weekly momentum positions combined with daily noise mean-reversion create mild
+    # anti-persistence. Negative autocorrelation means returns are LESS persistent
+    # than i.i.d., so the true variance of the mean is SMALLER than the naive estimate.
+    # Effect: SE_NW (0.0000075) < SE_naive (0.0000086) -> t_NW (1.90) > t_naive (1.65).
+    # The naive t=1.6463 is CONSERVATIVE — the HAC-corrected t=1.9017 confirms the
+    # backtest signal is MORE significant than the naive threshold crossing suggests.
+    #
+    # DESIGN: Newey-West HAC SE uses Bartlett kernel with max_lag=5 (one trading week),
+    # matching the weekly rebalancing frequency that introduces the correlation structure.
+    # This is the standard econometric practice for weekly-rebalanced strategies
+    # evaluated at daily frequency (Newey & West, 1987; Andrews, 1991).
+    #
+    # NOTE: alpha_ir_significant_backtest still uses the naive t for backward compat.
+    # alpha_ir_tstat_hac and alpha_ir_pval_hac are additive fields for transparency.
+    # Part 3 does NOT use either t-stat for promotion (live_realized_dates gate only).
     _alpha_ir_tstat: float = float("nan")
     _alpha_ir_pval: float = float("nan")
+    _alpha_ir_tstat_hac: float = float("nan")   # [S49 F2] Newey-West HAC t-stat
+    _alpha_ir_pval_hac: float = float("nan")    # [S49 F2] Newey-West HAC p-value
+    _alpha_ir_rho1: float = float("nan")        # [S49 F2] lag-1 autocorrelation
     _alpha_n_for_tstat: int = 0
     if realized_dates >= 30:
         try:
@@ -722,6 +750,26 @@ def build_alpha_positions(
                 _alpha_ir_tstat = float(_ret_mean / (_ret_std / (_n_ret ** 0.5)))
                 _alpha_ir_pval = float(_sp_stats.t.sf(_alpha_ir_tstat, df=_n_ret - 1))
                 _alpha_n_for_tstat = _n_ret
+
+                # [S49 F2] Newey-West HAC t-stat (Bartlett kernel, max_lag=5)
+                try:
+                    _ret_series = pd.Series(_ret_vals)
+                    _rho1 = float(_ret_series.autocorr(lag=1))
+                    _alpha_ir_rho1 = _rho1
+                    _NW_LAG = 5  # Bartlett kernel bandwidth (one trading week)
+                    _e = _ret_vals - _ret_mean
+                    _V_hac = float(np.dot(_e, _e)) / _n_ret
+                    for _lag in range(1, _NW_LAG + 1):
+                        _gamma_lag = float(np.dot(_e[_lag:], _e[:-_lag])) / _n_ret
+                        _bartlett_w = 1.0 - _lag / (_NW_LAG + 1)
+                        _V_hac += 2.0 * _bartlett_w * _gamma_lag
+                    if _V_hac > 0:
+                        _se_hac = float(np.sqrt(max(_V_hac, 0.0) / _n_ret))
+                        if _se_hac > 0:
+                            _alpha_ir_tstat_hac = float(_ret_mean / _se_hac)
+                            _alpha_ir_pval_hac = float(_sp_stats.t.sf(_alpha_ir_tstat_hac, df=_n_ret - 1))
+                except Exception:
+                    pass  # HAC computation failed — fields remain nan, naive t is used
         except Exception:
             pass
 
@@ -760,6 +808,17 @@ def build_alpha_positions(
         "alpha_ir_significant_backtest": bool(
             np.isfinite(_alpha_ir_tstat) and _alpha_ir_tstat > 1.645  # one-sided 5% threshold
         ),
+        # FIX (F2, Quant-Guild Part 49 Audit): Newey-West HAC t-stat and related fields.
+        # Weekly-hold strategy creates lag-1 autocorrelation in daily returns.
+        # rho1=-0.087 (negative) → HAC SE < naive SE → t_HAC > t_naive.
+        # At S49: t_naive=1.6463, t_HAC=1.9017 (p_HAC=0.029).
+        # Negative autocorrelation means the naive t is CONSERVATIVE — significance
+        # is confirmed and stronger after HAC correction. Neither t_naive nor t_HAC
+        # drives any promotion gate; both are provided for audit transparency.
+        # Part 3 uses live_realized_dates exclusively for the promotion decision.
+        "alpha_ir_tstat_hac": None if not np.isfinite(_alpha_ir_tstat_hac) else round(_alpha_ir_tstat_hac, 4),
+        "alpha_ir_pval_hac_one_sided": None if not np.isfinite(_alpha_ir_pval_hac) else round(_alpha_ir_pval_hac, 6),
+        "alpha_ir_lag1_autocorr": None if not np.isfinite(_alpha_ir_rho1) else round(_alpha_ir_rho1, 6),
         "alpha_ir_live_n_required_for_5pct": 60,  # at daily rebal, need ~60 live rows for power
         "alpha_drift_alarm_rate": round(alpha_drift_alarm_rate, 6),
         "eligible_rate": round(float(positions_df["eligible"].mean()), 6),
