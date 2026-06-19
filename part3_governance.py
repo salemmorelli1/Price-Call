@@ -1318,10 +1318,12 @@ def _apply_regime_platt(
     p_cal: Optional[float],
     regime_label: str,
     params: Dict[str, Tuple[float, float]],
+    regime_auc_breakdown: Optional[Dict[str, Any]] = None,
 ) -> Optional[float]:
     """Apply regime-conditional Platt scaling to a single probability.
 
-    Returns None if p_cal is None or params is empty (transparent fallback).
+    Returns p_cal unchanged if p_cal is None, params is empty, or no valid
+    calibration is available for this regime (transparent fallback).
 
     FIX (F1, Quant-Guild Part 47 Audit): regime-specific fits below
     _PLATT_MIN_SLOPE are already excluded upstream in _fit_regime_platt_scaling
@@ -1337,21 +1339,89 @@ def _apply_regime_platt(
     (other regimes already passed their own floor check upstream) and falls
     through to transparent pass-through (p_cal unchanged) in that case —
     the identical safe behavior already used when params is empty.
+
+    FIX (F1, Quant-Guild Part 48 Audit): _global must NOT be applied when
+    the current regime's full-period AUC < 0.50.
+
+    ROOT CAUSE (independently verified from S48 artifacts):
+    The S47 fix correctly gates _global when its slope a < _PLATT_MIN_SLOPE
+    (degenerate near-flat calibration). But it left a second structural defect
+    untouched: _global is fit on ALL n=1685 rows and carries a positive slope
+    (a=0.292875 in S48). A positive slope means higher p_raw -> higher p_recal
+    (more tail-event signal). This is CORRECT for high_vol (AUC=0.561) but is
+    INCORRECT for any regime where the model's signal is absent or inverted:
+
+        calm    AUC=0.4668 (below 0.50 — signal is INVERTED in calm)
+        crisis  AUC=0.4226 (below 0.50 — signal is INVERTED in crisis)
+        risk_on AUC=0.2692 (below 0.50 — signal is INVERTED in risk_on)
+
+    In these regimes, higher p_raw actually predicts IEF outperformance
+    (opposite direction). Applying _global (positive slope) amplifies p_raw
+    upward in exactly the wrong direction for 59.4% of all rows.
+
+    Quantified impact (S48, p_raw=0.1827, calm regime):
+      p_regime_recal with _global: 0.1950 (+1.22pp wrong direction)
+      p_regime_recal correct:      0.1827 (transparent pass-through)
+
+    The _global fixed point is at p≈0.2002; below this, _global increases p
+    (amplifies in wrong direction for AUC<0.50 regimes); above this, _global
+    decreases p (compresses in wrong direction). Neither behavior is valid when
+    the regime has no demonstrated predictive ability.
+
+    FIX: when the excluded regime's full-period AUC < 0.50, return p_cal
+    UNCHANGED. Apply _global only when the excluded regime's AUC >= 0.50
+    (model has positive-direction signal there, just with a Platt fit excluded
+    for slope/inversion reasons — an edge case not observed in current data but
+    handled for completeness).
+
+    Note: regime_auc_breakdown is optional for backward compatibility. If not
+    supplied (e.g. cold start), the S47 behavior is preserved (_global applied
+    to all excluded regimes whose slope is non-degenerate). Callers should
+    always supply it using part2_summary["regime_auc_breakdown"].
     """
     if not HAVE_PLATT or not params or p_cal is None or not math.isfinite(p_cal):
         return p_cal
     p_clipped = max(0.01, min(0.99, float(p_cal)))
     logit_p = float(_logit(p_clipped))
     if regime_label in params and isinstance(params.get(regime_label), tuple):
+        # Regime has its own non-degenerate, non-inverted Platt fit — apply it.
         a, b = params[regime_label]  # type: ignore[misc]
     elif "_global" in params and isinstance(params.get("_global"), tuple):
+        # Regime was excluded (inverted or degenerate slope) — check before routing to _global.
+        # Gate 1 (S47 F1): if _global itself is degenerate (a < _PLATT_MIN_SLOPE), pass through.
         if bool(params.get("__global_degenerate__", False)):  # type: ignore[arg-type]
+            print(
+                f"[Part 3] Platt({regime_label:12s}): _global is degenerate "
+                f"(a < {_PLATT_MIN_SLOPE}) — transparent pass-through applied."
+            )
             return p_cal
+        # Gate 2 (S48 F1): if the regime's full-period AUC < 0.50, the model has no valid
+        # positive-direction signal here. A positive-slope _global is wrong by direction.
+        # Return p_cal unchanged (transparent pass-through) — the same safe behavior as
+        # the degenerate-_global gate above.
+        if regime_auc_breakdown is not None:
+            _regime_auc_entry = regime_auc_breakdown.get(str(regime_label).lower(), {})
+            if isinstance(_regime_auc_entry, dict):
+                _regime_full_period_auc = _regime_auc_entry.get("auc", None)
+                if _regime_full_period_auc is not None:
+                    try:
+                        _regime_full_period_auc_f = float(_regime_full_period_auc)
+                        if _regime_full_period_auc_f < 0.50:
+                            _a_global_disp = float(params.get("_global", (float("nan"),))[0])  # type: ignore[index]
+                            print(
+                                f"[Part 3] Platt({regime_label:12s}): full-period AUC="
+                                f"{_regime_full_period_auc_f:.4f} < 0.50 — no valid positive-direction "
+                                f"signal in this regime. Transparent pass-through applied "
+                                f"(_global a={_a_global_disp:.4f} NOT applied).  [S48 F1 fix]"
+                            )
+                            return p_cal
+                    except (TypeError, ValueError):
+                        pass  # cannot evaluate AUC — fall through to _global safely
+        # _global is non-degenerate AND regime AUC >= 0.50 (or breakdown unavailable) — apply it.
         a, b = params["_global"]  # type: ignore[misc]
     else:
         return p_cal
     return float(_expit(a * logit_p + b))
-
 
 def main(cfg: Part3Config = CFG) -> None:
     root = resolve_root(cfg)
@@ -1787,7 +1857,14 @@ def main(cfg: Part3Config = CFG) -> None:
     # Compute regime-recalibrated probability for the current live row
     # p_raw is now the blended probability (or base-only if blend unavailable)
     current_regime = str(_row_value(defense_row, ["regime_label"], "unknown"))
-    p_regime_recal: Optional[float] = _apply_regime_platt(p_raw, current_regime, platt_params)
+    # FIX (F1, Quant-Guild Part 48 Audit): pass regime_auc_breakdown so
+    # _apply_regime_platt can gate _global from AUC<0.50 regimes (calm,
+    # crisis, risk_on). See _apply_regime_platt docstring for full derivation.
+    _regime_auc_breakdown_for_platt = part2_summary.get("regime_auc_breakdown", {})
+    p_regime_recal: Optional[float] = _apply_regime_platt(
+        p_raw, current_regime, platt_params,
+        regime_auc_breakdown=_regime_auc_breakdown_for_platt,
+    )
 
     prod_tape = _prepare_production_tape(defense_df, part2_summary, alpha_status, alpha_summary_json)
     gov_df = _build_governance_df(
@@ -1991,6 +2068,22 @@ def main(cfg: Part3Config = CFG) -> None:
         # visibility avoids requiring a separate read of part3_platt_params.json
         # to detect this state.
         "platt_global_degenerate": bool(platt_params.get("__global_degenerate__", False)),
+        # FIX (F1, Quant-Guild Part 48 Audit): surface which excluded regimes
+        # received transparent pass-through because their full-period AUC < 0.50
+        # (as opposed to pass-through because _global was degenerate above).
+        # When a regime is listed here, p_regime_recal == p_final_cal_blended (no
+        # Platt applied). This is the correct behavior: a positive-slope _global
+        # must not be applied to anti-predictive/absent-signal regimes.
+        # Regimes in platt_inverted_regimes_excluded that are NOT here received
+        # _global (AUC >= 0.50) or _global-degenerate pass-through.
+        "platt_auc_gated_passthrough_regimes": sorted([
+            regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
+            if (regime not in platt_params
+                and regime not in [k for k in platt_params if k.startswith("_")]
+                and not bool(platt_params.get("__global_degenerate__", False))
+                and isinstance(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc"), (int, float))
+                and float(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc", 1.0)) < 0.50)
+        ]),
         # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
         "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
     }
