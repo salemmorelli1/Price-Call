@@ -431,6 +431,67 @@ def main() -> int:
     print(f"Rows newly updated: {updated_rows}")
     print(f"Rows with realized prices now present: {realized_count}")
     print(f"Rows with realized prices now present (non-legacy H=1 live rows): {live_realized_count}")
+
+    # FIX (F1, Quant-Guild Part 54 Audit): Patch part3_summary.json after the
+    # predlog is written with realized prices.
+    #
+    # ROOT CAUSE OF PERSISTENT live_realized_dates=0 (fifth consecutive session):
+    # Part 3 has four phases that try to count realized rows at progressively later
+    # points within the pipeline run. All four phases read the same file because
+    # Part 3 itself writes predlog_out with 0 realized rows (the CI restore gave it
+    # a stale predlog), and the backfill runs AFTER the pipeline commits. Phase 4
+    # (added S53) re-reads predlog_out AFTER the summary write — but predlog_out
+    # was WRITTEN BY Part3 with 0 realized rows, so Phase 4 also reads 0.
+    #
+    # The correct architectural fix is to move the summary patch OUTSIDE Part 3
+    # and into the backfill script, which is the only process that:
+    #   (a) runs AFTER realized prices are confirmed available, and
+    #   (b) has already written the amended predlog to disk.
+    #
+    # After this block runs, part3_summary.json will reflect the true live
+    # realized count regardless of the race between the Tuesday pipeline and
+    # the daily backfill. The patch is:
+    #   - Monotone: only increases live_realized_dates, never decreases
+    #   - Idempotent: no-op if the summary already shows the correct count
+    #   - Exception-safe: any failure falls through silently
+    #   - Scope-limited: ONLY live_realized_dates, prediction_log_realized_rows,
+    #     prediction_log_realized_pct are patched; no other fields are touched
+    #
+    # This fix renders Phases 1-4 inside Part 3 permanently safe: if the race
+    # fires and Part 3 writes live_realized_dates=0, the backfill corrects it
+    # within the same CI job (before the commit step commits the summary). [FIX F1/S54]
+    _summary_path = PROJECT_DIR / "artifacts_part3_v1" / "part3_summary.json"
+    if _summary_path.exists() and live_realized_count > 0:
+        try:
+            import json as _json_bf
+            with open(_summary_path, "r", encoding="utf-8") as _sf:
+                _summary = _json_bf.load(_sf)
+            _current_live = int(_summary.get("live_realized_dates", 0) or 0)
+            if live_realized_count > _current_live:
+                _total_predlog_rows = max(len(df), 1)
+                _summary["live_realized_dates"] = live_realized_count
+                _summary["prediction_log_realized_rows"] = live_realized_count
+                _summary["prediction_log_realized_pct"] = round(
+                    live_realized_count / _total_predlog_rows, 4
+                )
+                with open(_summary_path, "w", encoding="utf-8") as _sf:
+                    _json_bf.dump(_summary, _sf, indent=2)
+                print(
+                    f"[backfill] FIX F1/S54: part3_summary.json patched — "
+                    f"live_realized_dates {_current_live} → {live_realized_count}"
+                )
+            else:
+                print(
+                    f"[backfill] FIX F1/S54: part3_summary.json already shows "
+                    f"live_realized_dates={_current_live} >= {live_realized_count} — no patch needed."
+                )
+        except Exception as _summary_patch_exc:
+            print(f"[backfill] WARNING (F1/S54): could not patch part3_summary.json: {_summary_patch_exc}")
+    elif live_realized_count == 0:
+        print("[backfill] FIX F1/S54: live_realized_count=0 — no summary patch needed.")
+    else:
+        print(f"[backfill] FIX F1/S54: part3_summary.json not found at {_summary_path} — skipping patch.")
+
     return 0
 
 if __name__ == "__main__":
