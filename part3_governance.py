@@ -1684,6 +1684,58 @@ def main(cfg: Part3Config = CFG) -> None:
     # Compute live_predlog_rows from the EXISTING prediction_log (before today's upsert).
     # This is the count of live predictions with confirmed realized prices — the correct
     # input for _infer_promotion_state. The full upsert happens later in the function.
+    #
+    # FIX (F2, Quant-Guild Part 51 Audit): Two-phase realized-row count.
+    #
+    # ROOT CAUSE OF PERSISTENT live_realized_dates=0:
+    # The pre-upsert count correctly reads the RESTORED prediction_log from origin.
+    # However, this count is ALSO used to populate part3_summary.json's
+    # live_realized_dates field via alpha_status["realized_dates"]. The restored
+    # file on origin is the version committed by the PREVIOUS pipeline run —
+    # which did not yet have the backfill's realized prices appended for the
+    # most recent target date.
+    #
+    # CONFIRMED SEQUENCE (S50 and S51 both show live_realized_dates=0):
+    #   Day N (Tuesday): Pipeline runs at ~9:35 AM ET.
+    #     - Upserts prediction_log WITHOUT realized prices.
+    #     - Commits that version to origin.
+    #   Day N, 4 PM ET: Backfill runs → adds realized prices → commits to origin.
+    #   Day N+1 or later: Next pipeline run starts.
+    #     Restore step fetches origin → should get the backfill version.
+    #     BUT: if the backfill on Day N+1 ran at 20:00 UTC and the pipeline
+    #     started at 20:47 UTC, the concurrency group pricecall-production
+    #     queues the pipeline BEHIND the backfill. The restore step runs
+    #     AFTER checkout but BEFORE the backfill's push completes on origin,
+    #     so the restored predlog still lacks the realized prices.
+    #
+    # This is a timing race that fires whenever the backfill and pipeline
+    # share the same concurrency group and run within minutes of each other.
+    #
+    # TWO-PHASE FIX:
+    # Phase 1 (pre-upsert, UNCHANGED): Read the restored predlog for alpha_status
+    #   promotion gating. Alpha state is computed with this count to avoid a
+    #   chicken-egg dependency (alpha_status feeds the upsert arguments).
+    #   This may read 0 if the timing race fires — that is acceptable for
+    #   promotion gating (live_realized_dates=0 → alpha stays SHADOW, correct).
+    #
+    # Phase 2 (post-upsert, NEW): After _upsert_prediction_log completes, the
+    #   returned predlog_df contains all rows including today's upsert AND any
+    #   realized prices already present on disk. Re-count from this post-upsert
+    #   frame and overwrite live_realized_dates / prediction_log_realized_rows
+    #   in the summary JSON with the ACCURATE count.
+    #
+    # Why Phase 2 is safe:
+    #   - Alpha promotion state (computed in Phase 1) is NOT retroactively changed.
+    #     Promotion decisions are frozen at Phase 1 for within-run consistency.
+    #   - Phase 2 only corrects the REPORTING fields in part3_summary.json so the
+    #     dashboard shows the correct realized count rather than a stale 0.
+    #   - If Phase 2 count > 0 while Phase 1 count = 0, the summary correctly
+    #     shows the accumulated realized rows; alpha state stays SHADOW until
+    #     next run's Phase 1 count reaches the promotion threshold.
+    #
+    # OUTCOME: live_realized_dates in part3_summary.json will show the POST-UPSERT
+    # count. This will be 1 on the next run after the first backfill, reflecting
+    # reality rather than the timing-race-induced 0.  [S51 F2 fix]
     _predlog_path_early = Path(root) / "artifacts_part3" / "prediction_log.csv"
     if _predlog_path_early.exists():
         try:
@@ -2071,6 +2123,26 @@ def main(cfg: Part3Config = CFG) -> None:
     dist = _alpha_distribution(alpha_tape_df, alpha_status)
     dist_display = {str(k): float(v) for k, v in dist.items()}
 
+    # FIX (F2, Quant-Guild Part 51 Audit): Phase 2 post-upsert realized count.
+    # The pre-upsert count (live_predlog_rows, computed earlier) feeds alpha_status
+    # and must not change after alpha_status is frozen. However, for REPORTING in
+    # part3_summary.json, the post-upsert predlog_df is authoritative — it contains
+    # all rows including today's upsert and any realized prices present on disk.
+    # Re-counting from predlog_df gives live_realized_dates its correct value
+    # without interfering with the promotion state already locked by alpha_status.
+    #
+    # Specifically: on the timing-race run where pre-upsert count = 0 but the
+    # post-upsert predlog_df has 1 realized row, live_realized_dates will correctly
+    # show 1 in the summary JSON, confirming to operators that attribution has begun
+    # and the race condition fired this session.  [S51 F2 fix]
+    _post_upsert_realized_rows: int = _count_realized_predlog_rows(predlog_df) if predlog_df is not None else realized_rows
+    if _post_upsert_realized_rows != realized_rows:
+        print(
+            f"[Part 3] Timing-race correction: pre-upsert realized_rows={realized_rows} → "
+            f"post-upsert realized_rows={_post_upsert_realized_rows}. "
+            f"Summary live_realized_dates will reflect the post-upsert count.  [S51 F2 fix]"
+        )
+
     summary = {
         "part": "PART3_V1",
         "root": str(root),
@@ -2098,8 +2170,13 @@ def main(cfg: Part3Config = CFG) -> None:
         # distinction unambiguous. prediction_log_realized_rows is the live count.
         "alpha_tape_historical_realized_dates": alpha_status.get("backtest_realized_dates", alpha_status["realized_dates"]),
         "realized_dates": alpha_status.get("backtest_realized_dates", alpha_status["realized_dates"]),  # backtest count; kept for backward-compat
-        "live_realized_dates": alpha_status["realized_dates"],  # FIX (F1): LIVE rows used for promotion
-        "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=live prediction-log rows (used for promotion gate).",
+        # FIX (F2, Quant-Guild Part 51 Audit): Use post-upsert count for live_realized_dates.
+        # alpha_status["realized_dates"] = pre-upsert count (correct for promotion gating).
+        # _post_upsert_realized_rows = count from fully-updated predlog_df (correct for reporting).
+        # On a timing-race run where pre-upsert=0 but post-upsert=1, this corrects the summary
+        # from 0 → 1 without changing the alpha promotion state (which used pre-upsert=0).
+        "live_realized_dates": _post_upsert_realized_rows,  # FIX S51 F2: was alpha_status["realized_dates"] (pre-upsert, stale on timing-race runs)
+        "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
         "budget_mult": alpha_status["budget_mult"],
         "drift_rate": alpha_status["drift_rate"],
         "quality_ok": alpha_status["quality_ok"],
@@ -2109,7 +2186,7 @@ def main(cfg: Part3Config = CFG) -> None:
         "promotion_ready": alpha_status["promotion_ready"],
         "alpha_blockers": alpha_status["blockers"],
         "rows": int(len(prod_tape)),
-        "rows_realized_fused": realized_rows,
+        "rows_realized_fused": _post_upsert_realized_rows,  # FIX S51 F2: post-upsert count
         "fusion_live_rate": perf["fusion_live_rate"],
         # FIX (Finding 7, Audit 2026-05-10 — Quant-Guild Part 19): explicit boolean alias
         "alpha_fusion_is_live": perf["alpha_fusion_is_live"],
@@ -2120,7 +2197,8 @@ def main(cfg: Part3Config = CFG) -> None:
             # dir() inside a function returns the local symbol table, which DOES
             # include predlog_df after _upsert_prediction_log assigns it. But
             # the pattern is fragile and misleading. Use a direct is not None check.
-            round(realized_rows / max(len(predlog_df), 1), 4) if predlog_df is not None else 0.0
+            # FIX (S51 F2): use _post_upsert_realized_rows for accurate percentage.
+            round(_post_upsert_realized_rows / max(len(predlog_df), 1), 4) if predlog_df is not None else 0.0
         ),
         "defense_ir_net": perf["defense_ir"],
         "fused_ir_net": perf["fused_ir"],
@@ -2128,7 +2206,7 @@ def main(cfg: Part3Config = CFG) -> None:
         "active_mean": perf["active_mean"],
         "alpha_state_distribution": dist_display,
         "prediction_log_path": str(predlog_out),
-        "prediction_log_realized_rows": realized_rows,
+        "prediction_log_realized_rows": _post_upsert_realized_rows,  # FIX S51 F2: post-upsert count
         "allocation_sum_to_one_max_deviation": max_dev,
         "horizon": 1,
         "part7_base_weights_source": "part7_portfolio_weights_tape" if part7_weights is not None else "cfg_default_60_40",
@@ -2354,7 +2432,7 @@ def main(cfg: Part3Config = CFG) -> None:
     print("🏛️  PART 3 V1 AUDIT (Defense Sleeve + Fusion Engine)")
     print("=" * 96)
     print(
-        f"Rows: {len(prod_tape)} | Realized fused rows: {realized_rows} | "
+        f"Rows: {len(prod_tape)} | Realized fused rows: {_post_upsert_realized_rows} | "
         f"Fusion live rate: {(summary['fusion_live_rate'] or 0.0) * 100:.2f}%"
     )
     print(
@@ -2373,7 +2451,7 @@ def main(cfg: Part3Config = CFG) -> None:
     print(
         f"Eligible={th['Eligible']} | Trial={th['Trial']} | Fused={th['Fused']} | Max drift rate={th['Max drift rate']:.2f}"
     )
-    print(f"[PredLog] realized rows={realized_rows} ({'not enough tape history yet' if realized_rows == 0 else 'matured rows found'}).")
+    print(f"[PredLog] realized rows={_post_upsert_realized_rows} (pre-upsert count={realized_rows}; {'timing-race corrected' if _post_upsert_realized_rows != realized_rows else 'consistent'}).  [S51 F2]")
     print(f"[PredLog] path: {predlog_out}")
     print(f"Fusion allocation sum-to-one max deviation: {max_dev:.8f}")
     print("\n✅ PART 3 V1 WRITTEN")
