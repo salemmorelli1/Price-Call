@@ -102,8 +102,35 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # FIX (F1, Quant-Guild S55 Audit): add artifacts_part3_v1/part3_summary.json
+          # to this git add block.
+          #
+          # ROOT CAUSE OF live_realized_dates=0 PERSISTING SIX CONSECUTIVE SESSIONS:
+          # The S54 F1 fix in backfill_realized.py correctly patches part3_summary.json
+          # on the runner after writing the amended prediction_log.csv. However this
+          # commit step only staged artifacts_part3/prediction_log.csv and
+          # artifacts_part9/live_attribution_report.json. The patched summary existed
+          # on the runner filesystem but was NEVER COMMITTED TO ORIGIN. Every subsequent
+          # pipeline run's restore step fetched the stale (live_realized_dates=0) version
+          # from origin, and the fix reset silently every session.
+          #
+          # Adding artifacts_part3_v1/part3_summary.json here closes the chain:
+          # backfill_realized.py patches the file → this step stages and commits it →
+          # next pipeline restore step fetches the corrected version from origin.
+          #
+          # Safety properties (unchanged from S54 F1 fix design):
+          #   - Idempotent: if the summary was already correct (monotone guard in
+          #     backfill_realized.py prevents decreasing live_realized_dates), the file
+          #     will be identical to origin and git diff --cached will show no change.
+          #   - Failure-safe: if artifacts_part3_v1/part3_summary.json does not exist
+          #     on the runner (e.g., Part 3 never ran this cycle), git add -f on a
+          #     missing path emits a warning and continues due to the || true guard.
+          #   - Scope-limited: backfill_realized.py only patches live_realized_dates,
+          #     prediction_log_realized_rows, and prediction_log_realized_pct. No
+          #     governance, alpha state, or publish_mode fields are touched.  [FIX F1/S55]
           git add -f \
             artifacts_part3/prediction_log.csv \
+            artifacts_part3_v1/part3_summary.json \
             artifacts_part9/live_attribution_report.json || true
 
           if git diff --cached --quiet; then
@@ -119,4 +146,3 @@ jobs:
             --no-edit || true
 
           git push origin HEAD:"${GITHUB_REF_NAME}"
-
