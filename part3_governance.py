@@ -1458,6 +1458,7 @@ def _apply_regime_platt(
     regime_label: str,
     params: Dict[str, Tuple[float, float]],
     regime_auc_breakdown: Optional[Dict[str, Any]] = None,
+    rolling_regime_auc: Optional[Dict[str, Any]] = None,
 ) -> Optional[float]:
     """Apply regime-conditional Platt scaling to a single probability.
 
@@ -1480,7 +1481,7 @@ def _apply_regime_platt(
     the identical safe behavior already used when params is empty.
 
     FIX (F1, Quant-Guild Part 48 Audit): _global must NOT be applied when
-    the current regime's full-period AUC < 0.50.
+    the current regime's full-period AUC < 0.50. (Gate 2)
 
     ROOT CAUSE (independently verified from S48 artifacts):
     The S47 fix correctly gates _global when its slope a < _PLATT_MIN_SLOPE
@@ -1517,7 +1518,20 @@ def _apply_regime_platt(
     supplied (e.g. cold start), the S47 behavior is preserved (_global applied
     to all excluded regimes whose slope is non-degenerate). Callers should
     always supply it using part2_summary["regime_auc_breakdown"].
+
+    FIX (F2, Quant-Guild Part 54 Audit): add Gate 3 — if the regime's trailing
+    rolling AUC z-score < -1.282 (statistically anti-predictive), apply
+    transparent passthrough even when full-period AUC >= 0.50. The rolling
+    window (252d) reflects the model's current discriminative power; full-period
+    AUC can remain above 0.50 while the recent signal has inverted. Confirmed
+    case: high_vol full-period AUC=0.541 (Gate 2 passes) but rolling AUC=0.416,
+    z=-1.464, meaning the positive-slope _global amplifies in the wrong direction
+    for 35.6% of all rows in the current market environment.
+    Supply rolling_regime_auc=part2_summary["regime_auc_rolling"] to activate
+    Gate 3. When omitted, Gate 3 is skipped (backward compatible).
     """
+    # Internal alias for rolling_regime_auc to avoid shadowing in the body below.
+    _regime_rolling_auc_dict = rolling_regime_auc
     if not HAVE_PLATT or not params or p_cal is None or not math.isfinite(p_cal):
         return p_cal
     p_clipped = max(0.01, min(0.99, float(p_cal)))
@@ -1556,7 +1570,52 @@ def _apply_regime_platt(
                             return p_cal
                     except (TypeError, ValueError):
                         pass  # cannot evaluate AUC — fall through to _global safely
-        # _global is non-degenerate AND regime AUC >= 0.50 (or breakdown unavailable) — apply it.
+        # Gate 3 (S54 F2): if the regime's ROLLING AUC z-score < -1.282 (statistically
+        # anti-predictive in the trailing window), apply transparent passthrough even though
+        # the full-period AUC >= 0.50 (Gate 2 did not fire).
+        #
+        # ROOT CAUSE: Gate 2 uses full-period AUC only. A regime can have a positive
+        # full-period AUC while its recent signal is demonstrably anti-predictive.
+        # Confirmed case (S54): high_vol full-period AUC=0.541 (Gate 2 passes → _global
+        # applied), but rolling AUC=0.416, z=-1.464 (worse than random at p=0.927).
+        # Applying _global (positive slope a=0.261) amplifies p_raw upward in a regime
+        # where higher p_raw ANTI-predicts tail events in the trailing window. This is
+        # the same direction-inversion problem Gate 2 was designed to catch at the full-
+        # period level; the rolling window version catches its recent analogue.
+        #
+        # Threshold: z < -1.282 (p_one_sided > 0.90, i.e. 10% significance one-sided).
+        # Matches the re-entry gate in _compute_regime_auc_rolling (z >= 1.282 to enter),
+        # ensuring internal symmetry: if a regime cannot qualify for ACTIVE status due to
+        # z < 1.282, its rolling counterpart on the anti-predictive side also blocks _global.
+        #
+        # Implementation: regime_auc_breakdown is the FULL-period breakdown, which does not
+        # carry rolling z. Rolling z is read from the part2_summary dict via a secondary
+        # optional parameter. When not supplied (backward compat), Gate 3 is skipped safely.
+        #
+        # The rolling_regime_auc parameter is added to _apply_regime_platt signature below.
+        # Callers must supply it from part2_summary[\"regime_auc_rolling\"] to activate Gate 3.
+        if _regime_rolling_auc_dict is not None:
+            _rolling_entry = _regime_rolling_auc_dict.get(str(regime_label).lower(), {})
+            if isinstance(_rolling_entry, dict):
+                _rolling_z = _rolling_entry.get("auc_z", None)
+                if _rolling_z is not None:
+                    try:
+                        _rolling_z_f = float(_rolling_z)
+                        if math.isfinite(_rolling_z_f) and _rolling_z_f < -1.282:
+                            _rolling_auc_f = float(_rolling_entry.get("auc", 0.5))
+                            _a_global_disp2 = float(params.get("_global", (float("nan"),))[0])  # type: ignore[index]
+                            print(
+                                f"[Part 3] Platt({regime_label:12s}): rolling AUC="
+                                f"{_rolling_auc_f:.4f} z={_rolling_z_f:.4f} < -1.282 — "
+                                f"regime is statistically anti-predictive in trailing window. "
+                                f"Transparent pass-through applied "
+                                f"(_global a={_a_global_disp2:.4f} NOT applied).  [S54 F2 fix]"
+                            )
+                            return p_cal
+                    except (TypeError, ValueError):
+                        pass  # cannot evaluate rolling z — fall through to _global safely
+        # _global is non-degenerate AND regime AUC >= 0.50 (or breakdown unavailable)
+        # AND rolling AUC not anti-predictive (or rolling data unavailable) — apply it.
         a, b = params["_global"]  # type: ignore[misc]
     else:
         return p_cal
@@ -2051,10 +2110,15 @@ def main(cfg: Part3Config = CFG) -> None:
     # FIX (F1, Quant-Guild Part 48 Audit): pass regime_auc_breakdown so
     # _apply_regime_platt can gate _global from AUC<0.50 regimes (calm,
     # crisis, risk_on). See _apply_regime_platt docstring for full derivation.
+    # FIX (F2, Quant-Guild Part 54 Audit): also pass rolling_regime_auc so
+    # _apply_regime_platt Gate 3 can gate _global from regimes with rolling
+    # AUC z < -1.282 (anti-predictive in trailing window). [FIX F2/S54]
     _regime_auc_breakdown_for_platt = part2_summary.get("regime_auc_breakdown", {})
+    _regime_auc_rolling_for_platt = part2_summary.get("regime_auc_rolling", {})
     p_regime_recal: Optional[float] = _apply_regime_platt(
         p_raw, current_regime, platt_params,
         regime_auc_breakdown=_regime_auc_breakdown_for_platt,
+        rolling_regime_auc=_regime_auc_rolling_for_platt,  # FIX F2/S54: Gate 3
     )
 
     prod_tape = _prepare_production_tape(defense_df, part2_summary, alpha_status, alpha_summary_json)
@@ -2352,12 +2416,11 @@ def main(cfg: Part3Config = CFG) -> None:
         # already handles the AUC<0.50 case via Gate 2; for the AUC>=0.50 DeLong
         # exclusion the safest behavior is transparent passthrough, which avoids
         # applying _global to a regime with no verified signal.
-        # Note: _apply_regime_platt does not yet read this summary field directly;
-        # the Gate 2 check handles AUC<0.50 and the fit-exclusion handles the rest
-        # since excluded regimes are not in platt_params and route to _global.
-        # Regimes excluded by DeLong with AUC>=0.50 will receive _global rather
-        # than passthrough via the current _apply_regime_platt logic — documenting
-        # them here makes the state machine observable in artifacts.
+        # FIX (F2, Quant-Guild Part 54 Audit): _apply_regime_platt now has Gate 3,
+        # which reads rolling_regime_auc and applies transparent passthrough when
+        # rolling AUC z < -1.282 (anti-predictive in trailing window). DeLong-excluded
+        # regimes with AUC>=0.50 but rolling z < -1.282 will receive passthrough from
+        # Gate 3 rather than _global. This closes the gap identified in S50 F4.
         "platt_auc_gated_passthrough_regimes": sorted([
             regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
             if (regime not in platt_params
@@ -2372,12 +2435,28 @@ def main(cfg: Part3Config = CFG) -> None:
         # is not statistically validated at the 10% level. Listing them separately
         # from platt_auc_gated_passthrough_regimes (which covers AUC < 0.50) allows
         # operators to distinguish the two exclusion pathways in the audit trail.
+        # FIX (F2, Quant-Guild Part 54 Audit): regimes listed here with rolling z < -1.282
+        # will receive Gate 3 passthrough from _apply_regime_platt (not _global).
         "platt_delong_excluded_regimes": sorted([
             regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
             if (regime not in platt_params
                 and regime not in [k for k in platt_params if k.startswith("_")]
                 and isinstance(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc"), (int, float))
                 and float(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc", 1.0)) >= 0.50)
+        ]),
+        # FIX (F2, Quant-Guild Part 54 Audit): surface regimes that received Gate 3
+        # (rolling AUC z < -1.282) passthrough. These are regimes with full-period
+        # AUC >= 0.50 (Gate 2 did not fire) but rolling signal anti-predictive.
+        # Distinct from platt_delong_excluded_regimes (fit exclusion) and
+        # platt_auc_gated_passthrough_regimes (full-period AUC < 0.50). [FIX F2/S54]
+        "platt_rolling_anti_predictive_passthrough_regimes": sorted([
+            regime for regime in ["calm", "crisis", "high_vol", "risk_on"]
+            if (regime not in platt_params
+                and regime not in [k for k in platt_params if k.startswith("_")]
+                and isinstance(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc"), (int, float))
+                and float(_regime_auc_breakdown_for_platt.get(str(regime), {}).get("auc", 1.0)) >= 0.50
+                and isinstance(_regime_auc_rolling_for_platt.get(str(regime), {}).get("auc_z"), (int, float))
+                and float(_regime_auc_rolling_for_platt.get(str(regime), {}).get("auc_z", 0.0)) < -1.282)
         ]),
         # FIX (F7, Audit 2026-05-10): surface Platt params path so dashboard can link to them
         "platt_params_path": str(out_dir / "part3_platt_params.json") if platt_active else None,
@@ -2604,8 +2683,6 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
-
-
 
 
 
