@@ -1372,6 +1372,29 @@ def main() -> int:
     weights_tape = pd.DataFrame(rows)
     weights_tape.to_csv(os.path.join(cfg.out_dir, "portfolio_weights_tape.csv"), index=False)
     latest = {k: _json_safe(v) for k, v in weights_tape.iloc[-1].to_dict().items()}
+    # FIX (F3, Quant-Guild Part 53 Audit): Add raw_val_auc_global_median to
+    # current_target_weights.json alongside the regime-specific raw_val_auc.
+    #
+    # ROOT CAUSE: Part 7 uses a regime-specific rolling AUC override (L1263:
+    # raw_auc = max(0.50, rolling_regime_auc)) for view_confidence calculation.
+    # This overridden value (e.g. 0.516 for calm regime) is written as raw_val_auc
+    # in current_target_weights.json. Downstream consumers (Part 10, signal_log,
+    # dashboard) read this as the model's overall predictive quality, which is
+    # misleading: the authoritative final_pass AUC is raw_val_auc_median=0.537,
+    # not the regime-specific 0.516.
+    #
+    # Three different raw_val_auc values appear in artifacts:
+    #   prediction_log:         0.583538 (per-row tape value for the latest date)
+    #   current_target_weights: 0.516071 (calm rolling AUC, regime-specific override)
+    #   part2_g532_summary:     0.536876 (authoritative global cross-val median)
+    #
+    # Fix: write the global median as a separate field. The regime-specific value
+    # (raw_val_auc) is kept for backward compatibility and view_confidence semantics.
+    # raw_val_auc_global_median is the authoritative final_pass gate value. [FIX F3/S53]
+    latest["raw_val_auc_global_median"] = _json_safe(
+        float(_p2_summary.get("raw_val_auc_median", latest.get("raw_val_auc", np.nan)) or np.nan)
+    )
+    latest["deployment_mode"] = "NORMAL"  # Part 3 will overwrite if FAIL_CLOSED_NEUTRAL
     with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w", encoding="utf-8") as f:
         json.dump(latest, f, indent=2)
 
@@ -1412,9 +1435,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
 
 
 
