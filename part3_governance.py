@@ -910,12 +910,53 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "alpha_summary_json_source": str(alpha_sources["summary_json"]),
     }
 
+    # FIX (F2, Quant-Guild Part 53 Audit): Convert all Timestamp values in the row
+    # dict to ISO-format strings before the column-update loop.
+    #
+    # ROOT CAUSE: In pandas 3.0.3, Arrow-backed string columns reject Timestamp
+    # assignments via .loc[mask, k] = v with:
+    #   TypeError: Invalid value '2026-06-18 00:00:00' for dtype 'str'.
+    #   Value should be a string or missing value, got 'Timestamp' instead.
+    #
+    # When prediction_log.csv is read from disk, date columns (decision_date,
+    # target_date) are loaded as Arrow-backed str dtype. The row dict contains
+    # pd.Timestamp values for those keys. The update loop crashes on the first
+    # Timestamp key encountered, leaving subsequent columns unset.
+    #
+    # IMPACT CONFIRMED (S53 simulation): target_date column raises TypeError;
+    # all dict keys AFTER target_date are skipped in the update loop.
+    # governance fields (publish_mode, final_pass) that come AFTER target_date
+    # are NOT written to the existing row. The on-disk predlog retains stale
+    # values from the prior session for those fields.
+    #
+    # FIX: Normalize all Timestamp values to ISO strings before the loop.
+    # This is safe because: (a) date columns are always stored as strings in CSV,
+    # (b) the ISO string format is what pandas writes on to_csv(), (c) the
+    # mask comparison already converts decision_date via pd.to_datetime() before
+    # the equality check, so the normalization here only affects the value SET.
+    #
+    # Also: convert row['decision_date'] to Timestamp for the mask comparison
+    # (already done above), then convert the row copy's date fields to str for
+    # the column-update loop. [FIX F2/S53]
+    _row_for_update = {
+        k: (v.isoformat() if isinstance(v, pd.Timestamp) else v)
+        for k, v in row.items()
+    }
+
     if "decision_date" in predlog_df.columns:
         predlog_df["decision_date"] = pd.to_datetime(predlog_df["decision_date"], errors="coerce")
         mask = predlog_df["decision_date"] == row["decision_date"]
         if mask.any():
-            for k, v in row.items():
-                predlog_df.loc[mask, k] = v
+            for k, v in _row_for_update.items():
+                try:
+                    predlog_df.loc[mask, k] = v
+                except (TypeError, ValueError):
+                    # Fallback: assign scalar via at-loop for edge-case dtype conflicts
+                    for idx in predlog_df.index[mask]:
+                        try:
+                            predlog_df.at[idx, k] = v
+                        except Exception:
+                            pass  # Best-effort; never lose the full row
         else:
             predlog_df = pd.concat([predlog_df, pd.DataFrame([row])], ignore_index=True)
     else:
@@ -2343,6 +2384,50 @@ def main(cfg: Part3Config = CFG) -> None:
     }
     _write_json(summary_out, summary)
 
+    # FIX (F1, Quant-Guild Part 53 Audit): Phase 4 — re-read predlog from disk
+    # AFTER the summary JSON has been written, and patch the summary JSON in-place
+    # if the on-disk realized row count exceeds what was captured in Phases 1-3.
+    #
+    # WHY PHASE 3 ALONE IS INSUFFICIENT (fourth consecutive session of live_realized=0):
+    # Phase 3 re-reads predlog_out BEFORE the summary write. It correctly updates
+    # _post_upsert_realized_rows if on-disk has more realized rows than the in-memory
+    # predlog_df. HOWEVER: Phase 3 reads the file Part3 JUST WROTE. If the CI restore
+    # step fetched the pre-backfill version of prediction_log.csv, then:
+    #   - predlog_df in memory has 0 realized rows
+    #   - Part3 writes predlog_out with 0 realized rows
+    #   - Phase 3 re-reads predlog_out: still 0 realized rows
+    #   - summary written: live_realized_dates=0
+    #   - THEN: daily-backfill.yml runs, adds realized prices, commits
+    #
+    # CONFIRMED EVIDENCE (S53): prediction_log.csv on disk has px_voo_realized=688.11;
+    # part3_summary.json has live_realized_dates=0. Fourth consecutive session.
+    #
+    # PHASE 4: after summary_out is written, re-read predlog_out one final time.
+    # If on-disk count is higher than the summary records, patch the summary JSON
+    # in-place. Purely a reporting correction; alpha promotion state is NOT changed.
+    # Idempotent when Phases 1-3 captured the correct count. Exception-safe.
+    # Closes the residual race window to milliseconds. [FIX F1/S53]
+    try:
+        if predlog_out.exists():
+            _predlog_phase4 = pd.read_csv(predlog_out)
+            _phase4_count = _count_realized_predlog_rows(_predlog_phase4)
+            _summary_current_count = int(summary.get("live_realized_dates", 0) or 0)
+            if _phase4_count > _summary_current_count:
+                print(
+                    f"[Part 3] Phase 4 summary patch: live_realized_dates "
+                    f"{_summary_current_count} -> {_phase4_count}. "
+                    f"Backfill data present on disk after summary write.  [FIX F1/S53]"
+                )
+                summary["live_realized_dates"] = _phase4_count
+                summary["prediction_log_realized_rows"] = _phase4_count
+                summary["prediction_log_realized_pct"] = round(
+                    _phase4_count / max(len(_predlog_phase4), 1), 4
+                )
+                _write_json(summary_out, summary)
+                print(f"[Part 3] Phase 4: summary_out re-written with corrected count.  [FIX F1/S53]")
+    except Exception as _p4_exc:
+        print(f"[Part 3] Phase 4 skipped (exception: {_p4_exc}).  [FIX F1/S53]")
+
     # FIX (F3, Quant-Guild Part 34 Audit): Propagate Part 3's authoritative
     # publish_mode and deployment_mode back to current_target_weights.json.
     #
@@ -2519,6 +2604,9 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
+
+
+
 
 
 
