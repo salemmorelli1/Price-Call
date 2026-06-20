@@ -585,6 +585,48 @@ def compute_allocation(
             "dead_band_hold": 0,
         }
 
+    # FIX (F5, Quant-Guild S56 Audit): BL short-circuit when view_confidence == 0.
+    #
+    # ROOT CAUSE (confirmed S56): all 685 historical high_vol rows and all future
+    # high_vol rows have optimizer=black_litterman_cvar but view_confidence=0.0.
+    # The mechanism: active_regimes_rolling=[] (rolling AUC z=−0.073, below 1.282
+    # re-entry threshold) causes Part 7 to set raw_auc = max(0.50, rolling_auc) = 0.50
+    # (line 1263 in main()). view_confidence = clip((0.50 − 0.50) / 0.08, 0, 1) = 0.0
+    # exactly. With view_confidence=0, estimate_expected_returns() sets Ω→∞, collapsing
+    # the BL posterior to the pure CAPM prior (60/40). optimize_weights_cvxpy() then
+    # returns exactly 60/40 — identical to what regime_gated_prior already returns
+    # without calling CVXPY at all.
+    #
+    # MEASURED WASTE (S56 artifact): CVXPY was called 685 times on the full tape
+    # recompute, each time solving a constrained QP with CVaR constraints, covariance
+    # estimation, and Ledoit-Wolf shrinkage — producing 60/40 every single time.
+    #
+    # FIX: pre-compute view_confidence here (same formula as line 608 below), and
+    # short-circuit to regime_gated_prior before any matrix operations when it is zero.
+    # The short-circuit is mathematically exact: BL with vc=0 produces the CAPM prior
+    # by construction, which equals market_weights = 60/40 = regime_gated_prior output.
+    # This is not an approximation; it is the analytically correct result, taken earlier.
+    #
+    # Safety: the short-circuit only fires when raw_val_auc <= 0.50 exactly. When
+    # raw_val_auc > 0.50 (signal is present), view_confidence > 0 and the full BL
+    # path runs as before. The condition raw_val_auc <= 0.50 is the necessary and
+    # sufficient condition for view_confidence == 0 given the formula below.  [FIX F5/S56]
+    _pre_vc = float(np.clip((raw_val_auc - 0.50) / 0.08, 0.0, 1.0)) if np.isfinite(raw_val_auc) else 0.0
+    if _pre_vc <= 0.0:
+        _gate_cols_sc = [a for a in asset_names if a in returns_history.columns]
+        _prior_w_sc = np.array([cfg.market_weights.get(a, 1.0 / max(n, 1)) for a in _gate_cols_sc])
+        _prior_w_sc = _prior_w_sc / _prior_w_sc.sum() if _prior_w_sc.sum() > 0 else np.array([0.60, 0.40])
+        return _prior_w_sc, {
+            "method": "regime_gated_prior",
+            "regime_label": str(regime_label),
+            "regime_gate_active": False,          # regime gate did not fire (regime IS in active set)
+            "view_confidence_zero_shortcircuit": True,  # short-circuit reason
+            "view_confidence": 0.0,
+            "edge": float(base_rate - p_tail_base),
+            "portfolio_vol_ann": np.nan,
+            "dead_band_hold": 0,
+        }
+
     # Estimate covariance
     available_cols = [a for a in asset_names if a in returns_history.columns]
     if len(available_cols) < 2:
