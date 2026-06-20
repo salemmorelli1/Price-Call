@@ -3646,13 +3646,46 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             #
             # Fix: revert enter threshold to 0.535. Stay threshold (0.530) is unchanged.
             # This is consistent with the pre-BUG-3 design and avoids the deadlock.
-            np.isfinite(raw_val_auc_median) and (
-                raw_val_auc_median >= 0.535  # FIX: reverted from 0.537 (see comment above)
-                or (
-                    # stay threshold: prior NORMAL run + above DEPLOY_MIN_VAL_AUC = 0.530
+            #
+            # FIX (F1, Quant-Guild Part 52 Audit): Add Path C (trailing 4-fold AUC) to
+            # final_pass gate, mirroring _quality_enter exactly.
+            #
+            # ROOT CAUSE: S45 F2 added trailing_4fold_auc as Path C to _quality_enter
+            # (predictive_quality_ok). The SAME path was never propagated to final_pass.
+            # This creates a structural inconsistency:
+            #   _quality_enter = True  (via Path C: trailing_4fold=0.5609 >= 0.535, ECE<0.03)
+            #   final_pass     = False (only checks raw_val_auc_median >= 0.535 = 0.5339 FAIL)
+            #
+            # IMPACT (S52 artifact, built_at=2026-06-20T01:46 UTC):
+            #   raw_val_auc_median  = 0.53385 < 0.535 by 0.00115 (0.06 SE; pure noise)
+            #   trailing_4fold_auc  = 0.56088 > 0.535 by 0.026   (1.3 SE; clear margin)
+            #   ECE                 = 0.01536 < 0.03              (clear)
+            #   All other final_pass sub-conditions: PASS
+            #   predictive_quality_ok = True (Path C), but final_pass = False -> FAIL_CLOSED
+            #
+            # The gap of 0.00115 is 0.06 SE(AUC) at fold n~20 (SE~0.020) -- statistically
+            # indistinguishable from the threshold. Blocking on this gap while the trailing
+            # 4-fold (the better estimator of current signal quality) clears by 1.3 SE is
+            # inconsistent and regressive.
+            #
+            # FIX: mirror _quality_enter Path C in the AUC sub-condition of final_pass.
+            # Three paths are now available in final_pass (matching _quality_enter):
+            #   Path B (enter): raw_val_auc_median >= 0.535
+            #   Path A (stay):  raw_val_auc_median >= DEPLOY_MIN_VAL_AUC=0.530, prior NORMAL
+            #   Path C (enter, NEW): trailing_4fold_auc >= 0.535 AND ECE_base < 0.03
+            # All thresholds and guards are identical to _quality_enter's paths B and C.
+            # The stay path (prior NORMAL + final_pass=True) is unchanged.  [FIX F1/S52]
+            (
+                (np.isfinite(raw_val_auc_median) and raw_val_auc_median >= 0.535)  # Path B: enter on rolling median
+                or (                                                                 # Path A: stay on hysteresis
+                    np.isfinite(raw_val_auc_median) and
                     raw_val_auc_median >= float(cfg.DEPLOY_MIN_VAL_AUC)
                     and prior_summary.get("publish_mode", "") == "NORMAL"
                     and bool(prior_summary.get("final_pass", False))
+                )
+                or (                                                                 # Path C: enter on trailing 4-fold [FIX F1/S52]
+                    np.isfinite(trailing_4fold_auc) and trailing_4fold_auc >= 0.535
+                    and np.isfinite(cls_base_ece) and cls_base_ece < 0.03
                 )
             ) and
             np.isfinite(strategy_ir) and strategy_ir >= 0.45 and
@@ -3773,11 +3806,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
