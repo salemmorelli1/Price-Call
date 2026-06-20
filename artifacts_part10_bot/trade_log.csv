@@ -1,0 +1,1 @@
+decision_date,executed_at,signal_p_tail,action_reason,target_source,w_voo_before,w_voo_after,delta_w_voo,trade_voo_shares,trade_ief_shares,px_voo,px_ief,tc_dollars,tc_bps,nav_before,nav_after,peak_nav,drawdown,trade_count,is_stopped,mode
