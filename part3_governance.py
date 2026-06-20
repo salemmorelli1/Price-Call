@@ -2138,10 +2138,62 @@ def main(cfg: Part3Config = CFG) -> None:
     _post_upsert_realized_rows: int = _count_realized_predlog_rows(predlog_df) if predlog_df is not None else realized_rows
     if _post_upsert_realized_rows != realized_rows:
         print(
-            f"[Part 3] Timing-race correction: pre-upsert realized_rows={realized_rows} → "
+            f"[Part 3] Timing-race correction: pre-upsert realized_rows={realized_rows} -> "
             f"post-upsert realized_rows={_post_upsert_realized_rows}. "
             f"Summary live_realized_dates will reflect the post-upsert count.  [S51 F2 fix]"
         )
+
+    # FIX (F2, Quant-Guild Part 52 Audit): Phase 3 — re-read predlog from disk after
+    # ALL writes (p_regime_recal, p_final_cal_blended) to get the definitive realized count.
+    #
+    # ROOT CAUSE OF PERSISTENT live_realized_dates=0 (3rd consecutive session):
+    # The S51 F2 two-phase fix correctly counts from predlog_df in memory. However,
+    # predlog_df only contains the realized prices that were PRESENT in the predlog
+    # at restore time. If the CI timing race fires:
+    #
+    #   1. Pipeline starts at 01:46 UTC Fri Jun 20.
+    #   2. Restore step fetches predlog from origin → gets version WITHOUT realized
+    #      prices (because: the S51 pipeline wrote predlog without realized prices,
+    #      then backfill added them AFTER the S51 pipeline commit; the S52 pipeline
+    #      restored the S51-written version, not the backfill-amended version).
+    #   3. Upsert: no realized prices in predlog_df → new row has no realized prices.
+    #   4. Phase 2 count: predlog_df has 0 realized rows → _post_upsert_realized_rows=0.
+    #   5. Part3 writes summary with live_realized_dates=0.
+    #   6. THEN: backfill runs, reads the predlog written by Part3, adds realized prices,
+    #      commits to disk → FINAL artifact has realized prices but summary shows 0.
+    #
+    # CONFIRMED IN ARTIFACTS (S52):
+    #   prediction_log.csv on disk: px_voo_realized=688.11 (backfill added AFTER Part3)
+    #   part3_summary.json: live_realized_dates=0 (written before backfill ran)
+    #
+    # FIX — Phase 3: Re-read the predlog from disk AFTER all writes complete.
+    # This catches realized prices that were written by a PRIOR backfill session
+    # and are now present on disk even if they weren't in the restored version.
+    #
+    # Phase 1 (pre-upsert): live_predlog_rows — for alpha promotion gating (FROZEN)
+    # Phase 2 (post-upsert): in-memory predlog_df count — catches same-session data
+    # Phase 3 (post-all-writes): re-read from disk — catches prior-session backfill data
+    #
+    # Safety: Alpha promotion state is locked at Phase 1 and is NOT changed by Phase 3.
+    # Phase 3 is purely a reporting correction for part3_summary.json.
+    # If Phase 3 yields a higher count than Phase 2, the timing race is confirmed and
+    # the correction print fires. Idempotent when all three phases agree.  [FIX F2/S52]
+    try:
+        if predlog_out.exists():
+            _predlog_disk = pd.read_csv(predlog_out)
+            _phase3_count = _count_realized_predlog_rows(_predlog_disk)
+        else:
+            _phase3_count = _post_upsert_realized_rows
+    except Exception:
+        _phase3_count = _post_upsert_realized_rows
+
+    if _phase3_count > _post_upsert_realized_rows:
+        print(
+            f"[Part 3] Phase 3 timing-race correction: in-memory realized_rows={_post_upsert_realized_rows} -> "
+            f"on-disk realized_rows={_phase3_count}. "
+            f"Prior-session backfill data detected; live_realized_dates corrected.  [FIX F2/S52]"
+        )
+        _post_upsert_realized_rows = _phase3_count
 
     summary = {
         "part": "PART3_V1",
@@ -2467,11 +2519,6 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
-
-
-
-
-
 
 
 
