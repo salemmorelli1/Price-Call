@@ -1,0 +1,17 @@
+{
+  "Date": "2026-06-17T00:00:00",
+  "w_target_voo": 0.6,
+  "w_target_ief": 0.4,
+  "regime_label": "calm",
+  "p_tail_base": 0.183767235200132,
+  "base_rate": 0.2066683010541799,
+  "raw_val_auc": 0.514286,
+  "optimizer": "regime_gated_prior",
+  "portfolio_vol_ann": null,
+  "view_confidence": 0.0,
+  "edge": 0.022901065854047914,
+  "dead_band_hold": 1,
+  "publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "final_pass": 0,
+  "deployment_mode": "DEFENSE_ONLY"
+}
