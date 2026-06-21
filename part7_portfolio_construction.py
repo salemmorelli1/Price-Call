@@ -1292,17 +1292,50 @@ def main() -> int:
         # in 2026. Using the rolling per-regime AUC as the view_confidence anchor
         # correctly reduces BL optimizer influence when the signal has decayed.
         #
-        # Logic:
-        #   - If rolling AUC is available for this regime and < 0.50: set raw_auc=0.50
-        #     (zero view_confidence after (0.50-0.50)/0.08=0.0).
-        #   - If rolling AUC is available and >= 0.50: use that regime-specific value
-        #     as the view_confidence anchor (more accurate than full-period median).
-        #   - If rolling AUC not available for this regime: keep raw_auc unchanged.
+        # FIX (F1, Quant-Guild S57 Audit): Gate view_confidence to zero when the
+        # current regime has rolling AUC > 0.50 but FAILS the DeLong significance
+        # gate (z < 1.282, i.e. not in active_regimes_rolling).
+        #
+        # ROOT CAUSE: The prior code set raw_auc = max(0.50, rolling_auc) for any
+        # regime with rolling AUC data. For high_vol with rolling AUC=0.520 and
+        # z=0.342 (not significant), this produced:
+        #   raw_auc = 0.520 → view_confidence = (0.520-0.50)/0.08 = 0.254 (nonzero)
+        #   → BL optimizer received a view signal
+        # Yet active_regimes_rolling=[] because z=0.342 < 1.282 (DeLong gate fails).
+        # The two gates (view_confidence and active_regimes_rolling) were INCONSISTENT:
+        # BL routing requires a regime in active_regimes_rolling, but view_confidence
+        # was computed from raw rolling AUC without the DeLong gate. This produced
+        # 581 historical tape rows using BL with view_confidence=0.254 for high_vol
+        # dates when z was below the significance threshold.
+        #
+        # FIX: Use _rolling_active (active_regimes_rolling from Part 2) as the gate.
+        #   If the regime IS in active_regimes_rolling: raw_auc = max(0.50, rolling_auc)
+        #   (same as before — rolling AUC is significant and valid as view anchor).
+        #   If the regime is NOT in active_regimes_rolling: raw_auc = 0.50 exactly
+        #   (forces view_confidence=0, consistent with the DeLong significance gate).
+        #   If rolling AUC < 0.50 (already handled below): raw_auc = 0.50 (unchanged).
+        #
+        # This ensures view_confidence is nonzero IF AND ONLY IF the regime passes
+        # the same DeLong z >= 1.282 gate used to populate active_regimes_rolling.
+        # Internal consistency between the two gating layers is now guaranteed.
+        #
+        # Prior logic (preserved):
+        #   - rolling AUC < 0.50: raw_auc=0.50 (zero confidence, correct).
+        #   - rolling AUC not available: raw_auc unchanged (cold start, conservative).
+        # New logic (added):
+        #   - rolling AUC >= 0.50 but z < 1.282: raw_auc=0.50 (zero confidence).
+        #   - rolling AUC >= 0.50 and z >= 1.282 (in active_regimes_rolling): raw_auc=rolling_auc.
+        _rolling_active_set = set(str(r).lower().strip() for r in _rolling_active)
         _regime_key_lower = str(regime_label).lower().strip()
         _rolling_auc_for_regime = _rolling_regime_data.get(_regime_key_lower, {})
         if isinstance(_rolling_auc_for_regime, dict) and "auc" in _rolling_auc_for_regime:
             _r_auc = float(_rolling_auc_for_regime["auc"])
-            raw_auc = max(0.50, _r_auc)  # capped at 0.50 floor; below = zero confidence
+            if _r_auc < 0.50:
+                raw_auc = 0.50  # anti-predictive rolling signal → zero confidence (unchanged behavior)
+            elif _regime_key_lower in _rolling_active_set:
+                raw_auc = _r_auc  # significant rolling AUC → use as view anchor  [FIX F1/S57]
+            else:
+                raw_auc = 0.50  # rolling AUC > 0.50 but DeLong z < 1.282 → zero confidence  [FIX F1/S57]
         # Use Part 2 summary JSON values (loaded once above) — the tape does not
         # carry a publish_mode string column, so per-row reads always return UNKNOWN.
         publish_mode = _p2_publish_mode
@@ -1477,6 +1510,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
