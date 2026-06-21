@@ -2711,11 +2711,56 @@ def _compute_regime_auc_rolling(
     result["regime_auc_rolling_decay_alarm"] = bool(len(decay_alarm_regimes) > 0)
     result["window_days"] = window_days
 
+    # FIX (F3, Quant-Guild S57 Audit): Add anti-predictive rolling regime alarm.
+    #
+    # ROOT CAUSE: decay_alarm_regimes only fires when a regime that WAS previously
+    # in full_period_active_regimes subsequently falls below rolling AUC < 0.50.
+    # A regime that was NEVER in active_regimes (e.g. risk_on, which always had
+    # full-period AUC < 0.50) cannot appear in decay_alarm_regimes regardless of
+    # how severely anti-predictive its rolling signal becomes.
+    #
+    # CONFIRMED (S57 artifacts): risk_on rolling AUC=0.3346, DeLong z=-2.037
+    # (p_left=0.025, severely significant in the anti-predictive direction).
+    # risk_on is the LIVE regime as of 2026-06-17. Yet decay_alarm_regimes=[]
+    # and regime_auc_rolling_decay_alarm=False — no alarm raised anywhere.
+    # The system is correctly passive (60/40) because risk_on has rolling AUC < 0.50,
+    # which drives raw_auc=0.50 → view_confidence=0. But the absence of any
+    # monitoring signal means this severe deterioration is invisible in dashboards,
+    # governance CSV, and Part 3 summary JSON.
+    #
+    # FIX: compute anti_predictive_rolling_regimes = regimes with rolling DeLong
+    # z < -1.282 (p_left < 0.10, statistically significant in the anti-predictive
+    # direction), regardless of whether they were ever in active_regimes.
+    # This is the mirror of the active_regimes_rolling gate (z >= 1.282) and uses
+    # the same significance threshold for symmetry. Both flags are reported in the
+    # summary JSON and trigger a console warning when non-empty.
+    #
+    # Live allocation impact: NONE. The system is already passive when rolling AUC < 0.50.
+    # This fix is monitoring/reporting completeness only.  [FIX F3/S57]
+    anti_predictive_rolling_regimes: List[str] = []
+    _ANTI_PRED_Z_THRESHOLD = -1.282  # z < -1.282 → p_left < 0.10 (anti-predictive)
+    for regime, stats_dict in result.items():
+        if not isinstance(stats_dict, dict):
+            continue
+        _z_roll = float(stats_dict.get("auc_z", 0.0) or 0.0)
+        if _z_roll < _ANTI_PRED_Z_THRESHOLD:
+            anti_predictive_rolling_regimes.append(str(regime))
+
+    result["anti_predictive_rolling_regimes"] = sorted(anti_predictive_rolling_regimes)
+    result["regime_auc_rolling_anti_predictive_alarm"] = bool(len(anti_predictive_rolling_regimes) > 0)
+
     if result["regime_auc_rolling_decay_alarm"]:
         print(
             f"[Part 2] ⚠️ REGIME AUC DECAY ALARM: {decay_alarm_regimes} have trailing-{window_days}d "
             f"AUC < 0.50. Active regimes (rolling): {active_regimes_rolling}. "
             f"Consider reducing view_confidence and monitoring for FAIL_CLOSED trigger."
+        )
+    if result["regime_auc_rolling_anti_predictive_alarm"]:
+        print(
+            f"[Part 2] ⚠️ ANTI-PREDICTIVE ROLLING ALARM: {anti_predictive_rolling_regimes} have "
+            f"trailing-{window_days}d DeLong z < {_ANTI_PRED_Z_THRESHOLD} (statistically "
+            f"anti-predictive). System remains passive for these regimes but the signal "
+            f"quality is severely degraded — monitor for structural regime shift.  [S57 F3 fix]"
         )
     return result
 
@@ -3806,3 +3851,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+
