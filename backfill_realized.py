@@ -492,10 +492,55 @@ def main() -> int:
     else:
         print(f"[backfill] FIX F1/S54: part3_summary.json not found at {_summary_path} — skipping patch.")
 
+    # FIX (F3, Quant-Guild S58 Audit): After patching part3_summary.json, also
+    # regenerate live_attribution_report.json by invoking Part 9's generate_live_report.
+    #
+    # ROOT CAUSE: Part 9 runs at 9:35 AM ET during the pipeline and reads the predlog
+    # BEFORE backfill adds realized prices. It writes live_attribution_report.json with
+    # n_live_realized=0 (or the count before today's backfill). The F1/S58 fix in Part 9
+    # adds a disk re-read at runtime to catch prior-session backfill data. But for the
+    # CURRENT session's backfill — where Part 9 already ran and wrote the stale report —
+    # Part 9 needs to be called again AFTER backfill completes.
+    #
+    # This fix calls Part 9's generate_live_report() directly (no subprocess), which is
+    # lightweight (just reads predlog + writes JSON). The call is exception-safe:
+    # any failure falls through silently, leaving the existing report intact.
+    #
+    # The Part 9 F1/S58 disk re-read ensures it picks up the just-committed realized prices
+    # even on the first call after backfill. This is idempotent if Part 9 was already correct.
+    # [FIX F3/S58]
+    _part9_report_path = PROJECT_DIR / "artifacts_part9" / "live_attribution_report.json"
+    try:
+        import importlib.util as _ilu
+        import sys as _sys
+        _p9_spec = _ilu.spec_from_file_location(
+            "part9_live_attribution",
+            PROJECT_DIR / "part9_live_attribution.py"
+        )
+        if _p9_spec is not None and _p9_spec.loader is not None:
+            _p9_mod = _ilu.module_from_spec(_p9_spec)
+            _p9_spec.loader.exec_module(_p9_mod)
+            _p9_cfg = _p9_mod.Part9Config()
+            _p9_report = _p9_mod.generate_live_report(_p9_cfg)
+            _part9_report_path.parent.mkdir(parents=True, exist_ok=True)
+            import json as _json_p9
+            with open(_part9_report_path, "w", encoding="utf-8") as _rf:
+                _json_p9.dump(_p9_report, _rf, indent=2, default=str)
+            _n_live_new = _p9_report.get("n_live_realized", 0)
+            print(
+                f"[backfill] FIX F3/S58: live_attribution_report.json regenerated — "
+                f"n_live_realized={_n_live_new}.  [S58 F3]"
+            )
+        else:
+            print("[backfill] FIX F3/S58: could not load part9_live_attribution.py — skipping.")
+    except Exception as _p9_exc:
+        print(f"[backfill] FIX F3/S58: Part 9 regeneration failed ({_p9_exc}) — existing report retained.")
+
     return 0
 
 if __name__ == "__main__":
     main()
+    
 
 
 
