@@ -556,6 +556,41 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     if "horizon_legacy" in predlog.columns:
         predlog = predlog[predlog["horizon_legacy"].fillna(0).astype(int) == 0].copy()
 
+    # FIX (F1, Quant-Guild S58 Audit): Re-read prediction_log from disk before
+    # computing n_live_realized. Part 9 runs at ~9:35 AM ET during the pipeline;
+    # backfill runs at 4:00 PM ET and adds realized prices AFTER Part 9 has already
+    # read the predlog. Because Part 9 is the last part before Part 10, and the
+    # backfill runs after the pipeline commits, this file on disk may already contain
+    # realized prices from a prior backfill session that were not captured in the
+    # CI restore step (race condition with the concurrency group).
+    #
+    # FIX: before computing n_live_realized, re-read the predlog from disk. If the
+    # on-disk version has MORE realized rows than the in-memory version (which was
+    # loaded from the restored checkpoint), use the disk version. This is safe because:
+    #   - We only switch to the disk version if it has MORE data (monotone guard)
+    #   - Exception-safe: any disk read failure falls through to the in-memory version
+    #   - Closes the 1-run staleness gap without any change to pipeline ordering  [FIX F1/S58]
+    try:
+        _predlog_disk = pd.read_csv(cfg.predlog_path)
+        if "decision_date" in _predlog_disk.columns:
+            _predlog_disk["decision_date"] = pd.to_datetime(_predlog_disk["decision_date"], errors="coerce")
+        _voo_r = next((c for c in [voo_real_col] if c in _predlog_disk.columns), voo_real_col)
+        _ief_r = next((c for c in [ief_real_col] if c in _predlog_disk.columns), ief_real_col)
+        if _voo_r in _predlog_disk.columns and _ief_r in _predlog_disk.columns:
+            _n_disk = int((_predlog_disk[_voo_r].notna() & _predlog_disk[_ief_r].notna()).sum())
+            _n_mem = int((predlog[voo_real_col].notna() & predlog[ief_real_col].notna()).sum()) if voo_real_col in predlog.columns else 0
+            if _n_disk > _n_mem:
+                print(
+                    f"[Part 9] FIX F1/S58: disk predlog has {_n_disk} realized rows vs "
+                    f"{_n_mem} in memory — using disk version (prior backfill detected).  [S58 F1]"
+                )
+                predlog = _predlog_disk
+                # Re-acquire column refs after predlog reassignment
+                voo_real_col = next((c for c in ["px_voo_realized", "voo_realized"] if c in predlog.columns), voo_real_col)
+                ief_real_col = next((c for c in ["px_ief_realized", "ief_realized"] if c in predlog.columns), ief_real_col)
+    except Exception as _p9_disk_exc:
+        print(f"[Part 9] FIX F1/S58: disk re-read failed ({_p9_disk_exc}) — using in-memory predlog.")
+
     realized = predlog[predlog[voo_real_col].notna() & predlog[ief_real_col].notna()].copy()
     n_live = len(realized)
     report["n_live_realized"] = n_live
@@ -780,6 +815,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-
-
+    
