@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-06-23T23:05:56.027537+00:00",
-  "total_predictions": 4,
-  "n_live_realized": 3,
+  "generated_at": "2026-06-26T00:59:08.453630+00:00",
+  "total_predictions": 5,
+  "n_live_realized": 4,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 7.101091267826557,
-  "voo_rmse_live": 8.16082762248321,
+  "voo_mae_live": 7.840473644322316,
+  "voo_rmse_live": 8.674289226256073,
   "classification_stats_live": {
-    "n": 3,
-    "accuracy": 1.0,
-    "t_stat_accuracy": NaN,
-    "p_value_accuracy": NaN,
-    "auc": NaN,
-    "t_stat_auc": NaN,
-    "brier": 0.0323759294194688,
-    "brier_null": 0.04264902905431308,
-    "brier_skill_score": 0.2408753478930099,
+    "n": 4,
+    "accuracy": 0.75,
+    "t_stat_accuracy": 1.0,
+    "p_value_accuracy": 0.3910022189557705,
+    "auc": 1.0,
+    "t_stat_auc": 1000000.0,
+    "brier": 0.18930286264122745,
+    "brier_null": 0.1893952236140496,
+    "brier_skill_score": 0.00048766315755455203,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
@@ -25,27 +25,27 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false,
     "tail_threshold": -0.015,
-    "base_rate": 0.2065164135227829,
+    "base_rate": 0.2064658339456282,
     "probability_source": "p_final_cal",
-    "mean_active_return": -0.0024836449103911398,
-    "estimated_annual_edge_bps": -8.52443531016559,
+    "mean_active_return": -0.007597401158838141,
+    "estimated_annual_edge_bps": -9.066911322488734,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3705
+    "annual_tc_drag_bps": 0.395
   },
   "calibration_live": {
-    "ece": 0.17992146560621333,
-    "brier": 0.0323759294194688
+    "ece": 0.06817273315088507,
+    "brier": 0.18930286264122745
   },
   "classification_stats_backtest": {
-    "n": 1689,
-    "accuracy": 0.44701006512729424,
-    "t_stat_accuracy": -4.378872928958907,
-    "p_value_accuracy": 1.2661918123150023e-05,
-    "auc": 0.5074706092223082,
-    "t_stat_auc": 0.41566190785693763,
-    "brier": 0.16153757009841374,
-    "brier_null": 0.16113317776256425,
-    "brier_skill_score": -0.002509677033704305,
+    "n": 1691,
+    "accuracy": 0.4529863985807215,
+    "t_stat_accuracy": -3.882623061482476,
+    "p_value_accuracy": 0.00010731256294082935,
+    "auc": 0.5096677076935056,
+    "t_stat_auc": 0.5399675437957789,
+    "brier": 0.16203475935576855,
+    "brier_null": 0.16169507683387302,
+    "brier_skill_score": -0.0021007592088559957,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,34 +55,34 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3705,
+  "annual_tc_drag_bps": 0.395,
   "feature_drift": {
     "n_features_tested": 14,
-    "n_drifted_5pct": 11,
+    "n_drifted_5pct": 10,
     "n_severely_drifted_1pct": 9,
     "most_drifted": [
       {
         "feature": "alpha_credit_spread",
-        "ks_stat": 0.9512993293147485,
-        "ks_pval": 2.2527329018506608e-79,
-        "mean_shift": 0.26886657418576465
+        "ks_stat": 0.9781257767834949,
+        "ks_pval": 4.6285835196066106e-97,
+        "mean_shift": 0.26948959656641164
       },
       {
         "feature": "alpha_breadth",
-        "ks_stat": 0.9370803282765481,
-        "ks_pval": 4.080837506966627e-73,
-        "mean_shift": -0.23200238190494338
+        "ks_stat": 0.9520258513547104,
+        "ks_pval": 1.2459328424036467e-79,
+        "mean_shift": -0.23262736140182738
       },
       {
         "feature": "alpha_tech_relative",
-        "ks_stat": 0.9221586669982592,
-        "ks_pval": 7.188477526228876e-68,
-        "mean_shift": 0.337490571151544
+        "ks_stat": 0.9358687546607009,
+        "ks_pval": 1.188586302546472e-72,
+        "mean_shift": 0.3401362242650232
       }
     ]
   },
   "health_status": "IMMATURE",
   "health_reasons": [
-    "Only 3 live observations (60 required)"
+    "Only 4 live observations (60 required)"
   ]
 }

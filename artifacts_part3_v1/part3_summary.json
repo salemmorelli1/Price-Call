@@ -16,9 +16,9 @@
   "current_alpha_live_status": "SHADOW",
   "current_alpha_reason": "ok",
   "current_alpha_eligible": 1,
-  "current_alpha_abs": 0.057069,
-  "alpha_tape_historical_realized_dates": 1236,
-  "realized_dates": 1236,
+  "current_alpha_abs": 0.0558,
+  "alpha_tape_historical_realized_dates": 833,
+  "realized_dates": 833,
   "live_realized_dates": 4,
   "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
   "budget_mult": 1.0,
@@ -29,11 +29,11 @@
   "fused_gate_open": 1,
   "promotion_ready": 1,
   "alpha_blockers": "NONE",
-  "rows": 1690,
-  "rows_realized_fused": 3,
+  "rows": 1692,
+  "rows_realized_fused": 4,
   "fusion_live_rate": 0.0,
   "alpha_fusion_is_live": false,
-  "prediction_log_realized_pct": 1.0,
+  "prediction_log_realized_pct": 0.8,
   "defense_ir_net": null,
   "fused_ir_net": null,
   "active_ir_vs_60_40": null,
@@ -53,28 +53,33 @@
   "preferred_alpha_family": "part2a21",
   "strict_drive_only": 1,
   "platt_scaling_active": true,
-  "current_regime": "calm",
-  "p_final_cal_raw": 0.1875446705778198,
+  "current_regime": "risk_on",
+  "p_final_cal_raw": 0.1817552654403247,
   "p_final_cal_blended": null,
   "p_blend_source": "base_only",
   "p_blend_2b": null,
   "p_blend_2c": null,
   "p_2c_live_high_epistemic_warning": false,
   "p_2c_epist_ratio": 1.0,
-  "p_regime_recal": 0.1875446705778198,
-  "platt_regimes_fit": [],
+  "p_regime_recal": 0.1817552654403247,
+  "platt_regimes_fit": [
+    "crisis"
+  ],
   "platt_inverted_regimes_excluded": [
     "calm",
-    "crisis",
     "high_vol",
     "risk_on"
   ],
-  "platt_global_degenerate": true,
-  "platt_auc_gated_passthrough_regimes": [],
+  "platt_global_degenerate": false,
+  "platt_auc_gated_passthrough_regimes": [
+    "calm",
+    "high_vol"
+  ],
   "platt_delong_excluded_regimes": [
-    "high_vol",
     "risk_on"
   ],
-  "platt_rolling_anti_predictive_passthrough_regimes": [],
+  "platt_rolling_anti_predictive_passthrough_regimes": [
+    "risk_on"
+  ],
   "platt_params_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part3_v1/part3_platt_params.json"
 }
