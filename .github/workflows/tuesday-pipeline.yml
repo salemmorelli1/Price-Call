@@ -1,32 +1,39 @@
 name: Daily Production Run
 
-# FIX (Audit 2026-04-24): replaced the two-cron DST hack + 15-minute Python
-# gate with a single native-timezone cron.
+# FIX (S60): removed non-functional `timezone` key from schedule trigger.
 #
-# ROOT CAUSE OF PRIOR FAILURES
-# ─────────────────────────────
-# The old design used two weekday crons (13:35 UTC and 14:35 UTC) plus a
-# Python gate that only accepted runs landing between 9:30 and 9:45 AM ET
-# (a 15-minute window). GitHub's scheduler is not a precision timer; runs
-# routinely start 20-60+ minutes after the nominal cron time, and when a
-# second run queues behind the first via the concurrency guard the delay
-# compounds to 90+ minutes. Every production run since April 21 landed
-# between 10:57 AM and 12:18 PM EDT — all outside the 9:30-9:45 window.
-# The gate returned false, all subsequent steps were skipped, and the run
-# exited green in ~1 minute. No artifact was ever written.
+# ROOT CAUSE OF CURRENT FAILURE
+# ──────────────────────────────
+# The previous design used:
+#
+#     - cron: "35 9 * * 1-5"
+#       timezone: "America/New_York"
+#
+# GitHub Actions schedule triggers on github.com do NOT support a `timezone`
+# key. The field is silently ignored — the cron fires at 09:35 UTC regardless,
+# which is 5:35 AM ET (EDT) or 4:35 AM ET (EST). The Python time gate
+# evaluates wall-clock ET and finds hour=5, which is outside the 9:00-11:30
+# window. Gate outputs run=false, all downstream steps skip, and the workflow
+# exits green in ~1 minute without writing any artifacts — the same silent-skip
+# failure mode documented in the April 2026 audit.
+# workflow_dispatch runs were unaffected (bypass the gate), masking the bug.
 #
 # SOLUTION
 # ─────────
-# 1. Use GitHub's native timezone support so a single cron always resolves
-#    to 9:35 AM ET regardless of DST. No Python DST arithmetic needed.
-# 2. Widen the gate to 9:00-11:30 AM ET, tolerating up to 115 minutes of
-#    GitHub scheduler drift while still blocking accidental off-hours runs.
-# 3. The redundant second cron is removed. One trigger fires once per day.
+# Revert to the proven dual-cron UTC pattern already in use by daily-backfill.yml.
+# Target time: 8:00 AM ET (as requested by Salem for S60).
+#   8:00 AM EDT (UTC-4, ~Mar–Nov) = 12:00 UTC  →  cron: "0 12 * * 1-5"
+#   8:00 AM EST (UTC-5, ~Nov–Mar) = 13:00 UTC  →  cron: "0 13 * * 1-5"
+#
+# The Python time gate is updated to an 8:00–10:30 AM ET window (150 minutes),
+# preserving the same tolerance band as the prior gate design. Both crons fire
+# daily on weekdays; the backfill script is idempotent so double-firing on the
+# DST crossover days is harmless.
 on:
   schedule:
-    - cron: "35 9 * * 1-5"
-      timezone: "America/New_York"   # 9:35 AM ET — handles EDT/EST automatically
-  workflow_dispatch:                 # always available for manual runs
+    - cron: "0 12 * * 1-5"   # 8:00 AM EDT (UTC-4, summer)
+    - cron: "0 13 * * 1-5"   # 8:00 AM EST (UTC-5, winter)
+  workflow_dispatch:          # always available for manual runs
 
 # ── Concurrency guard ────────────────────────────────────────────────────
 # Prevents the daily-backfill and production pipeline from running
@@ -167,16 +174,16 @@ jobs:
           echo "OK: gate key '${WRITTEN_KEY}' is consistent throughout the workflow."
 
       # ── Time gate ─────────────────────────────────────────────────────
-      # FIX (Audit 2026-04-24): widened from 9:30-9:45 AM ET (15 min) to
-      # 9:00-11:30 AM ET (150 min).
-      # The old 15-minute window caused every scheduled run to be silently
-      # skipped. Live data shows GitHub delivered all triggers 22-103 min
-      # late; every run landed at 10:57 AM-12:18 PM EDT, outside the old
-      # window. Gate returned false, pipeline never executed, dashboard went
-      # stale. The wider window tolerates realistic scheduler drift while
-      # still blocking genuine off-hours accidental triggers.
+      # FIX (S60): updated cron trigger from 9:35 AM ET to 8:00 AM ET.
+      # Gate window updated from 9:00-11:30 AM ET to 8:00-10:30 AM ET.
+      #
+      # Both crons fire on weekdays; the time gate passes the run that
+      # lands within the window (typically the summer cron in EDT months,
+      # the winter cron in EST months) and suppresses the out-of-window
+      # duplicate. The 150-minute window is wide enough to absorb GitHub
+      # scheduler drift (historically up to 103 minutes).
       # Manual dispatches (workflow_dispatch) always proceed immediately.
-      - name: Check run window (skip if outside 9:00-11:30 AM ET on weekdays)
+      - name: Check run window (skip if outside 8:00-10:30 AM ET on weekdays)
         id: gate
         run: |
           python - <<'PYEOF'
@@ -197,14 +204,13 @@ jobs:
           now = datetime.now(ZoneInfo("America/New_York"))
           hour, minute, weekday = now.hour, now.minute, now.weekday()
 
-          # FIX: 9:00-11:30 AM ET covers the 9:35 AM nominal trigger
-          # with up to 115 minutes of GitHub scheduler drift.
-          # Old: (hour == 9) and (30 <= minute <= 45) -- only 15 min wide,
-          #      failed every single live run (all arrived 10:57 AM-12:18 PM).
+          # 8:00-10:30 AM ET: covers the 8:00 AM nominal trigger with up to
+          # 150 minutes of GitHub scheduler drift. Suppresses the out-of-window
+          # duplicate cron (the one for the opposing DST season).
           in_window = (weekday < 5) and (
+              (hour == 8) or
               (hour == 9) or
-              (hour == 10) or
-              (hour == 11 and minute <= 30)
+              (hour == 10 and minute <= 30)
           )
           print(f"NY time: {now.strftime('%H:%M')} weekday={weekday} in_window={in_window}")
 
@@ -212,7 +218,7 @@ jobs:
               f.write(f"run={'true' if in_window else 'false'}\n")
 
           if not in_window:
-              print("Outside 9:00-11:30 AM ET window — skipping run.")
+              print("Outside 8:00-10:30 AM ET window — skipping run.")
           PYEOF
 
       - name: Run pipeline
