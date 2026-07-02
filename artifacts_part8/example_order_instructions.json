@@ -1,12 +1,12 @@
 {
-  "decision_date": "2026-06-26 00:00:00",
-  "generated_at": "2026-07-01T19:29:32.349202+00:00",
+  "decision_date": "2026-07-01 00:00:00",
+  "generated_at": "2026-07-02T13:42:59.187228+00:00",
   "portfolio_dollars": 1000.0,
-  "vix_level": 16.450000762939453,
+  "vix_level": 16.59000015258789,
   "stress_label": "NORMAL",
   "total_estimated_cost_dollars": 0.0,
   "total_estimated_cost_bps": 0.0,
   "instructions": [],
   "n_trades": 0,
-  "execute_window": "10:00\u201314:30 on 2026-06-26 00:00:00"
+  "execute_window": "10:00\u201314:30 on 2026-07-01 00:00:00"
 }
