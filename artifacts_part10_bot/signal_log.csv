@@ -6,3 +6,4 @@ date,p_tail,base_rate,edge,target_w_voo,action_reason,target_source,dry_run,accu
 2026-07-01,0.184688,0.206897,0.022208,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 5 live realized obs (need 60),NORMAL,True,0.5,681.01,95.06,1000.0
 2026-07-02,0.19569,0.206897,0.011207,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 5 live realized obs (need 60),NORMAL,True,0.5848,686.81,94.259,1000.0
 2026-07-03,0.195705,0.206897,0.011192,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 6 live realized obs (need 60),NORMAL,True,0.5848,685.46,94.03,1000.0
+2026-07-05,0.19569,0.206795,0.011105,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 6 live realized obs (need 60),NORMAL,True,0.5824,685.46,94.03,1000.0
