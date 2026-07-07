@@ -1,24 +1,24 @@
 {
   "version": "V2_DAILY_CANONICAL",
-  "built_at": "2026-07-05T14:13:28.761042+00:00",
+  "built_at": "2026-07-07T14:21:49.317767+00:00",
   "assets_modeled": [
     "VOO",
     "IEF",
     "GLD",
     "TLT"
   ],
-  "live_vix_used": 16.149999618530273,
+  "live_vix_used": 15.569999694824219,
   "latest_order_instructions": {
-    "decision_date": "2026-07-01 00:00:00",
-    "generated_at": "2026-07-05T14:13:28.674825+00:00",
+    "decision_date": "2026-07-03 00:00:00",
+    "generated_at": "2026-07-07T14:21:49.225714+00:00",
     "portfolio_dollars": 1000.0,
-    "vix_level": 16.149999618530273,
+    "vix_level": 15.569999694824219,
     "stress_label": "NORMAL",
     "total_estimated_cost_dollars": 0.0,
     "total_estimated_cost_bps": 0.0,
     "instructions": [],
     "n_trades": 0,
-    "execute_window": "10:00\u201314:30 on 2026-07-01 00:00:00"
+    "execute_window": "10:00\u201314:30 on 2026-07-03 00:00:00"
   },
   "impact_coefficients": {
     "VOO": 0.35,
@@ -27,15 +27,15 @@
     "TLT": 0.4
   },
   "annual_drag_summary": {
-    "n_rebalances": 18,
-    "avg_turnover_pct": 0.15792575132586914,
+    "n_rebalances": 20,
+    "avg_turnover_pct": 0.1765744555620953,
     "portfolio_dollars": 1000.0,
-    "avg_cost_bps_actual": 0.3988775490660627,
+    "avg_cost_bps_actual": 0.3990563920722379,
     "avg_cost_bps_current_flat": 5.0,
-    "annual_drag_bps_actual": 0.3175,
-    "annual_drag_bps_current": 3.9797,
-    "current_overstates_by_bps": 3.6622,
-    "pct_overstated": 1153.5,
+    "annual_drag_bps_actual": 0.3551,
+    "annual_drag_bps_current": 4.4497,
+    "current_overstates_by_bps": 4.0945,
+    "pct_overstated": 1153.0,
     "note": "The current flat 5bps assumption OVERSTATES costs for retail-scale portfolios on liquid ETFs. Your live strategy IR is likely HIGHER than the backtest shows. For portfolios >$10M, update asset_params with live ADV data."
   },
   "min_rebalance_threshold": 0.005,
