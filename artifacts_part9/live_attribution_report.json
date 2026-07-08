@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-07T14:21:52.531491+00:00",
+  "generated_at": "2026-07-08T13:40:23.496771+00:00",
   "total_predictions": 8,
   "n_live_realized": 7,
   "status": "IMMATURE",
@@ -28,9 +28,9 @@
     "base_rate": 0.2067954045465656,
     "probability_source": "p_final_cal",
     "mean_active_return": -0.002075127988631853,
-    "estimated_annual_edge_bps": -7.5486949478202785,
+    "estimated_annual_edge_bps": -1.5939208387297714,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3551
+    "annual_tc_drag_bps": 0.2289
   },
   "calibration_live": {
     "ece": 0.04257931832125808,
@@ -41,11 +41,11 @@
     "accuracy": 0.4579164214243673,
     "t_stat_accuracy": -3.480609259107298,
     "p_value_accuracy": 0.0005129259849863285,
-    "auc": 0.5051531794387711,
-    "t_stat_auc": 0.28812351505281475,
-    "brier": 0.16189653813649282,
+    "auc": 0.5097678709345232,
+    "t_stat_auc": 0.5476780011871571,
+    "brier": 0.16157041248845214,
     "brier_null": 0.16147711443320362,
-    "brier_skill_score": -0.0025974182440753335,
+    "brier_skill_score": -0.0005777781917779556,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,7 +55,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3551,
+  "annual_tc_drag_bps": 0.2289,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 11,
@@ -65,19 +65,19 @@
         "feature": "alpha_credit_spread",
         "ks_stat": 0.9952865293971719,
         "ks_pval": 3.4346792983771687e-122,
-        "mean_shift": 0.270260393370617
+        "mean_shift": 0.2703249958642191
       },
       {
         "feature": "alpha_breadth",
         "ks_stat": 0.9707268667824361,
         "ks_pval": 6.822422011133369e-91,
-        "mean_shift": -0.23515212519419793
+        "mean_shift": -0.23509049806776217
       },
       {
         "feature": "alpha_tech_relative",
         "ks_stat": 0.9702307119821384,
         "ks_pval": 1.5912296043619337e-90,
-        "mean_shift": 0.34942486667274547
+        "mean_shift": 0.3492096382665316
       }
     ]
   },
