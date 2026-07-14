@@ -1,18 +1,18 @@
 {
-  "crisis": {
-    "a": 0.835624,
-    "b": -0.172985,
-    "n": 615
+  "risk_on": {
+    "a": 0.721062,
+    "b": -0.530875,
+    "n": 487
   },
   "_global": {
-    "a": 0.244,
-    "b": -1.046428,
-    "n": 1703,
-    "degenerate": true
+    "a": 0.283752,
+    "b": -0.990464,
+    "n": 1704,
+    "degenerate": false
   },
   "_meta": {
-    "built_at": "2026-07-13T14:16:43.840038+00:00",
-    "global_degenerate": true,
+    "built_at": "2026-07-14T13:16:50.068196+00:00",
+    "global_degenerate": false,
     "platt_min_slope": 0.25
   }
 }
