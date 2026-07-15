@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-07-14T13:16:51.300558+00:00",
-  "total_predictions": 10,
-  "n_live_realized": 8,
+  "generated_at": "2026-07-15T13:24:19.854907+00:00",
+  "total_predictions": 11,
+  "n_live_realized": 9,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 6.047246934898467,
-  "voo_rmse_live": 7.476027482367034,
+  "voo_mae_live": 5.699274813930136,
+  "voo_rmse_live": 7.115148339423102,
   "classification_stats_live": {
-    "n": 8,
-    "accuracy": 0.875,
-    "t_stat_accuracy": 3.0,
-    "p_value_accuracy": 0.019942126131992536,
-    "auc": 0.5714285714285714,
-    "t_stat_auc": 0.4082482904638628,
-    "brier": 0.11352338911073148,
-    "brier_null": 0.11604896783786252,
-    "brier_skill_score": 0.02176304427354603,
+    "n": 9,
+    "accuracy": 0.7777777777777778,
+    "t_stat_accuracy": 1.889822365046136,
+    "p_value_accuracy": 0.09545200899274062,
+    "auc": 0.5,
+    "t_stat_auc": 0.0,
+    "brier": 0.10580656315773174,
+    "brier_null": 0.10786305203790056,
+    "brier_skill_score": 0.01906574067215938,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
@@ -25,27 +25,27 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false,
     "tail_threshold": -0.015,
-    "base_rate": 0.206694356217933,
+    "base_rate": 0.2064925555284354,
     "probability_source": "p_final_cal",
-    "mean_active_return": -0.0018933880803739117,
-    "estimated_annual_edge_bps": 0.6891115953740964,
+    "mean_active_return": -0.0013359675454397424,
+    "estimated_annual_edge_bps": -0.26515006413124653,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3037
+    "annual_tc_drag_bps": 0.4046
   },
   "calibration_live": {
-    "ece": 0.062959795306913,
-    "brier": 0.11352338911073148
+    "ece": 0.07929017547750564,
+    "brier": 0.10580656315773174
   },
   "classification_stats_backtest": {
-    "n": 1704,
-    "accuracy": 0.45892018779342725,
-    "t_stat_accuracy": -3.4020173718677382,
-    "p_value_accuracy": 0.0006843828835285192,
-    "auc": 0.5101086689914792,
-    "t_stat_auc": 0.5681676131225589,
-    "brier": 0.16180618883512513,
-    "brier_null": 0.16147279805594125,
-    "brier_skill_score": -0.002064686331018306,
+    "n": 1705,
+    "accuracy": 0.4574780058651026,
+    "t_stat_accuracy": -3.5233406468761044,
+    "p_value_accuracy": 0.0004373867413865603,
+    "auc": 0.5075937766410912,
+    "t_stat_auc": 0.4270388107355333,
+    "brier": 0.16151055530472905,
+    "brier_null": 0.16140212072479596,
+    "brier_skill_score": -0.0006718280985340552,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,7 +55,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3037,
+  "annual_tc_drag_bps": 0.4046,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 11,
@@ -63,26 +63,26 @@
     "most_drifted": [
       {
         "feature": "alpha_credit_spread",
-        "ks_stat": 0.9965312190287413,
-        "ks_pval": 1.3546015086658338e-125,
-        "mean_shift": 0.27245927851258495
+        "ks_stat": 0.9967797869705226,
+        "ks_pval": 2.4250670911237056e-126,
+        "mean_shift": 0.2727228439139234
       },
       {
         "feature": "alpha_tech_relative",
-        "ks_stat": 0.9943012884043607,
-        "ks_pval": 7.622734371147553e-120,
-        "mean_shift": 0.3529763393324795
+        "ks_stat": 0.9940549913301956,
+        "ks_pval": 2.720781649491952e-119,
+        "mean_shift": 0.3534947325086029
       },
       {
         "feature": "alpha_breadth",
-        "ks_stat": 0.9707631318136769,
-        "ks_pval": 6.313762268049792e-91,
-        "mean_shift": -0.23548535024376338
+        "ks_stat": 0.9705226653455536,
+        "ks_pval": 9.507964349772666e-91,
+        "mean_shift": -0.2354193223129284
       }
     ]
   },
   "health_status": "IMMATURE",
   "health_reasons": [
-    "Only 8 live observations (60 required)"
+    "Only 9 live observations (60 required)"
   ]
 }
