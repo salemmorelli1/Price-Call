@@ -16,9 +16,9 @@
   "current_alpha_live_status": "FLAT_VETOED",
   "current_alpha_reason": "high_risk_veto",
   "current_alpha_eligible": 0,
-  "current_alpha_abs": 0.067325,
-  "alpha_tape_historical_realized_dates": 1257,
-  "realized_dates": 1257,
+  "current_alpha_abs": 0.069275,
+  "alpha_tape_historical_realized_dates": 1242,
+  "realized_dates": 1242,
   "live_realized_dates": 14,
   "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
   "budget_mult": 1.0,
@@ -30,7 +30,7 @@
   "promotion_ready": 1,
   "alpha_blockers": "NONE",
   "rows": 1711,
-  "rows_realized_fused": 13,
+  "rows_realized_fused": 14,
   "fusion_live_rate": 0.0,
   "alpha_fusion_is_live": false,
   "prediction_log_realized_pct": 1.0,
@@ -54,14 +54,14 @@
   "strict_drive_only": 1,
   "platt_scaling_active": true,
   "current_regime": "high_vol",
-  "p_final_cal_raw": 0.2882184253961656,
+  "p_final_cal_raw": 0.2885512104620011,
   "p_final_cal_blended": null,
   "p_blend_source": "base_only",
   "p_blend_2b": null,
   "p_blend_2c": null,
   "p_2c_live_high_epistemic_warning": false,
   "p_2c_epist_ratio": 1.0,
-  "p_regime_recal": 0.2238189222825335,
+  "p_regime_recal": 0.2885512104620011,
   "platt_regimes_fit": [],
   "platt_inverted_regimes_excluded": [
     "calm",
@@ -69,12 +69,8 @@
     "high_vol",
     "risk_on"
   ],
-  "platt_global_degenerate": false,
-  "platt_auc_gated_passthrough_regimes": [
-    "calm",
-    "crisis",
-    "risk_on"
-  ],
+  "platt_global_degenerate": true,
+  "platt_auc_gated_passthrough_regimes": [],
   "platt_delong_excluded_regimes": [
     "high_vol"
   ],

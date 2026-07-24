@@ -1,8 +1,8 @@
 {
   "decision_date": "2026-07-22 00:00:00",
-  "generated_at": "2026-07-23T13:36:25.385492+00:00",
+  "generated_at": "2026-07-24T13:31:07.188866+00:00",
   "portfolio_dollars": 1000.0,
-  "vix_level": 16.639999389648438,
+  "vix_level": 18.700000762939453,
   "stress_label": "NORMAL",
   "total_estimated_cost_dollars": 0.0,
   "total_estimated_cost_bps": 0.0,
