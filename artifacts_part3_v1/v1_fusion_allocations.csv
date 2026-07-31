@@ -1,3 +1,8 @@
 Date,sleeve,weight,is_alpha,alpha_state
+<<<<<<< Updated upstream
 2026-07-22,VOO,0.6,0,SHADOW
 2026-07-22,IEF,0.4,0,SHADOW
+=======
+2026-07-01,VOO,0.6,0,SHADOW
+2026-07-01,IEF,0.4,0,SHADOW
+>>>>>>> Stashed changes
