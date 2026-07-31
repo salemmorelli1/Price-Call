@@ -6,6 +6,7 @@ date,p_tail,base_rate,edge,target_w_voo,action_reason,target_source,dry_run,accu
 2026-07-01,0.184688,0.206897,0.022208,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 5 live realized obs (need 60),NORMAL,True,0.5,681.01,95.06,1000.0
 2026-07-02,0.19569,0.206897,0.011207,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 5 live realized obs (need 60),NORMAL,True,0.5848,686.81,94.259,1000.0
 2026-07-03,0.195705,0.206897,0.011192,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 6 live realized obs (need 60),NORMAL,True,0.5848,685.46,94.03,1000.0
+<<<<<<< Updated upstream
 2026-07-05,0.19569,0.206795,0.011105,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 6 live realized obs (need 60),NORMAL,True,0.5824,685.46,94.03,1000.0
 2026-07-07,0.207439,0.206694,-0.000745,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 7 live realized obs (need 60),NORMAL,True,0.5,684.84,94.12,1000.0
 2026-07-08,0.201782,0.206694,0.004912,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 7 live realized obs (need 60),NORMAL,True,0.5825,690.62,94.18,1000.0
@@ -26,3 +27,5 @@ date,p_tail,base_rate,edge,target_w_voo,action_reason,target_source,dry_run,accu
 2026-07-29,0.288542,0.206871,-0.081671,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 14 live realized obs (need 60),NORMAL,True,0.5,679.14,92.85,1000.0
 2026-07-30,0.288854,0.206871,-0.081983,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 14 live realized obs (need 60),NORMAL,True,0.5,680.96,93.56,1000.0
 2026-07-31,0.288825,0.206871,-0.081953,0.6,part7_current_target (w_voo=0.600),part7_current_target,True,False,Only 14 live realized obs (need 60),NORMAL,True,0.5,670.63,93.17,1000.0
+=======
+>>>>>>> Stashed changes
