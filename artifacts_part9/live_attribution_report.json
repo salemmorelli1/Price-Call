@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-07-30T13:41:24.233615+00:00",
+  "generated_at": "2026-07-31T13:45:34.917211+00:00",
   "total_predictions": 14,
   "n_live_realized": 14,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 5.571446029952678,
-  "voo_rmse_live": 6.59740658068196,
+  "voo_mae_live": 5.570286181368666,
+  "voo_rmse_live": 6.595975928775271,
   "classification_stats_live": {
     "n": 14,
     "accuracy": 0.5,
@@ -13,9 +13,9 @@
     "p_value_accuracy": 1.0,
     "auc": 0.3076923076923077,
     "t_stat_auc": -1.5590239111558089,
-    "brier": 0.08878965928587658,
+    "brier": 0.08878844634730358,
     "brier_null": 0.08467127553288678,
-    "brier_skill_score": -0.04863967883094222,
+    "brier_skill_score": -0.0486253535646235,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
@@ -28,24 +28,24 @@
     "base_rate": 0.2068713450292397,
     "probability_source": "p_final_cal",
     "mean_active_return": -0.001754288604592924,
-    "estimated_annual_edge_bps": 6.406775890636216,
+    "estimated_annual_edge_bps": -2.8952026691535355,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.2141
+    "annual_tc_drag_bps": 0.3663
   },
   "calibration_live": {
-    "ece": 0.13653764436896285,
-    "brier": 0.08878965928587658
+    "ece": 0.1365355446917207,
+    "brier": 0.08878844634730358
   },
   "classification_stats_backtest": {
     "n": 1710,
-    "accuracy": 0.4631578947368421,
-    "t_stat_accuracy": -3.0544122260012334,
-    "p_value_accuracy": 0.0022898615861802482,
-    "auc": 0.5083505828176107,
-    "t_stat_auc": 0.4677358469179729,
-    "brier": 0.1618518863281691,
+    "accuracy": 0.4625730994152047,
+    "t_stat_accuracy": -3.1031659975307124,
+    "p_value_accuracy": 0.0019459823412249545,
+    "auc": 0.5091476887100628,
+    "t_stat_auc": 0.5155840609302028,
+    "brier": 0.16182608676001048,
     "brier_null": 0.16174583632570705,
-    "brier_skill_score": -0.0006556576960838889,
+    "brier_skill_score": -0.0004961508504750523,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,7 +55,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.2141,
+  "annual_tc_drag_bps": 0.3663,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 9,
@@ -65,19 +65,19 @@
         "feature": "alpha_credit_spread",
         "ks_stat": 1.0,
         "ks_pval": 1.4696533813568535e-140,
-        "mean_shift": 0.2738103406887693
+        "mean_shift": 0.273810345236289
       },
       {
         "feature": "alpha_tech_relative",
         "ks_stat": 0.9987629886194954,
         "ks_pval": 1.5319854962896588e-133,
-        "mean_shift": 0.3549243501694369
+        "mean_shift": 0.3549243532047258
       },
       {
         "feature": "alpha_breadth",
         "ks_stat": 0.9693221177634834,
         "ks_pval": 7.057139943236809e-90,
-        "mean_shift": -0.23539151328611296
+        "mean_shift": -0.23539150882941207
       }
     ]
   },
