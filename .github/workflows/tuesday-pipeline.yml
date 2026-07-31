@@ -288,7 +288,25 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update daily production artifacts [skip ci]"
+          # FIX (S60): removed [skip ci] from this commit message.
+          #
+          # ROOT CAUSE OF PAGES NOT AUTO-UPDATING:
+          # "[skip ci]" suppresses ALL push-triggered workflows on github.com, including
+          # pages.yml which triggers on: push: branches: ["main"]. Every scheduled
+          # production run committed with [skip ci] → pages.yml never fired → dashboard
+          # stayed stale until Salem manually triggered "Deploy GitHub Pages".
+          #
+          # Removing [skip ci] here causes pages.yml to fire automatically after each
+          # successful production artifact commit, keeping the dashboard current.
+          #
+          # No loop risk: pages.yml only uploads an artifact and calls deploy-pages.
+          # It does NOT commit or push anything to the repo, so there is no cycle.
+          #
+          # daily-backfill.yml retains [skip ci] intentionally: backfill updates only
+          # realized price fields in prediction_log.csv and does not produce new
+          # dashboard-visible decisions. The morning production commit (this workflow)
+          # is the correct and sufficient trigger for a pages redeploy.  [FIX F1/S60]
+          git commit -m "Update daily production artifacts"
 
           # Pull remote changes, resolving any JSON/CSV conflicts by
           # keeping the current run's version (ours).
