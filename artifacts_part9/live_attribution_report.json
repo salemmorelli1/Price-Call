@@ -1,4 +1,5 @@
 {
+<<<<<<< Updated upstream
   "generated_at": "2026-07-31T23:23:12.110273+00:00",
   "total_predictions": 14,
   "n_live_realized": 14,
@@ -16,6 +17,25 @@
     "brier": 0.08878886001362088,
     "brier_null": 0.08467127553288678,
     "brier_skill_score": -0.04863023912131559,
+=======
+  "generated_at": "2026-07-03T13:48:45.793882+00:00",
+  "total_predictions": 6,
+  "n_live_realized": 6,
+  "status": "IMMATURE",
+  "schema_mode_col": "deployment_mode",
+  "voo_mae_live": 6.697552777862977,
+  "voo_rmse_live": 8.229312189540728,
+  "classification_stats_live": {
+    "n": 6,
+    "accuracy": 0.8333333333333334,
+    "t_stat_accuracy": 2.0000000000000004,
+    "p_value_accuracy": 0.10193947882985832,
+    "auc": 0.8,
+    "t_stat_auc": 1.837117307087384,
+    "brier": 0.1380911331717369,
+    "brier_null": 0.14050733254062625,
+    "brier_skill_score": 0.017196251779038718,
+>>>>>>> Stashed changes
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
@@ -25,6 +45,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false,
     "tail_threshold": -0.015,
+<<<<<<< Updated upstream
     "base_rate": 0.2068713450292397,
     "probability_source": "p_final_cal",
     "mean_active_return": -0.001754288604592924,
@@ -46,6 +67,29 @@
     "brier": 0.16209408870881334,
     "brier_null": 0.16174583632570705,
     "brier_skill_score": -0.0021530834474756677,
+=======
+    "base_rate": 0.2068965517241379,
+    "probability_source": "p_final_cal",
+    "mean_active_return": -0.0037213864524496634,
+    "estimated_annual_edge_bps": 6.017897368055095,
+    "estimated_annual_edge_source": "part2_active_ret_net_mean",
+    "annual_tc_drag_bps": 0.2294
+  },
+  "calibration_live": {
+    "ece": 0.01746152350512159,
+    "brier": 0.1380911331717369
+  },
+  "classification_stats_backtest": {
+    "n": 1695,
+    "accuracy": 0.46371681415929206,
+    "t_stat_accuracy": -2.9945985098683865,
+    "p_value_accuracy": 0.002787897864749304,
+    "auc": 0.5087553577883739,
+    "t_stat_auc": 0.49046722467499576,
+    "brier": 0.16211323019282253,
+    "brier_null": 0.16176120987460957,
+    "brier_skill_score": -0.00217617201471354,
+>>>>>>> Stashed changes
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,6 +99,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
+<<<<<<< Updated upstream
   "annual_tc_drag_bps": 0.4174,
   "feature_drift": {
     "n_features_tested": 14,
@@ -78,11 +123,40 @@
         "ks_stat": 0.9693221177634834,
         "ks_pval": 7.057139943236809e-90,
         "mean_shift": -0.23539151453365414
+=======
+  "annual_tc_drag_bps": 0.2294,
+  "feature_drift": {
+    "n_features_tested": 14,
+    "n_drifted_5pct": 12,
+    "n_severely_drifted_1pct": 10,
+    "most_drifted": [
+      {
+        "feature": "alpha_credit_spread",
+        "ks_stat": 0.9915569903153714,
+        "ks_pval": 3.0470677758160053e-114,
+        "mean_shift": 0.27032860468986597
+      },
+      {
+        "feature": "alpha_breadth",
+        "ks_stat": 0.9553017134343184,
+        "ks_pval": 2.6837395371781806e-81,
+        "mean_shift": -0.23416436308853072
+      },
+      {
+        "feature": "alpha_tech_relative",
+        "ks_stat": 0.9525701514775268,
+        "ks_pval": 6.646550027801013e-80,
+        "mean_shift": 0.345419146233105
+>>>>>>> Stashed changes
       }
     ]
   },
   "health_status": "IMMATURE",
   "health_reasons": [
+<<<<<<< Updated upstream
     "Only 14 live observations (60 required)"
+=======
+    "Only 6 live observations (60 required)"
+>>>>>>> Stashed changes
   ]
 }
