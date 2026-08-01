@@ -13,7 +13,6 @@
   "latest_alpha_state": "SHADOW",
   "latest_alpha_state_display": "SHADOW",
   "historical_alpha_state": "SHADOW",
-<<<<<<< Updated upstream
   "current_alpha_live_status": "FLAT_VETOED",
   "current_alpha_reason": "high_risk_veto",
   "current_alpha_eligible": 0,
@@ -21,15 +20,6 @@
   "alpha_tape_historical_realized_dates": 1297,
   "realized_dates": 1297,
   "live_realized_dates": 14,
-=======
-  "current_alpha_live_status": "SHADOW",
-  "current_alpha_reason": "ok",
-  "current_alpha_eligible": 1,
-  "current_alpha_abs": 0.05884,
-  "alpha_tape_historical_realized_dates": 1032,
-  "realized_dates": 1032,
-  "live_realized_dates": 6,
->>>>>>> Stashed changes
   "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
   "budget_mult": 1.0,
   "drift_rate": 0.0,
@@ -39,13 +29,8 @@
   "fused_gate_open": 1,
   "promotion_ready": 1,
   "alpha_blockers": "NONE",
-<<<<<<< Updated upstream
   "rows": 1711,
   "rows_realized_fused": 14,
-=======
-  "rows": 1696,
-  "rows_realized_fused": 6,
->>>>>>> Stashed changes
   "fusion_live_rate": 0.0,
   "alpha_fusion_is_live": false,
   "prediction_log_realized_pct": 1.0,
@@ -57,11 +42,7 @@
     "SHADOW": 1.0
   },
   "prediction_log_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part3/prediction_log.csv",
-<<<<<<< Updated upstream
   "prediction_log_realized_rows": 14,
-=======
-  "prediction_log_realized_rows": 6,
->>>>>>> Stashed changes
   "allocation_sum_to_one_max_deviation": 0.0,
   "horizon": 1,
   "part7_base_weights_source": "part7_portfolio_weights_tape",
@@ -72,20 +53,14 @@
   "preferred_alpha_family": "part2a21",
   "strict_drive_only": 1,
   "platt_scaling_active": true,
-<<<<<<< Updated upstream
   "current_regime": "high_vol",
   "p_final_cal_raw": 0.2888346190286724,
-=======
-  "current_regime": "calm",
-  "p_final_cal_raw": 0.1957048081939449,
->>>>>>> Stashed changes
   "p_final_cal_blended": null,
   "p_blend_source": "base_only",
   "p_blend_2b": null,
   "p_blend_2c": null,
   "p_2c_live_high_epistemic_warning": false,
   "p_2c_epist_ratio": 1.0,
-<<<<<<< Updated upstream
   "p_regime_recal": 0.2787565775764956,
   "platt_regimes_fit": [
     "high_vol"
@@ -93,33 +68,16 @@
   "platt_inverted_regimes_excluded": [
     "calm",
     "crisis",
-=======
-  "p_regime_recal": 0.1957048081939449,
-  "platt_regimes_fit": [
-    "crisis"
-  ],
-  "platt_inverted_regimes_excluded": [
-    "calm",
-    "high_vol",
->>>>>>> Stashed changes
     "risk_on"
   ],
   "platt_global_degenerate": false,
   "platt_auc_gated_passthrough_regimes": [
-<<<<<<< Updated upstream
     "crisis",
     "risk_on"
   ],
   "platt_delong_excluded_regimes": [
     "calm"
   ],
-=======
-    "calm",
-    "high_vol",
-    "risk_on"
-  ],
-  "platt_delong_excluded_regimes": [],
->>>>>>> Stashed changes
   "platt_rolling_anti_predictive_passthrough_regimes": [],
   "platt_params_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part3_v1/part3_platt_params.json"
 }

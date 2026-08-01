@@ -5,7 +5,6 @@
   "n_features": 14,
   "holdout_start": "2020-01-01",
   "n_training_rows": 2394,
-<<<<<<< Updated upstream
   "n_holdout_rows": 1710,
   "holdout_auc": 0.5746615471465935,
   "holdout_brier": 0.16132491815094233,
@@ -42,51 +41,12 @@
   "xgb_single_ece": 0.01417281404749387,
   "platt_global_a": 0.05236972503753125,
   "platt_global_b": -1.2750325462770042,
-=======
-  "n_holdout_rows": 1695,
-  "holdout_auc": 0.5727196047716592,
-  "holdout_brier": 0.16139815320208434,
-  "holdout_ece": 0.007785785012878412,
-  "holdout_ece_raw": 0.11950890508900702,
-  "holdout_ece_high_spread": 0.051520228508123905,
-  "holdout_ece_low_spread": 0.027570015203702978,
-  "holdout_decision_utility": 0.02477181901715334,
-  "walkforward_auc_pooled": 0.5091969317971707,
-  "walkforward_auc_pooled_tstat": 0.5550607976698527,
-  "walkforward_auc_pooled_pval": 0.29413851208371816,
-  "walkforward_auc_significant": false,
-  "platt_degenerate": true,
-  "walkforward_mean_auc": 0.5091969317971708,
-  "walkforward_mean_brier": 0.16798671654292516,
-  "walkforward_mean_ece": 0.04548533424701279,
-  "walkforward_mean_ece_raw": 0.04548533424701279,
-  "walkforward_ece_gap": 0.024399789133287268,
-  "walkforward_spread_corr_vs_caution": -0.006484525843349395,
-  "n_walkforward_eval_rows": 3528,
-  "row_level_mean_spread": 0.1332851090339644,
-  "epist_overlay_threshold_75pct": 0.15896102786064148,
-  "uncertainty_signal_validated": true,
-  "holdout_ece_platt_contamination_warning": true,
-  "holdout_ece_wf_ece_ratio": 5.842099951613847,
-  "gate_validation_passed": false,
-  "walkforward_calibration_warning": false,
-  "walkforward_calibration_warning_threshold": 0.1,
-  "live_p_xgb_ens_mean": 0.2112725093033411,
-  "live_p_xgb_ens_mean_raw": 0.31967297196388245,
-  "live_p_xgb_ens_std": 0.11315584927797318,
-  "live_xgb_overlay_on": 0,
-  "xgb_single_auc": 0.5087553577883739,
-  "xgb_single_ece": 0.01600800581157519,
-  "platt_global_a": 0.04703420225570443,
-  "platt_global_b": -1.2817482987921327,
->>>>>>> Stashed changes
   "platt_n_oos_rows": 3528,
   "bnn_sleeve_recommended": false,
   "platt_calibration_applied": true,
   "platt_calibration_mode": "fold_adjacent",
   "regime_auc_breakdown": {
     "calm": {
-<<<<<<< Updated upstream
       "n": 360,
       "auc": 0.600855,
       "base_rate": 0.183333,
@@ -113,34 +73,6 @@
       "base_rate": 0.189293,
       "brier": 0.15348,
       "ece": 0.022279
-=======
-      "n": 348,
-      "auc": 0.516148,
-      "base_rate": 0.126437,
-      "brier": 0.116908,
-      "ece": 0.080285
-    },
-    "crisis": {
-      "n": 341,
-      "auc": 0.595163,
-      "base_rate": 0.234604,
-      "brier": 0.179522,
-      "ece": 0.027744
-    },
-    "high_vol": {
-      "n": 315,
-      "auc": 0.617591,
-      "base_rate": 0.279365,
-      "brier": 0.205165,
-      "ece": 0.070294
-    },
-    "risk_on": {
-      "n": 691,
-      "auc": 0.507386,
-      "base_rate": 0.191027,
-      "brier": 0.154909,
-      "ece": 0.020975
->>>>>>> Stashed changes
     },
     "active_regimes": [
       "calm",
@@ -150,9 +82,5 @@
     ],
     "passive_regimes": []
   },
-<<<<<<< Updated upstream
   "built_at": "2026-07-31T23:23:02.073194+00:00"
-=======
-  "built_at": "2026-07-03T13:48:31.982605+00:00"
->>>>>>> Stashed changes
 }

@@ -1,10 +1,6 @@
 {
   "version": "V2_DAILY_CANONICAL",
-<<<<<<< Updated upstream
   "built_at": "2026-07-31T23:06:19.049322+00:00",
-=======
-  "built_at": "2026-07-03T13:32:19.100879+00:00",
->>>>>>> Stashed changes
   "model_type": "hmm",
   "n_regimes": 4,
   "feature_cols": [
@@ -19,18 +15,12 @@
   ],
   "regime_map": {
     "0": "calm",
-<<<<<<< Updated upstream
     "2": "risk_on",
     "3": "high_vol",
-=======
-    "3": "risk_on",
-    "2": "high_vol",
->>>>>>> Stashed changes
     "1": "crisis"
   },
   "transition_matrix": [
     [
-<<<<<<< Updated upstream
       0.95404117,
       0.02214014,
       0.00686895,
@@ -60,37 +50,6 @@
     "calm": 0.29780564263322884,
     "risk_on": 0.21413069688931757,
     "crisis": 0.1892934651555341
-=======
-      0.91880898,
-      0.03817921,
-      0.01127157,
-      0.03174024
-    ],
-    [
-      0.03494936,
-      0.9466953,
-      0.0119259,
-      0.00642944
-    ],
-    [
-      0.05395115,
-      0.0,
-      0.94604885,
-      0.0
-    ],
-    [
-      0.0037213,
-      0.02538057,
-      0.01068926,
-      0.96020887
-    ]
-  ],
-  "regime_distribution": {
-    "crisis": 0.30336806396898475,
-    "calm": 0.2641143687908893,
-    "risk_on": 0.259268233583717,
-    "high_vol": 0.17324933365640902
->>>>>>> Stashed changes
   },
   "unknown_rate": 0.0,
   "fomc_dates_included": 65,
