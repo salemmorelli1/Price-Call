@@ -215,11 +215,77 @@ def build_part1_v20(cfg: Part1Config):
     stale_tickers = {t: r for t, r in stale_report.items() if r > cfg.max_stale_run}
     drop_mask = pd.Series(False, index=data.index)
 
+    # FIX (F1, Quant-Guild S61 Audit):
+    #
+    # ROOT CAUSE OF FROZEN asof_date:
+    # The prior staleness drop applied to ALL tickers in REQ_TICKERS, including
+    # non-core secondary tickers (JNK, ^VIX3M, RSP, QQQ). When yfinance returns
+    # stale/repeated prices for a secondary ticker — as JNK and ^VIX3M did from
+    # 2026-07-23 onward — the rolling drop_mask fires for every row in the stale
+    # run. With 9 consecutive stale days (Jul 23–Aug 4), all 9 rows are dropped
+    # from `data`. The last remaining row becomes Jul 22, which is then written
+    # as asof_date. Every downstream part (Part 2, Part 3, prediction_log) reads
+    # that frozen date and the system appears permanently stale.
+    #
+    # The staleness guard was designed to exclude isolated mid-history data-vendor
+    # outages from TRAINING. It was never intended to suppress the LIVE prediction
+    # date when a secondary ticker has a current data gap — the core tickers VOO
+    # and IEF remain fresh and are the only tickers whose staleness makes the
+    # training data genuinely unreliable.
+    #
+    # TWO-PART FIX:
+    #
+    # 1. Restrict row-drops to CORE tickers only (VOO, IEF).
+    #    Non-core tickers (JNK, ^VIX3M, RSP, QQQ) report staleness as a WARNING
+    #    but do NOT drop rows. Their stale values are forward-filled at line 211
+    #    already; the resulting features are less informative but not wrong.
+    #    A secondary ticker going stale should degrade signal quality, not kill
+    #    the entire live prediction capability.
+    #
+    # 2. Protect the most recent STALE_LIVE_PROTECTION_DAYS business days from
+    #    any drop, regardless of ticker. The live prediction date must always
+    #    be today or the most recent business day — never frozen weeks in the past.
+    #    The protection window (20 days, 4 weeks) is wide enough to cover any
+    #    realistic data-vendor gap while still allowing legitimate mid-history
+    #    stale-data exclusion for training rows.
+    #
+    # Safety properties:
+    #   - Core-ticker stale rows in the middle of history are still dropped (same
+    #     as before), protecting training data quality for VOO/IEF.
+    #   - Non-core stale rows in the middle of history are now kept (changed),
+    #     but their forward-filled values have been in place since the ffill at
+    #     line 211, so the feature values are unchanged — only the row-drop
+    #     decision is different.
+    #   - Recent rows (last 20 bdays) are never dropped regardless of ticker,
+    #     ensuring asof_date always reflects the most recent available data.
+    #   - The printed staleness warning still fires for all tickers exceeding
+    #     max_stale_run so operator visibility is unchanged.  [FIX F1/S61]
+    _CORE_TICKERS = {"VOO", "IEF"}   # only core staleness should drop rows
+    _STALE_LIVE_PROTECTION_DAYS = 20  # never drop the most recent N business days
+
     if stale_tickers:
         print(f"⚠️ Staleness warning: {stale_tickers}")
-        for t in REQ_TICKERS:
+        core_stale = {t for t in stale_tickers if t in _CORE_TICKERS}
+        noncore_stale = {t: r for t, r in stale_tickers.items() if t not in _CORE_TICKERS}
+        if noncore_stale:
+            print(
+                f"[Part 1] Non-core staleness ({noncore_stale}) — rows kept; "
+                f"secondary tickers forward-filled. asof_date will not be affected.  [FIX F1/S61]"
+            )
+        for t in core_stale:  # only drop for core tickers
             r0 = (np.log(data[t]).diff() == 0.0)
             drop_mask |= (r0.rolling(cfg.max_stale_run + 1).sum() >= cfg.max_stale_run + 1)
+        # Never drop the most recent STALE_LIVE_PROTECTION_DAYS rows regardless of ticker
+        if len(data) > _STALE_LIVE_PROTECTION_DAYS:
+            protect_cutoff = data.index[-_STALE_LIVE_PROTECTION_DAYS]
+            n_protected = int((drop_mask & (data.index >= protect_cutoff)).sum())
+            if n_protected > 0:
+                print(
+                    f"[Part 1] Staleness guard: protecting {n_protected} recent row(s) "
+                    f"(on/after {protect_cutoff.date()}) from drop to preserve live "
+                    f"prediction date.  [FIX F1/S61]"
+                )
+            drop_mask.loc[data.index >= protect_cutoff] = False
         data = data.loc[~drop_mask].copy()
 
     logp = np.log(data)
