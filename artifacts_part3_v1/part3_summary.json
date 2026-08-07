@@ -54,14 +54,14 @@
   "strict_drive_only": 1,
   "platt_scaling_active": true,
   "current_regime": "high_vol",
-  "p_final_cal_raw": 0.2253162713363969,
+  "p_final_cal_raw": 0.2354466342935209,
   "p_final_cal_blended": null,
   "p_blend_source": "base_only",
   "p_blend_2b": null,
   "p_blend_2c": null,
   "p_2c_live_high_epistemic_warning": false,
   "p_2c_epist_ratio": 1.0,
-  "p_regime_recal": 0.245018840283484,
+  "p_regime_recal": 0.25501461028616934,
   "platt_regimes_fit": [
     "high_vol"
   ],
