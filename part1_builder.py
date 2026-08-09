@@ -209,6 +209,62 @@ def build_part1_v20(cfg: Part1Config):
                 data[_tk] = data[_sub].copy()
 
     data = data.ffill(limit=cfg.allow_ffill_limit)
+
+    # FIX (F2, Quant-Guild S61 Audit):
+    #
+    # ROOT CAUSE OF CONTINUED FROZEN asof_date AFTER S61 F1:
+    # The S61 F1 fix (lines 218-289) addressed the case where yfinance returns
+    # FROZEN/IDENTICAL prices for secondary tickers — the staleness drop guard
+    # was restricted to core tickers only, preserving recent rows.
+    #
+    # However, yfinance also alternates to a second failure mode: returning
+    # outright NaN (missing data) for the same secondary tickers (JNK, ^VIX3M).
+    # This is a DIFFERENT path that hits BEFORE the staleness check:
+    #   Line 211: ffill(limit=2) fills only 2 consecutive NaN days.
+    #   Line 212: dropna(subset=REQ_TICKERS) drops ALL rows where any required
+    #             ticker is still NaN after the 2-day fill.
+    # If JNK or ^VIX3M has been NaN for 3+ consecutive days, those rows survive
+    # the 2-day ffill as NaN and are then dropped at line 212. The data ends at
+    # the last day where all REQ_TICKERS were non-NaN, freezing asof_date at
+    # that day regardless of how much time has passed.
+    #
+    # Evidence: after S61 F1 deployed (Aug 5), asof_date advanced exactly one
+    # day (Jul 22 → Jul 23) then froze again. Jul 23 was the last day covered
+    # by the 2-day ffill from Jul 22 (the last valid JNK/VIX3M date). Jul 24+
+    # remained NaN beyond the ffill limit and were dropped at line 212.
+    #
+    # FIX: Apply a second, targeted ffill pass for non-core tickers only,
+    # with a 20-business-day limit. This is applied AFTER the existing 2-day
+    # global ffill and BEFORE the dropna, so:
+    #   - Core tickers (VOO, IEF): still only get 2-day ffill. Any NaN in core
+    #     tickers beyond 2 days correctly signals a serious data failure and
+    #     drops those rows (protecting training data integrity for the signal).
+    #   - Non-core tickers (JNK, ^VIX3M, RSP, QQQ): get up to 20-day ffill.
+    #     A secondary ticker missing for up to 4 weeks produces flat/stale
+    #     feature values for those features, which degrades signal quality but
+    #     does not suppress the live prediction date.
+    #
+    # 20 days (4 weeks) covers all realistic yfinance outage durations for
+    # these secondary tickers without creating unbounded stale-fill risk.
+    # The existing non-core fallback (lines 195-209) handles the extreme case
+    # of >80% NaN (complete download failure) via ticker substitution; this
+    # fix handles the moderate case of partial NaN gaps (days to weeks).
+    #
+    # Combined with S61 F1 (frozen-price case), these two fixes make Part 1
+    # robust to all observed yfinance secondary-ticker failure modes.  [FIX F2/S61]
+    _NON_CORE_EXTENDED_FFILL = [t for t in ["JNK", "^VIX3M", "RSP", "QQQ"] if t in data.columns]
+    _NON_CORE_FFILL_LIMIT = 20  # 4 weeks — covers all realistic yfinance outage durations
+    if _NON_CORE_EXTENDED_FFILL:
+        _pre_fill_nan = {t: int(data[t].isna().sum()) for t in _NON_CORE_EXTENDED_FFILL}
+        data[_NON_CORE_EXTENDED_FFILL] = data[_NON_CORE_EXTENDED_FFILL].ffill(limit=_NON_CORE_FFILL_LIMIT)
+        _post_fill_nan = {t: int(data[t].isna().sum()) for t in _NON_CORE_EXTENDED_FFILL}
+        _filled = {t: _pre_fill_nan[t] - _post_fill_nan[t] for t in _NON_CORE_EXTENDED_FFILL if _pre_fill_nan[t] > _post_fill_nan[t]}
+        if _filled:
+            print(
+                f"[Part 1] Extended ffill (limit={_NON_CORE_FFILL_LIMIT}) filled NaN gaps "
+                f"in non-core tickers: {_filled}. asof_date preserved.  [FIX F2/S61]"
+            )
+
     data = data.dropna(subset=list(REQ_TICKERS)).copy()
 
     stale_report = {t: _max_consecutive_equal(data[t]) for t in REQ_TICKERS}
