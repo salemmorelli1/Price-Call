@@ -1,19 +1,19 @@
 {
   "distribution_validation": {
-    "raw_coverage_mean": 0.8300187824549774,
-    "conf_coverage_mean": 0.909521968106655,
-    "median_rmse_mean": 0.013096922910560698
+    "raw_coverage_mean": 0.8291072809634296,
+    "conf_coverage_mean": 0.9099915294810887,
+    "median_rmse_mean": 0.01309471444748434
   },
   "fused_probabilities": {
-    "p_tail_base_mean": 0.20809377685153463,
-    "p_tail_dist_mean": 0.09101197633705428,
-    "p_final_g5_mean": 0.20809377685153463,
-    "uncertainty_penalty_mean": 0.4954179205684276,
-    "dist_tail_shift_mean": 0.0026770921493349874,
-    "dist_width_caution_mean": 0.18562475203944223,
-    "dist_overlay_on_rate": 0.16183294663573086,
-    "dist_trust_mean": 0.7563939160610168,
-    "dist_overlay_strength_mean": 0.14951604103165247
+    "p_tail_base_mean": 0.20818425759766068,
+    "p_tail_dist_mean": 0.0925491539424298,
+    "p_final_g5_mean": 0.20818425759766068,
+    "uncertainty_penalty_mean": 0.4958118397915217,
+    "dist_tail_shift_mean": 0.002676370193114881,
+    "dist_width_caution_mean": 0.18581423585086565,
+    "dist_overlay_on_rate": 0.16009280742459397,
+    "dist_trust_mean": 0.7549793437191684,
+    "dist_overlay_strength_mean": 0.14927332807051077
   },
   "tail_event_threshold": -0.015
 }
