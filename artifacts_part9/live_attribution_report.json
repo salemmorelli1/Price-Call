@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-07T14:28:00.428490+00:00",
-  "total_predictions": 15,
+  "generated_at": "2026-08-10T12:59:23.536585+00:00",
+  "total_predictions": 16,
   "n_live_realized": 15,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
@@ -27,25 +27,25 @@
     "tail_threshold": -0.015,
     "base_rate": 0.2070645554202192,
     "probability_source": "p_final_cal",
-    "mean_active_return": -0.000876486820006428,
-    "estimated_annual_edge_bps": -4.8764143083635085,
+    "mean_active_return": -0.0008764867749106416,
+    "estimated_annual_edge_bps": 1.2956968400089217,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3919
+    "annual_tc_drag_bps": 0.3126
   },
   "calibration_live": {
     "ece": 0.1432090966202922,
     "brier": 0.08661089699821277
   },
   "classification_stats_backtest": {
-    "n": 1711,
-    "accuracy": 0.4687317358270017,
-    "t_stat_accuracy": -2.5910912722988337,
-    "p_value_accuracy": 0.00964859182757418,
-    "auc": 0.5100269014428955,
-    "t_stat_auc": 0.5670030483114471,
-    "brier": 0.16201755274745078,
-    "brier_null": 0.16202240735420853,
-    "brier_skill_score": 2.996318122927555e-05,
+    "n": 1723,
+    "accuracy": 0.4567614625652931,
+    "t_stat_accuracy": -3.602031909099816,
+    "p_value_accuracy": 0.00032469964385243276,
+    "auc": 0.5084083031994094,
+    "t_stat_auc": 0.4723790281232616,
+    "brier": 0.1619020506526653,
+    "brier_null": 0.16152568995014363,
+    "brier_skill_score": -0.0023300355652702276,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,29 +55,29 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3919,
+  "annual_tc_drag_bps": 0.3126,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 9,
-    "n_severely_drifted_1pct": 8,
+    "n_severely_drifted_1pct": 9,
     "most_drifted": [
       {
         "feature": "alpha_credit_spread",
-        "ks_stat": 0.9997526589166461,
-        "ks_pval": 9.26146497157449e-139,
-        "mean_shift": 0.2740181623260515
+        "ks_stat": 0.9972872996300863,
+        "ks_pval": 5.025778965675934e-128,
+        "mean_shift": 0.27594744316750375
       },
       {
         "feature": "alpha_tech_relative",
-        "ks_stat": 0.9985159534998763,
-        "ks_pval": 1.734751574701406e-132,
-        "mean_shift": 0.35496374431383904
+        "ks_stat": 0.9792848335388409,
+        "ks_pval": 3.1606676950763476e-98,
+        "mean_shift": 0.34957242568332564
       },
       {
         "feature": "alpha_breadth",
-        "ks_stat": 0.9690823645807569,
-        "ks_pval": 1.0451084572076198e-89,
-        "mean_shift": -0.2350428539698437
+        "ks_stat": 0.9398273736128236,
+        "ks_pval": 3.1657842175038493e-74,
+        "mean_shift": -0.22797454939749195
       }
     ]
   },
