@@ -1,51 +1,51 @@
 {
-  "generated_at": "2026-08-11T14:36:11.486880+00:00",
-  "total_predictions": 17,
-  "n_live_realized": 15,
+  "generated_at": "2026-08-12T12:57:34.253058+00:00",
+  "total_predictions": 18,
+  "n_live_realized": 16,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 5.230661436842775,
-  "voo_rmse_live": 6.366159557369221,
+  "voo_mae_live": 5.063601552291459,
+  "voo_rmse_live": 6.197084287879601,
   "classification_stats_live": {
-    "n": 15,
-    "accuracy": 0.4666666666666667,
-    "t_stat_accuracy": -0.25,
-    "p_value_accuracy": 0.8062184979868993,
-    "auc": 0.2857142857142857,
-    "t_stat_auc": -1.8371173070873839,
-    "brier": 0.08661089699821277,
-    "brier_null": 0.08193378938867717,
-    "brier_skill_score": -0.0570839886538137,
+    "n": 16,
+    "accuracy": 0.4375,
+    "t_stat_accuracy": -0.48795003647426655,
+    "p_value_accuracy": 0.6326406085600337,
+    "auc": 0.2666666666666667,
+    "t_stat_auc": -2.110579412044345,
+    "brier": 0.08408828547146244,
+    "brier_null": 0.07938851783652193,
+    "brier_skill_score": -0.059199587762784445,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
     "worse_than_null_acc_1pct": false,
     "better_than_null_auc_5pct": false,
     "better_than_null_auc_1pct": false,
-    "worse_than_null_auc_5pct": false,
+    "worse_than_null_auc_5pct": true,
     "worse_than_null_auc_1pct": false,
     "tail_threshold": -0.015,
-    "base_rate": 0.2070645554202192,
+    "base_rate": 0.2067039106145251,
     "probability_source": "p_final_cal",
-    "mean_active_return": -0.0008764867749106416,
-    "estimated_annual_edge_bps": -3.438593403354916,
+    "mean_active_return": -0.0008215617677765699,
+    "estimated_annual_edge_bps": -4.787234672936321,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3632
+    "annual_tc_drag_bps": 0.3509
   },
   "calibration_live": {
-    "ece": 0.1432090966202922,
-    "brier": 0.08661089699821277
+    "ece": 0.14769953235863703,
+    "brier": 0.08408828547146244
   },
   "classification_stats_backtest": {
-    "n": 1724,
-    "accuracy": 0.45359628770301624,
-    "t_stat_accuracy": -3.8690451501726955,
-    "p_value_accuracy": 0.00011333083213074292,
-    "auc": 0.5110622557957801,
-    "t_stat_auc": 0.6251743783567788,
-    "brier": 0.16176831642903508,
-    "brier_null": 0.16145578189178567,
-    "brier_skill_score": -0.0019357277478320167,
+    "n": 1725,
+    "accuracy": 0.45217391304347826,
+    "t_stat_accuracy": -3.9898757711373256,
+    "p_value_accuracy": 6.887633451547852e-05,
+    "auc": 0.5133625141600586,
+    "t_stat_auc": 0.7503699287143726,
+    "brier": 0.16165682589479577,
+    "brier_null": 0.16138592732619197,
+    "brier_skill_score": -0.0016785755296271354,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,34 +55,34 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3632,
+  "annual_tc_drag_bps": 0.3509,
   "feature_drift": {
     "n_features_tested": 14,
-    "n_drifted_5pct": 9,
+    "n_drifted_5pct": 10,
     "n_severely_drifted_1pct": 9,
     "most_drifted": [
       {
         "feature": "alpha_credit_spread",
-        "ks_stat": 0.9970414201183433,
-        "ks_pval": 3.093068627819484e-127,
-        "mean_shift": 0.27620275433738994
+        "ks_stat": 0.9967956618190781,
+        "ks_pval": 1.7806049965512287e-126,
+        "mean_shift": 0.27632868329417537
       },
       {
         "feature": "alpha_tech_relative",
-        "ks_stat": 0.979043392504931,
-        "ks_pval": 5.4191076913071174e-98,
-        "mean_shift": 0.34891330000620124
+        "ks_stat": 0.9788020704954399,
+        "ks_pval": 9.245350715853809e-98,
+        "mean_shift": 0.3483429654935771
       },
       {
         "feature": "alpha_breadth",
-        "ks_stat": 0.9395956607495068,
-        "ks_pval": 3.918982414015502e-74,
-        "mean_shift": -0.22716211211359372
+        "ks_stat": 0.9393640621148632,
+        "ks_pval": 4.8473655273113034e-74,
+        "mean_shift": -0.22618960350474526
       }
     ]
   },
   "health_status": "IMMATURE",
   "health_reasons": [
-    "Only 15 live observations (60 required)"
+    "Only 16 live observations (60 required)"
   ]
 }
