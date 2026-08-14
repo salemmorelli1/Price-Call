@@ -1,18 +1,18 @@
 {
   "high_vol": {
-    "a": 0.82567,
-    "b": -0.198269,
-    "n": 610
+    "a": 0.982179,
+    "b": 0.033417,
+    "n": 516
   },
   "_global": {
-    "a": 0.338006,
-    "b": -0.920083,
-    "n": 1726,
-    "degenerate": false
+    "a": 0.062276,
+    "b": -1.290282,
+    "n": 1727,
+    "degenerate": true
   },
   "_meta": {
-    "built_at": "2026-08-13T14:34:34.290821+00:00",
-    "global_degenerate": false,
+    "built_at": "2026-08-14T12:55:40.603585+00:00",
+    "global_degenerate": true,
     "platt_min_slope": 0.25
   }
 }
