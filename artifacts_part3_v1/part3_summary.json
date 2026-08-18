@@ -16,9 +16,9 @@
   "current_alpha_live_status": "SHADOW",
   "current_alpha_reason": "ok",
   "current_alpha_eligible": 1,
-  "current_alpha_abs": 0.07841,
-  "alpha_tape_historical_realized_dates": 1266,
-  "realized_dates": 1266,
+  "current_alpha_abs": 0.075008,
+  "alpha_tape_historical_realized_dates": 871,
+  "realized_dates": 871,
   "live_realized_dates": 20,
   "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
   "budget_mult": 1.0,
@@ -54,29 +54,26 @@
   "strict_drive_only": 1,
   "platt_scaling_active": true,
   "current_regime": "calm",
-  "p_final_cal_raw": 0.2212442228064642,
+  "p_final_cal_raw": 0.2050122811548823,
   "p_final_cal_blended": null,
   "p_blend_source": "base_only",
   "p_blend_2b": null,
   "p_blend_2c": null,
   "p_2c_live_high_epistemic_warning": false,
   "p_2c_epist_ratio": 1.0,
-  "p_regime_recal": 0.2212442228064642,
-  "platt_regimes_fit": [
-    "high_vol"
-  ],
+  "p_regime_recal": 0.2050122811548823,
+  "platt_regimes_fit": [],
   "platt_inverted_regimes_excluded": [
     "calm",
     "crisis",
+    "high_vol",
     "risk_on"
   ],
-  "platt_global_degenerate": false,
-  "platt_auc_gated_passthrough_regimes": [
-    "calm",
-    "crisis",
-    "risk_on"
+  "platt_global_degenerate": true,
+  "platt_auc_gated_passthrough_regimes": [],
+  "platt_delong_excluded_regimes": [
+    "crisis"
   ],
-  "platt_delong_excluded_regimes": [],
   "platt_rolling_anti_predictive_passthrough_regimes": [],
   "platt_params_path": "/home/runner/work/Price-Call/Price-Call/artifacts_part3_v1/part3_platt_params.json"
 }

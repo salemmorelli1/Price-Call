@@ -1,6 +1,6 @@
 {
-  "decision_date": "2026-08-17 00:00:00",
-  "generated_at": "2026-08-18T12:31:16.692820+00:00",
+  "decision_date": "2026-08-18 00:00:00",
+  "generated_at": "2026-08-18T13:56:30.639417+00:00",
   "portfolio_dollars": 1000.0,
   "vix_level": 14.25,
   "stress_label": "NORMAL",
@@ -8,5 +8,5 @@
   "total_estimated_cost_bps": 0.0,
   "instructions": [],
   "n_trades": 0,
-  "execute_window": "10:00\u201314:30 on 2026-08-17 00:00:00"
+  "execute_window": "10:00\u201314:30 on 2026-08-18 00:00:00"
 }
