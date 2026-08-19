@@ -1,13 +1,13 @@
 {
   "_global": {
-    "a": -0.546702,
-    "b": -2.103859,
-    "n": 1729,
-    "degenerate": true
+    "a": 0.321246,
+    "b": -0.941501,
+    "n": 1730,
+    "degenerate": false
   },
   "_meta": {
-    "built_at": "2026-08-18T13:56:32.400438+00:00",
-    "global_degenerate": true,
+    "built_at": "2026-08-19T12:38:25.595210+00:00",
+    "global_degenerate": false,
     "platt_min_slope": 0.25
   }
 }
