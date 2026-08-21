@@ -1,6 +1,6 @@
 {
-  "decision_date": "2026-08-20 00:00:00",
-  "generated_at": "2026-08-21T12:39:53.649452+00:00",
+  "decision_date": "2026-08-21 00:00:00",
+  "generated_at": "2026-08-21T13:50:48.528898+00:00",
   "portfolio_dollars": 1000.0,
   "vix_level": 16.010000228881836,
   "stress_label": "NORMAL",
@@ -9,23 +9,23 @@
   "instructions": [
     {
       "ticker": "VOO",
-      "direction": "buy",
-      "trade_dollars": 180.0,
+      "direction": "sell",
+      "trade_dollars": -180.0,
       "trade_shares_approx": 0.26,
-      "weight_delta": 0.18,
-      "target_weight": 0.6,
-      "prev_weight": 0.42,
+      "weight_delta": -0.18,
+      "target_weight": 0.42,
+      "prev_weight": 0.6,
       "pre_trade_cost": {
         "ticker": "VOO",
-        "trade_dollars": 179.99999999134698,
+        "trade_dollars": -179.99999999134698,
         "pct_adv": 4.2430807900359924e-08,
-        "direction": "buy",
+        "direction": "sell",
         "spread_bps": 0.3,
         "impact_bps": 0.005943348723446358,
         "commission_bps": 0.0,
-        "sec_fee_bps": 0.0,
-        "total_bps": 0.30594334872344636,
-        "total_dollars": 0.005506980276757301,
+        "sec_fee_bps": 0.278,
+        "total_bps": 0.5839433487234464,
+        "total_dollars": 0.01051098027651675,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
         "timing_risk_bps": 2.0871815112445726,
@@ -35,7 +35,7 @@
       "execution_schedule": [
         {
           "time_offset_min": 0,
-          "shares_to_trade": 0.2567723677034626,
+          "shares_to_trade": -0.2567723677034626,
           "pct_of_total": 1.0,
           "cumulative_pct": 1.0
         }
@@ -46,23 +46,23 @@
     },
     {
       "ticker": "IEF",
-      "direction": "sell",
-      "trade_dollars": -180.0,
+      "direction": "buy",
+      "trade_dollars": 180.0,
       "trade_shares_approx": 1.94,
-      "weight_delta": -0.18,
-      "target_weight": 0.4,
-      "prev_weight": 0.58,
+      "weight_delta": 0.18,
+      "target_weight": 0.58,
+      "prev_weight": 0.4,
       "pre_trade_cost": {
         "ticker": "IEF",
-        "trade_dollars": -179.99999999134698,
+        "trade_dollars": 179.99999999134698,
         "pct_adv": 2.3981729757847546e-07,
-        "direction": "sell",
+        "direction": "buy",
         "spread_bps": 0.5,
         "impact_bps": 0.006706437339667756,
         "commission_bps": 0.0,
-        "sec_fee_bps": 0.278,
-        "total_bps": 0.7847064373396678,
-        "total_dollars": 0.014124715871435012,
+        "sec_fee_bps": 0.0,
+        "total_bps": 0.5067064373396678,
+        "total_dollars": 0.009120715871675567,
         "execution_strategy": "immediate_market",
         "execution_horizon_min": 1,
         "timing_risk_bps": 0.7705073854535308,
@@ -72,7 +72,7 @@
       "execution_schedule": [
         {
           "time_offset_min": 0,
-          "shares_to_trade": -1.94,
+          "shares_to_trade": 1.94,
           "pct_of_total": 1.0,
           "cumulative_pct": 1.0
         }
@@ -83,5 +83,5 @@
     }
   ],
   "n_trades": 2,
-  "execute_window": "10:00\u201314:30 on 2026-08-20 00:00:00"
+  "execute_window": "10:00\u201314:30 on 2026-08-21 00:00:00"
 }
