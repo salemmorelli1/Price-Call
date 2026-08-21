@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-08-20T14:00:06.471062+00:00",
-  "total_predictions": 24,
-  "n_live_realized": 22,
+  "generated_at": "2026-08-21T12:39:56.867412+00:00",
+  "total_predictions": 25,
+  "n_live_realized": 23,
   "status": "IMMATURE",
   "schema_mode_col": "deployment_mode",
-  "voo_mae_live": 5.067601136304813,
-  "voo_rmse_live": 6.066028942519529,
+  "voo_mae_live": 5.004874543467761,
+  "voo_rmse_live": 5.980782825533233,
   "classification_stats_live": {
-    "n": 22,
-    "accuracy": 0.36363636363636365,
-    "t_stat_accuracy": -1.299038105676658,
-    "p_value_accuracy": 0.20801346649528202,
-    "auc": 0.19047619047619047,
-    "t_stat_auc": -3.6971769834643875,
-    "brier": 0.07406458233368239,
-    "brier_null": 0.06929286842231201,
-    "brier_skill_score": -0.06886298565968474,
+    "n": 23,
+    "accuracy": 0.34782608695652173,
+    "t_stat_accuracy": -1.4986104675109315,
+    "p_value_accuracy": 0.1481877085862842,
+    "auc": 0.18181818181818177,
+    "t_stat_auc": -3.956359156823074,
+    "brier": 0.07310758044591868,
+    "brier_null": 0.06819514790165926,
+    "brier_skill_score": -0.07203492606453321,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": false,
@@ -25,27 +25,27 @@
     "worse_than_null_auc_5pct": true,
     "worse_than_null_auc_1pct": true,
     "tail_threshold": -0.015,
-    "base_rate": 0.2064031045355323,
+    "base_rate": 0.2065955383123181,
     "probability_source": "p_final_cal",
-    "mean_active_return": -0.0009086139906413039,
-    "estimated_annual_edge_bps": -1.8592941577896374,
+    "mean_active_return": -0.0001449577843167986,
+    "estimated_annual_edge_bps": 10.461678650982574,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.3867
+    "annual_tc_drag_bps": 0.3605
   },
   "calibration_live": {
-    "ece": 0.16669342384595312,
-    "brier": 0.07406458233368239
+    "ece": 0.16936555527247674,
+    "brier": 0.07310758044591868
   },
   "classification_stats_backtest": {
-    "n": 1731,
-    "accuracy": 0.45753899480069327,
-    "t_stat_accuracy": -3.544989912607905,
-    "p_value_accuracy": 0.0004030688523468285,
-    "auc": 0.5101355125685321,
-    "t_stat_auc": 0.5701326214732356,
-    "brier": 0.16161815233254226,
-    "brier_null": 0.1613123385333076,
-    "brier_skill_score": -0.0018957861613415616,
+    "n": 1732,
+    "accuracy": 0.4503464203233256,
+    "t_stat_accuracy": -4.152228161743427,
+    "p_value_accuracy": 3.4527257953458917e-05,
+    "auc": 0.4869423196195989,
+    "t_stat_auc": -0.7596057684194193,
+    "brier": 0.16272523898815017,
+    "brier_null": 0.16124279291051744,
+    "brier_skill_score": -0.009193874342873887,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,7 +55,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.3867,
+  "annual_tc_drag_bps": 0.3605,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 10,
@@ -63,26 +63,26 @@
     "most_drifted": [
       {
         "feature": "alpha_credit_spread",
-        "ks_stat": 0.9953236524735417,
-        "ks_pval": 2.0952490329008168e-122,
-        "mean_shift": 0.2769534094953235
+        "ks_stat": 0.9950787401574803,
+        "ks_pval": 8.562547150300943e-122,
+        "mean_shift": 0.2771074588015145
       },
       {
         "feature": "alpha_tech_relative",
-        "ks_stat": 0.9773566330297809,
-        "ks_pval": 2.0644124171881923e-96,
-        "mean_shift": 0.3454698610834475
+        "ks_stat": 0.9771161417322834,
+        "ks_pval": 3.4100232716066993e-96,
+        "mean_shift": 0.34469221451874593
       },
       {
         "feature": "alpha_breadth",
-        "ks_stat": 0.9379768643859218,
-        "ks_pval": 1.70645686077494e-73,
-        "mean_shift": -0.22185908857284864
+        "ks_stat": 0.9377460629921259,
+        "ks_pval": 2.098857803804017e-73,
+        "mean_shift": -0.22109055731992255
       }
     ]
   },
   "health_status": "IMMATURE",
   "health_reasons": [
-    "Only 22 live observations (60 required)"
+    "Only 23 live observations (60 required)"
   ]
 }
