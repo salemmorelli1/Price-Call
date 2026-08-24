@@ -1,18 +1,13 @@
 {
-  "crisis": {
-    "a": 0.83987,
-    "b": -0.196848,
-    "n": 625
-  },
   "_global": {
-    "a": 0.2886,
-    "b": -0.985831,
-    "n": 1731,
-    "degenerate": false
+    "a": -0.67078,
+    "b": -2.272793,
+    "n": 1733,
+    "degenerate": true
   },
   "_meta": {
-    "built_at": "2026-08-21T13:50:49.588025+00:00",
-    "global_degenerate": false,
+    "built_at": "2026-08-24T12:40:07.608378+00:00",
+    "global_degenerate": true,
     "platt_min_slope": 0.25
   }
 }
