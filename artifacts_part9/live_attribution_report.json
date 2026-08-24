@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-24T12:40:09.100562+00:00",
+  "generated_at": "2026-08-24T14:02:17.873834+00:00",
   "total_predictions": 26,
   "n_live_realized": 24,
   "status": "IMMATURE",
@@ -28,9 +28,9 @@
     "base_rate": 0.2065454545454545,
     "probability_source": "p_final_cal",
     "mean_active_return": -0.0007833293941733923,
-    "estimated_annual_edge_bps": 11.310084062359739,
+    "estimated_annual_edge_bps": 12.829641107641857,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
-    "annual_tc_drag_bps": 0.2607
+    "annual_tc_drag_bps": 0.2979
   },
   "calibration_live": {
     "ece": 0.17199654793941685,
@@ -38,14 +38,14 @@
   },
   "classification_stats_backtest": {
     "n": 1733,
-    "accuracy": 0.43912290825158684,
-    "t_stat_accuracy": -5.105061080156964,
-    "p_value_accuracy": 3.6708655914122527e-07,
-    "auc": 0.48479082739386425,
-    "t_stat_auc": -0.8837102060501469,
-    "brier": 0.1632837603802846,
+    "accuracy": 0.4466243508366994,
+    "t_stat_accuracy": -4.468233832804401,
+    "p_value_accuracy": 8.397354540299418e-06,
+    "auc": 0.4819997934097717,
+    "t_stat_auc": -1.048340049895244,
+    "brier": 0.16275541352794595,
     "brier_null": 0.16117330033839566,
-    "brier_skill_score": -0.013094352080328608,
+    "brier_skill_score": -0.009816223191104756,
     "better_than_null_acc_5pct": false,
     "better_than_null_acc_1pct": false,
     "worse_than_null_acc_5pct": true,
@@ -55,7 +55,7 @@
     "worse_than_null_auc_5pct": false,
     "worse_than_null_auc_1pct": false
   },
-  "annual_tc_drag_bps": 0.2607,
+  "annual_tc_drag_bps": 0.2979,
   "feature_drift": {
     "n_features_tested": 14,
     "n_drifted_5pct": 9,
@@ -65,19 +65,19 @@
         "feature": "alpha_credit_spread",
         "ks_stat": 0.9948339483394832,
         "ks_pval": 3.372747496702843e-121,
-        "mean_shift": 0.27733642420901894
+        "mean_shift": 0.277336404316469
       },
       {
         "feature": "alpha_tech_relative",
         "ks_stat": 0.9768757687576874,
         "ks_pval": 5.608542342012417e-96,
-        "mean_shift": 0.34390316398401605
+        "mean_shift": 0.34390316704453083
       },
       {
         "feature": "alpha_breadth",
         "ks_stat": 0.9375153751537515,
         "ks_pval": 2.5794756944568995e-73,
-        "mean_shift": -0.22023848641261146
+        "mean_shift": -0.22023848694822878
       }
     ]
   },
