@@ -1,2472 +1,1183 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-visualize-standalone>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Price-Call — Production Dashboard</title>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <style>
-    :root {
-      --bg: #020817;
-      --panel: #081225;
-      --panel-2: #0b1730;
-      --panel-3: #0f1b38;
-      --border: #24324a;
-      --text: #f8fafc;
-      --text-strong: #ffffff;
-      --muted: #cbd5e1;
-      --muted-2: #94a3b8;
-      --accent: #7c83ff;
-      --good: #16a34a;
-      --good-bg: rgba(22, 163, 74, 0.14);
-      --warn: #f59e0b;
-      --warn-bg: rgba(245, 158, 11, 0.14);
-      --bad: #dc2626;
-      --bad-bg: rgba(220, 38, 38, 0.14);
-      --info: #06b6d4;
-      --info-bg: rgba(6, 182, 212, 0.14);
-      --pill: #dbe4ff;
-      --pill-text: #000000;
-      --shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
-      --radius: 18px;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Voo Price Call Lab</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: transparent !important;
 
-    * { box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-    a { color: inherit; text-decoration: none; }
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --main-surface-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --red: light-dark(rgb(186 38 35), rgb(250 66 62));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
 
-    .wrap {
-      max-width: 1900px;
-      margin: 0 auto;
-      padding: 10px 14px 30px;
-    }
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 14px;
-    }
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
 
-    .title h1 {
-      margin: 0 0 6px 0;
-      font-size: 2.2rem;
-      line-height: 1.05;
-      color: var(--text-strong);
-    }
+:root[data-visualize-standalone] {
+  background-color: var(--background) !important;
+}
 
-    .title p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.45;
-      max-width: 1000px;
-    }
+/* Generic mobile code-block hosts provide light/dark mode but no series palette.
+   AppBlock hosts set all six variables themselves. */
+:root:not([data-app-block-surface]) {
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(#f3883b, #f59a56);
+  --viz-series-3: light-dark(#5dc977, #74d58b);
+  --viz-series-4: light-dark(#eb77b1, #f08fc0);
+  --viz-series-5: light-dark(#9b79ec, #aa91ef);
+  --viz-series-6: light-dark(#3ab9b1, #5acbc2);
+}
 
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 
-    button {
-      appearance: none;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 16px;
-      font-weight: 800;
-      font-size: 0.95rem;
-      cursor: pointer;
-      color: var(--text-strong);
-      background: var(--panel-3);
-    }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
 
-    button.primary {
-      background: var(--accent);
-      border-color: transparent;
-    }
+* {
+  box-sizing: border-box;
+}
 
-    .stamp {
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
+html > body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
 
-    .grid { display: grid; gap: 14px; }
-    .hero-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
-    .two-col { grid-template-columns: 1fr 1fr; }
-    .single-col { grid-template-columns: 1fr; }
+:root:not([data-app-block-surface]) > body {
+  padding: 12px;
+}
 
-    .card {
-      background: linear-gradient(180deg, var(--panel), var(--panel-2));
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-      box-shadow: var(--shadow);
-      min-width: 0;
-    }
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
 
-    .label {
-      display: inline-block;
-      background: var(--pill);
-      color: var(--pill-text);
-      border-radius: 8px;
-      padding: 4px 10px;
-      font-size: 0.84rem;
-      font-weight: 900;
-      margin-bottom: 10px;
-    }
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
 
-    .hero-card { min-height: 126px; }
-    .hero-big {
-      font-size: 1.85rem;
-      line-height: 1.05;
-      font-weight: 900;
-      color: var(--text-strong);
-      margin-bottom: 6px;
-      word-break: break-word;
-    }
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
 
-    .hero-sub, .small-note, .summary-brief {
-      font-size: 0.95rem;
-      color: var(--muted);
-      line-height: 1.45;
-    }
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
 
-    .status-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
 
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border-radius: 999px;
-      padding: 7px 13px;
-      font-weight: 900;
-      font-size: 0.92rem;
-      border: 1px solid transparent;
-      white-space: nowrap;
-    }
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
 
-    .status-pill.good { background: var(--good-bg); border-color: rgba(22,163,74,0.35); color: #6ee7b7; }
-    .status-pill.warn { background: var(--warn-bg); border-color: rgba(245,158,11,0.35); color: #fcd34d; }
-    .status-pill.bad  { background: var(--bad-bg); border-color: rgba(220,38,38,0.35); color: #fca5a5; }
-    .status-pill.info { background: var(--info-bg); border-color: rgba(6,182,212,0.35); color: #67e8f9; }
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
 
-    .summary-box {
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: var(--text-strong);
-      line-height: 1.55;
-      font-size: 0.95rem;
-      margin: 0;
-      overflow-x: auto;
-    }
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
 
-    .summary-details {
-      margin-top: 4px;
-      border-top: 1px solid rgba(36, 50, 74, 0.7);
-      padding-top: 10px;
-    }
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
 
-    .summary-details summary {
-      cursor: pointer;
-      color: var(--text-strong);
-      font-weight: 800;
-      list-style: none;
-      user-select: none;
-    }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
 
-    .summary-details summary::-webkit-details-marker { display: none; }
-    .summary-details summary::before {
-      content: "▸";
-      display: inline-block;
-      margin-right: 8px;
-      color: var(--muted);
-      transition: transform 0.15s ease;
-    }
-    .summary-details[open] summary::before { transform: rotate(90deg); }
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
 
-    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
-    .tab-btn { background: var(--panel-3); border: 1px solid var(--border); color: var(--text-strong); }
-    .tab-btn.active { background: var(--accent); border-color: transparent; }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
 
-    .chart { width: 100%; min-height: 420px; }
-    .chart.small { min-height: 340px; }
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
 
-    .snapshot-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-top: 10px;
-    }
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
 
-    .snapshot-item {
-      min-width: 0;
-      border-bottom: 1px solid rgba(36, 50, 74, 0.8);
-      padding-bottom: 10px;
-    }
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
 
-    .snapshot-key {
-      color: var(--muted);
-      font-size: 0.92rem;
-      margin-bottom: 4px;
-    }
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
 
-    .snapshot-val {
-      color: var(--text-strong);
-      font-size: 1.05rem;
-      font-weight: 800;
-      word-break: break-word;
-    }
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
 
-    .kv-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px 14px;
-      margin-top: 6px;
-    }
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
 
-    .kv {
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(36, 50, 74, 0.7);
-    }
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
 
-    .kv .k {
-      font-size: 0.88rem;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
 
-    .kv .v {
-      font-size: 1rem;
-      color: var(--text-strong);
-      font-weight: 800;
-      word-break: break-word;
-      line-height: 1.35;
-    }
+.table .text-nowrap {
+  white-space: nowrap;
+}
 
-    .table-wrap {
-      overflow-x: auto;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: var(--panel);
-    }
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
 
-    table {
-      width: 100%;
-      min-width: 920px;
-      border-collapse: collapse;
-      background: var(--panel);
-    }
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  color: var(--card-foreground);
+  background: var(--card);
+}
 
-    thead th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: var(--panel-3);
-      color: var(--text-strong);
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.9rem;
-      white-space: nowrap;
-    }
+#widget > :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 
-    tbody td {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(36, 50, 74, 0.7);
-      color: var(--text-strong);
-      font-size: 0.92rem;
-      white-space: nowrap;
-      vertical-align: top;
-    }
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
 
-    tbody tr:hover { background: rgba(124,131,255,0.05); }
-    .error { color: #fca5a5; white-space: pre-wrap; line-height: 1.5; }
+/* The bundled tooltip runtime owns [data-tooltip]. AppBlock's CSS-only
+   pseudo-tooltip can widen dense grids even while hidden. */
+main [data-tooltip]::after {
+  content: none;
+}
 
-    .footer-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-      color: var(--muted);
-      font-size: 0.93rem;
-      line-height: 1.45;
-    }
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
 
-    .footer-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 11px;
-      border-radius: 999px;
-      border: 1px solid rgba(36, 50, 74, 0.9);
-      background: rgba(11, 23, 48, 0.7);
-      color: var(--text-strong);
-      font-weight: 800;
-    }
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
-    @media (max-width: 1680px) { .hero-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-    @media (max-width: 1180px) { .hero-grid, .two-col, .snapshot-grid, .kv-grid { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 860px) {
-      .header { flex-direction: column; }
-      .hero-grid, .two-col, .snapshot-grid, .kv-grid { grid-template-columns: 1fr; }
-      .chart { min-height: 360px; }
-      .chart.small { min-height: 300px; }
-    }
-  </style>
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--interactive-label-primary-default, var(--primary-foreground));
+  background: var(--interactive-bg-primary-default, var(--foreground));
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(
+    in srgb,
+    var(--interactive-label-primary-default, var(--primary-foreground)) 50%,
+    transparent
+  );
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="header">
-      <div class="title">
-        <h1>Price-Call — Production Dashboard</h1>
-        <p>Model forecast for current production forecasts, defense governance, fusion allocations, alpha sleeve behavior, validation contract state, regime engine status, portfolio targets, execution analytics, and live attribution. Once valid, move to Alpaca API for live trade.</p>
-      </div>
-      <div class="controls">
-        <button id="refreshBtn" class="primary">Refresh</button>
-        <a id="repoLink" href="#" target="_blank" rel="noopener"><button type="button">Open Repository</button></a>
-        <div class="stamp" id="lastUpdated">Last updated: —</div>
-      </div>
-    </div>
-
-    <div class="grid hero-grid">
-      <div class="card hero-card">
-        <div class="label">1-Day VOO Forecast</div>
-        <div class="hero-big" id="heroVooCall">—</div>
-        <div class="hero-sub" id="heroVooMeta">Current: — | Δ: —</div>
-        <div class="hero-sub" id="heroVooSrc">Source: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">1-Day IEF Forecast</div>
-        <div class="hero-big" id="heroIefCall">—</div>
-        <div class="hero-sub" id="heroIefMeta">Current: — | Δ: —</div>
-        <div class="hero-sub" id="heroIefSrc">Source: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">System Status</div>
-        <div class="hero-big" id="heroSystemStatus">—</div>
-        <div class="hero-sub" id="heroMaturity">Maturity: —</div>
-        <div class="hero-sub" id="heroUpdatedUtc">Updated: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Decision Date</div>
-        <div class="hero-big" id="heroDecisionDate">—</div>
-        <div class="hero-sub" id="heroTargetDate">Target date: —</div>
-        <div class="hero-sub" id="heroRealizedRows">Realized rows: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Defense Sleeve</div>
-        <div class="hero-big" id="heroGovMode">—</div>
-        <div class="hero-sub" id="heroGovReason">Gov reason: —</div>
-        <div class="hero-sub" id="heroGovScale">w_exec: — | scale: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Alpha / Fusion State</div>
-        <div class="hero-big" id="heroAlphaState">—</div>
-        <div class="hero-sub" id="heroAlphaLive">Alpha live: — | Fusion live: —</div>
-        <div class="hero-sub" id="heroBudgetMult">Budget mult: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Validation Contract</div>
-        <div class="hero-big" id="heroValidation">—</div>
-        <div class="hero-sub" id="heroValidationMode">Part 2: — | Part 3: —</div>
-        <div class="hero-sub" id="heroValidationAlpha">Alpha family: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Regime Engine</div>
-        <div class="hero-big" id="heroRegimeModel">—</div>
-        <div class="hero-sub" id="heroRegimeStates">Regimes: — | Features: —</div>
-        <div class="hero-sub" id="heroRegimeDist">Top state: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Portfolio Target</div>
-        <div class="hero-big" id="heroTargetVoo">—</div>
-        <div class="hero-sub" id="heroTargetIef">IEF: —</div>
-        <div class="hero-sub" id="heroTargetOpt">Optimizer: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Execution Model</div>
-        <div class="hero-big" id="heroExecCost">—</div>
-        <div class="hero-sub" id="heroExecWindow">Window: —</div>
-        <div class="hero-sub" id="heroExecModel">Model: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Live Attribution</div>
-        <div class="hero-big" id="heroLiveHealth">—</div>
-        <div class="hero-sub" id="heroLiveN">Live realized: —</div>
-        <div class="hero-sub" id="heroLiveAuc">AUC / DM: —</div>
-      </div>
-
-      <div class="card hero-card">
-        <div class="label">Alpha Metrics</div>
-        <div class="hero-big" id="heroRankIc">—</div>
-        <div class="hero-sub" id="heroTopkNet">TopK net: — | IR: —</div>
-        <div class="hero-sub" id="heroDriftRate">Drift rate: —</div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom: 14px;">
-      <div class="label">Run Status</div>
-      <div class="status-row" id="statusRow"></div>
-      <div class="small-note" id="statusSummary">—</div>
-    </div>
-
-    <div class="card" style="margin-bottom: 14px;">
-      <div class="label">Status / Summary</div>
-      <div id="summaryBrief" class="summary-brief">Loading concise summary…</div>
-      <details class="summary-details">
-        <summary>Open diagnostic detail</summary>
-        <pre id="statusSummaryPre" class="summary-box">Waiting to load data…</pre>
-      </details>
-    </div>
-
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="forecastTab">Forecast Centerpiece</button>
-      <button class="tab-btn" data-tab="defenseTab">Defense Sleeve</button>
-      <button class="tab-btn" data-tab="fusionTab">Fusion / Alpha</button>
-      <button class="tab-btn" data-tab="opsTab">Model Ops</button>
-      <button class="tab-btn" data-tab="botTab">Bot Progress</button>
-      <button class="tab-btn" data-tab="dataTab">Data Preview</button>
-    </div>
-
-    <div class="tab-panel active" id="forecastTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Prediction Log: Calls vs Realized</div>
-          <div id="predChart" class="chart"></div>
+<div id="price-call-lab" data-theme="dark">
+  <style>
+    #price-call-lab{--bg:#050b12;--panel:#0b1622;--panel2:#0e1c2a;--line:#20374a;--text:#edf7ff;--muted:#92a9bc;--cyan:#55d6e8;--amber:#ffb84d;--violet:#9d7cff;--green:#49d6a0;--red:#ff6b6b;--shadow:0 24px 70px rgba(0,0,0,.34);min-height:100vh;background:radial-gradient(circle at 84% 4%,rgba(85,214,232,.10),transparent 26rem),radial-gradient(circle at 10% 30%,rgba(157,124,255,.09),transparent 26rem),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+    #price-call-lab *{box-sizing:border-box} #price-call-lab a{color:inherit;text-decoration:none} #price-call-lab button,#price-call-lab select{font:inherit}
+    #price-call-lab .shell{width:min(1440px,calc(100% - 32px));margin:auto;padding:18px 0 42px}
+    #price-call-lab .topbar{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 4px 16px;gap:16px}
+    #price-call-lab .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em} #price-call-lab .mark{width:28px;height:28px;border:1px solid var(--cyan);border-radius:50%;position:relative;box-shadow:0 0 24px rgba(85,214,232,.3)}
+    #price-call-lab .mark:after{content:"";position:absolute;left:7px;top:-3px;width:11px;height:31px;border:2px solid var(--amber);border-width:0 2px;transform:rotate(-26deg);border-radius:50%}
+    #price-call-lab .top-actions{display:flex;flex-wrap:wrap;gap:8px}.btn{border:1px solid var(--line);background:#0a131d;color:var(--text);padding:10px 15px;border-radius:999px;font-weight:800;cursor:pointer;transition:.18s ease}.btn:hover,.btn:focus-visible{transform:translateY(-1px);border-color:var(--cyan);outline:none}.btn.primary{background:var(--amber);border-color:var(--amber);color:#181108}
+    #price-call-lab .hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:44px;align-items:center;padding:74px 4px 52px}
+    #price-call-lab .eyebrow{color:var(--cyan);font-size:.76rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;margin:0 0 16px}
+    #price-call-lab h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(3.4rem,7.4vw,7rem);line-height:.84;letter-spacing:-.065em;margin:0;max-width:820px} #price-call-lab h1 em{display:block;color:var(--amber);font-weight:500}
+    #price-call-lab .lede{max-width:720px;color:#bfd0dd;font-size:1.05rem;margin:28px 0 22px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}.chip{border:1px solid var(--line);background:rgba(11,22,34,.76);border-radius:999px;padding:6px 10px;color:#c8dae7;font-size:.78rem;font-weight:750}.chip i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px}.chip.warn i{background:var(--amber)}
+    #price-call-lab .hero-card{position:relative;min-height:370px;border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(14,28,42,.9),rgba(5,11,18,.98));box-shadow:var(--shadow);overflow:hidden;padding:24px}
+    #price-call-lab .orbital{position:absolute;inset:38px 48px 40px;border:1px dashed rgba(85,214,232,.24);border-radius:50%;animation:spin 28s linear infinite}#price-call-lab .orbital:before,#price-call-lab .orbital:after{content:"";position:absolute;border-radius:50%}.orbital:before{width:150px;height:150px;left:50%;top:50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 36% 33%,#25384b 0 3%,#071019 25%,#010306 68%);box-shadow:0 0 0 14px rgba(157,124,255,.08),0 0 50px rgba(157,124,255,.35)}.orbital:after{width:18px;height:18px;background:var(--amber);left:8%;top:42%;box-shadow:0 0 22px rgba(255,184,77,.85)}@keyframes spin{to{transform:rotate(360deg)}}
+    #price-call-lab .forecast-ticket{position:absolute;left:24px;bottom:24px;border-left:2px solid var(--amber);padding:10px 13px;background:rgba(3,8,14,.82);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem}.forecast-ticket b{font-size:1rem;color:#fff}.maturity-ring{position:absolute;right:24px;top:24px;width:94px;height:94px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--cyan) 0 41.7%,#173044 41.7%);box-shadow:0 0 30px rgba(85,214,232,.12)}.maturity-ring:after{content:"";position:absolute;inset:8px;border-radius:50%;background:#08121c}.maturity-ring span{z-index:1;text-align:center;font-weight:900;font-size:.72rem}.maturity-ring strong{display:block;font-size:1.15rem}
+    #price-call-lab .tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;border:1px solid var(--line);background:#07111a;border-radius:16px;padding:6px;position:sticky;top:8px;z-index:30;box-shadow:0 12px 30px rgba(0,0,0,.24)}.tab{border:0;background:transparent;color:#9db2c4;padding:12px 10px;border-radius:11px;font-weight:850;cursor:pointer}.tab[aria-selected="true"]{background:#edf7ff;color:#07111a}.tab:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+    #price-call-lab .panel{display:none;padding-top:20px}.panel.active{display:block}.statusline{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:14px;background:rgba(9,19,29,.82);padding:11px 14px;margin-bottom:14px;color:#a9bdcc;font-size:.82rem}.live-dot{color:var(--green);font-weight:850}.live-dot:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);margin-right:7px}
+    #price-call-lab .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:14px}.metric{border:1px solid var(--line);background:linear-gradient(145deg,#0c1926,#08121c);padding:16px;border-radius:16px;min-height:114px}.metric label{display:block;color:#7f98ac;font-size:.67rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:2rem;margin:8px 0 2px;letter-spacing:-.04em}.metric small{color:#8fa7b9}
+    #price-call-lab .grid2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:14px}.card{border:1px solid var(--line);background:linear-gradient(145deg,rgba(14,28,42,.96),rgba(7,16,25,.96));border-radius:18px;padding:18px;box-shadow:0 16px 46px rgba(0,0,0,.12)}.card h2,.card h3{margin:0}.kicker{color:var(--cyan);font-size:.7rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.display{font-family:Georgia,"Times New Roman",serif;font-size:clamp(2rem,4vw,4.4rem);line-height:.98;letter-spacing:-.045em;margin:8px 0 12px}.muted{color:var(--muted)}
+    #price-call-lab .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:#07111a}.seg button{border:0;color:#9fb5c6;background:transparent;border-radius:999px;padding:7px 11px;font-size:.78rem;font-weight:800;cursor:pointer}.seg button.active{background:#dff8ff;color:#061019}.control-label{font-size:.72rem;color:#7891a5;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-right:2px}
+    #price-call-lab .plot{height:520px;min-width:0}.plot.small{height:360px}.chart-note{font-size:.78rem;color:#819aac;margin-top:8px}.stat-table{width:100%;border-collapse:collapse;margin-top:10px}.stat-table th,.stat-table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right}.stat-table th:first-child,.stat-table td:first-child{text-align:left}.stat-table th{color:#8098aa;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em}.stat-table td{font-variant-numeric:tabular-nums;font-weight:730}
+    #price-call-lab .callout{border-left:3px solid var(--amber);background:rgba(255,184,77,.08);padding:14px 16px;border-radius:0 12px 12px 0;color:#dbe9f2}.callout strong{color:var(--amber)}.progress{height:10px;background:#152a3b;border-radius:999px;overflow:hidden;margin:12px 0}.progress span{display:block;height:100%;width:41.7%;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:inherit}
+    #price-call-lab .triple{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.stage-list{list-style:none;margin:14px 0 0;padding:0}.stage-list li{display:flex;gap:12px;align-items:flex-start;border-top:1px solid var(--line);padding:12px 0}.stage-list b{color:var(--cyan);font-family:ui-monospace,monospace}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#060d14;border:1px solid var(--line);border-radius:12px;padding:13px;color:#c9ddec;overflow:auto;font-size:.8rem}.report-card{display:grid;grid-template-columns:1.2fr .8fr;gap:28px;align-items:center;min-height:460px}.report-cover{border:1px solid #cdd8df;background:#f8f7f3;color:#111827;border-radius:8px;padding:50px 42px;min-height:520px;box-shadow:0 24px 80px rgba(0,0,0,.34);font-family:Georgia,"Times New Roman",serif}.report-cover small{display:block;text-align:center}.report-cover h2{font-family:Georgia,"Times New Roman",serif;text-align:center;font-size:2.2rem;margin:110px 0 30px}.report-cover p{text-align:center;color:#364152}.report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
+    #price-call-lab footer{display:flex;justify-content:space-between;gap:18px;border-top:1px solid var(--line);margin-top:30px;padding:18px 4px;color:#6f8799;font-size:.75rem}
+    @media(max-width:980px){#price-call-lab .hero,#price-call-lab .grid2,#price-call-lab .report-card{grid-template-columns:1fr}#price-call-lab .hero{padding-top:44px}#price-call-lab .hero-card{min-height:330px}#price-call-lab .metrics{grid-template-columns:repeat(3,1fr)}#price-call-lab .triple{grid-template-columns:1fr}.tabs{overflow-x:auto;grid-template-columns:repeat(6,minmax(150px,1fr))}}
+    @media(max-width:620px){#price-call-lab .shell{width:min(100% - 18px,1440px)}#price-call-lab .topbar{align-items:flex-start}#price-call-lab .brand span:last-child{display:none}#price-call-lab .metrics{grid-template-columns:repeat(2,1fr)}#price-call-lab h1{font-size:3.8rem}#price-call-lab .hero-card{min-height:290px}.maturity-ring{width:76px;height:76px}.plot{height:430px}.report-cover{padding:30px 22px}.report-cover h2{margin-top:70px;font-size:1.7rem}footer{flex-direction:column}}
+    @media(prefers-reduced-motion:reduce){#price-call-lab .orbital{animation:none}.btn{transition:none}}
+  </style>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="#price-call-home" aria-label="Price-Call home"><span class="mark" aria-hidden="true"></span><span>Price-Call · VOO Forecasting Laboratory</span></a>
+      <div class="top-actions"><a class="btn primary" href="report/Price_Call_VOO_Forecasting_APA_Report.pdf" target="_blank" rel="noopener">Read the Report</a><a class="btn" href="https://github.com/salemmorelli1/Price-Call" target="_blank" rel="noopener">GitHub ↗</a></div>
+    </header>
+    <main id="price-call-home">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">Auditable one-day ETF research · Project laboratory</p>
+          <h1 id="hero-title">Forecast the <em>next close.</em></h1>
+          <p class="lede">An interactive evidence laboratory for the Price-Call repository: VOO and IEF price paths, tail-risk probabilities, regime controls, portfolio gates, execution assumptions, and live attribution—kept mathematically distinct.</p>
+          <div class="chips"><span class="chip"><i></i>27 persisted calls</span><span class="chip"><i></i>26 realized pairs</span><span class="chip warn"><i></i>Paper-only research</span></div>
+          <div class="top-actions"><button class="btn primary" id="open-explorer" type="button">Open forecast explorer</button><button class="btn" id="open-governance" type="button">Inspect governance</button></div>
         </div>
-        <div class="card">
-          <div class="label">1-Day Forecast Error Panel</div>
-          <div id="errorChart" class="chart"></div>
+        <div class="hero-card" aria-label="Animated maturity visualization">
+          <div class="orbital" aria-hidden="true"></div>
+          <div class="maturity-ring"><span><strong>25 / 60</strong>live evidence</span></div>
+          <div class="forecast-ticket"><b>Latest committed call</b><br>VOO $702.125 · IEF $93.082<br>Target 2026-08-26 · NORMAL<br>Alpha SHADOW</div>
         </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Forecast Error Distribution</div>
-          <div id="distChart" class="chart small"></div>
+      </section>
+      <nav class="tabs" role="tablist" aria-label="Price-Call laboratory sections">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="panel-evidence" id="tab-evidence">Evidence lab</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-explorer" id="tab-explorer">Forecast explorer</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-tail" id="tab-tail">Tail & calibration</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-governance" id="tab-governance">Governance</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-pipeline" id="tab-pipeline">Pipeline</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-report" id="tab-report">Report</button>
+      </nav>
+      <section class="panel active" id="panel-evidence" role="tabpanel" aria-labelledby="tab-evidence">
+        <div class="statusline"><span>Committed artifact snapshot · August 25, 2026</span><span class="live-dot">Evidence-first interpretation</span></div>
+        <div class="metrics" id="headline-metrics"></div>
+        <div class="grid2">
+          <article class="card"><span class="kicker">All persisted calls</span><h2 class="display">Predicted and realized, together.</h2><div id="overview-chart" class="plot" role="img" aria-label="All VOO and IEF predicted and realized prices"></div><p class="chart-note">Every available prediction is shown. The unresolved August 26 call appears only in the predicted traces.</p></article>
+          <aside class="card"><span class="kicker">Interpretive boundary</span><h2 class="display">Close tracking is not proof of edge.</h2><p class="muted">VOO level correlation is strong, but one-day prices are persistent. The correct test is incremental loss versus same-date persistence, plus directional and tail-event diagnostics.</p><div class="callout"><strong>Current result:</strong> price-level tracking is promising for continued study; directional and tail-classification superiority are not established.</div><h3 style="margin-top:22px">Current governance state</h3><table class="stat-table"><tbody><tr><td>Core tape</td><td>NORMAL</td></tr><tr><td>Alpha sleeve</td><td>SHADOW</td></tr><tr><td>Regime</td><td>calm</td></tr><tr><td>Weights</td><td>VOO .60 / IEF .40</td></tr><tr><td>Live health</td><td>IMMATURE</td></tr></tbody></table></aside>
         </div>
-        <div class="card">
-          <div class="label">Latest Prediction Snapshot</div>
-          <div class="hero-big" id="predSnapDate">—</div>
-          <div class="hero-sub">Latest prediction-log row</div>
-          <div class="status-row" id="predSnapBadges" style="margin: 14px 0 10px;"></div>
-          <div class="snapshot-grid">
-            <div class="snapshot-item"><div class="snapshot-key">Target Date</div><div class="snapshot-val" id="predSnapTarget">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Governance Tier</div><div class="snapshot-val" id="predSnapTier">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">p_final_cal</div><div class="snapshot-val" id="predSnapPFinal">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">alpha_scale</div><div class="snapshot-val" id="predSnapAlphaScale">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">VOO Spot / Call</div><div class="snapshot-val" id="predSnapVoo">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">IEF Spot / Call</div><div class="snapshot-val" id="predSnapIef">—</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel" id="defenseTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Defense Signal Probability vs Anchor</div>
-          <div id="defSignalChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Current Governance Snapshot</div>
-          <div class="hero-big" id="govSnapMode">—</div>
-          <div class="hero-sub" id="govSnapReason">Reason: —</div>
-          <div class="status-row" style="margin: 14px 0 12px;">
-            <div class="status-pill warn" id="govBadgeMode">GovMode: —</div>
-            <div class="status-pill good" id="govBadgeZero">ZeRO Active: —</div>
-            <div class="status-pill good" id="govBadgeTooGood">TooGood Alarm: —</div>
-          </div>
-          <div class="snapshot-grid">
-            <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val" id="govSnapDate">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">final_pass</div><div class="snapshot-val" id="govSnapAlphaEff">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">quality_ok</div><div class="snapshot-val" id="govSnapScale">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">drift_ok</div><div class="snapshot-val" id="govSnapHealthLive">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">trial_gate_open</div><div class="snapshot-val" id="govSnapHealthReal">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">fused_gate_open</div><div class="snapshot-val" id="govSnapLift">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">promotion_ready</div><div class="snapshot-val" id="govSnapDes">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">alpha_state_display</div><div class="snapshot-val" id="govSnapCost">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">alpha_live</div><div class="snapshot-val" id="govSnapTurnEff">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">drift_rate</div><div class="snapshot-val" id="govSnapHealthAny">—</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel" id="fusionTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Alpha / Fusion State Timeline</div>
-          <div id="alphaStateChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Current Alpha Snapshot</div>
-          <div class="hero-big" id="alphaSnapTier">—</div>
-          <div class="hero-sub">Live alpha sleeve snapshot</div>
-          <div class="status-row" style="margin: 14px 0 12px;">
-            <div class="status-pill good" id="alphaBadgeDrift">Drift Alarm: —</div>
-            <div class="status-pill good" id="alphaBadgeSelected">Selected: —</div>
-            <div class="status-pill good" id="alphaBadgeOverlay">Overlay Scale: —</div>
-          </div>
-          <div class="snapshot-grid">
-            <div class="snapshot-item"><div class="snapshot-key">Date</div><div class="snapshot-val" id="alphaSnapDate">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Rank IC Roll</div><div class="snapshot-val" id="alphaSnapRankIc">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Mean TopK Net</div><div class="snapshot-val" id="alphaSnapTopk">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Budget Used</div><div class="snapshot-val" id="alphaSnapBudget">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Eligible Breadth</div><div class="snapshot-val" id="alphaSnapEligibleBreadth">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Selection Hit Rate</div><div class="snapshot-val" id="alphaSnapHitRate">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Eligible Names</div><div class="snapshot-val" id="alphaSnapEligibleNames">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Selected Names</div><div class="snapshot-val" id="alphaSnapSelectedNames">—</div></div>
-          </div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Fusion Funding Path</div>
-          <div id="fusionPathChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Latest Fusion Allocations</div>
-          <div id="fusionAllocChart" class="chart"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Alpha Sleeve Summary</div>
-          <div id="alphaSummaryChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Alpha Eligibility Breadth</div>
-          <div id="alphaBreadthChart" class="chart"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel" id="opsTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 7 Target Weights</div>
-          <div id="targetWeightsChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 6 Regime Distribution</div>
-          <div id="regimeChart" class="chart"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <!-- Part 2B / 2C Uncertainty Sleeve Status -->
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 2B — XGBoost Ensemble Uncertainty</div>
-          <div class="kv-grid" id="part2bGrid"></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 2C — BNN Sleeve</div>
-          <div class="kv-grid" id="part2cGrid"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Validation / Contract Snapshot</div>
-          <div class="kv-grid" id="validationGrid"></div>
-        </div>
-        <div class="card">
-          <div class="label">Live Attribution Snapshot</div>
-          <div class="kv-grid" id="liveGrid"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 8 Execution Analytics</div>
-          <div id="execCostChart" class="chart small"></div>
-          <div class="kv-grid" id="execGrid"></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 7 Current Target Snapshot</div>
-          <div class="kv-grid" id="portfolioGrid"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel" id="botTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Bot NAV / Paper Equity</div>
-          <div id="botNavChart" class="chart"></div>
-        </div>
-        <div class="card">
-          <div class="label">Bot Target Weight / Signal Edge</div>
-          <div id="botSignalChart" class="chart"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Current Bot Snapshot</div>
-          <div class="hero-big" id="botSnapMode">—</div>
-          <div class="hero-sub" id="botSnapAsOf">As of: —</div>
-          <div class="status-row" id="botSnapBadges" style="margin: 14px 0 12px;"></div>
-          <div class="snapshot-grid">
-            <div class="snapshot-item"><div class="snapshot-key">Live Gate Progress</div><div class="snapshot-val" id="botSnapProgress">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">NAV</div><div class="snapshot-val" id="botSnapNav">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Total Return</div><div class="snapshot-val" id="botSnapReturn">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Drawdown</div><div class="snapshot-val" id="botSnapDrawdown">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Cash</div><div class="snapshot-val" id="botSnapCash">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Shares (VOO / IEF)</div><div class="snapshot-val" id="botSnapShares">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Trade Count</div><div class="snapshot-val" id="botSnapTrades">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Stop Floor</div><div class="snapshot-val" id="botSnapStop">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Latest Action Reason</div><div class="snapshot-val" id="botSnapReason">—</div></div>
-            <div class="snapshot-item"><div class="snapshot-key">Accuracy Gate Reason</div><div class="snapshot-val" id="botSnapGate">—</div></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="label">Bot Audit Trail</div>
-          <div class="kv-grid" id="botGrid"></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Recent Signal Log</div>
-          <div class="table-wrap"><table id="botSignalTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Recent Trade Log</div>
-          <div class="table-wrap"><table id="botTradeTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel" id="dataTab">
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Prediction Log</div>
-          <div class="table-wrap"><table id="predTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Fusion Allocations</div>
-          <div class="table-wrap"><table id="allocTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Governance Tape</div>
-          <div class="table-wrap"><table id="govTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Alpha Summary Tape</div>
-          <div class="table-wrap"><table id="alphaSummaryTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Recent Alpha Positions</div>
-          <div class="table-wrap"><table id="alphaPosTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Recent Alpha Eligibility</div>
-          <div class="table-wrap"><table id="alphaEligTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 3 Summary</div>
-          <div class="table-wrap"><table id="part3SummaryTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 2 Summary</div>
-          <div class="table-wrap"><table id="part2SummaryTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 2B — Ensemble Uncertainty Summary</div>
-          <div class="table-wrap"><table id="part2bSummaryTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 2C — BNN Summary</div>
-          <div class="table-wrap"><table id="part2cSummaryTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-
-      <div style="height: 14px;"></div>
-
-      <div class="grid two-col">
-        <div class="card">
-          <div class="label">Part 6 / Part 7 / Part 8</div>
-          <div class="table-wrap"><table id="opsMetaTable"><thead></thead><tbody></tbody></table></div>
-        </div>
-        <div class="card">
-          <div class="label">Part 9 Live Attribution Report</div>
-          <div class="table-wrap"><table id="part9Table"><thead></thead><tbody></tbody></table></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top: 14px;">
-      <div class="label">Debug / Load Status</div>
-      <div id="debugBox" class="small-note">Waiting to load data…</div>
-    </div>
-
-    <div class="card" style="margin-top: 14px; padding-top: 14px; padding-bottom: 14px;">
-      <div class="label">Source / Trust Layer</div>
-      <div class="footer-bar">
-        <div class="footer-pill" id="footerSource">Source: GitHub main</div>
-        <div class="footer-pill" id="footerDecision">Decision: —</div>
-        <div class="footer-pill" id="footerTarget">Target: —</div>
-        <div class="footer-pill" id="footerLoaded">Rows loaded: —</div>
-      </div>
-    </div>
+      </section>
+      <section class="panel" id="panel-explorer" role="tabpanel" aria-labelledby="tab-explorer">
+        <div class="statusline"><span>Full-history actual-versus-predicted explorer</span><span id="visible-window-label">All realized observations</span></div>
+        <article class="card">
+          <div class="controls"><span class="control-label">Asset</span><div class="seg" data-control="asset"><button class="active" data-value="VOO">VOO</button><button data-value="IEF">IEF</button><button data-value="BOTH">Both</button></div><span class="control-label">Scale</span><div class="seg" data-control="scale"><button class="active" data-value="price">Dollar</button><button data-value="index">Indexed</button><button data-value="error">Error</button></div><span class="control-label">Range</span><div class="seg" data-control="range"><button class="active" data-value="all">All</button><button data-value="30">30D</button><button data-value="60">60D</button></div></div>
+          <div id="explorer-chart" class="plot" role="img" aria-label="Interactive full-history forecast explorer"></div>
+        </article>
+        <div class="metrics" id="window-metrics" style="margin-top:14px"></div>
+        <div class="grid2"><article class="card"><span class="kicker">Signed miss</span><h3>Predicted minus realized</h3><div id="error-chart" class="plot small" role="img" aria-label="Signed forecast errors over time"></div></article><article class="card"><span class="kicker">Fit geometry</span><h3>Realized versus predicted</h3><div id="scatter-chart" class="plot small" role="img" aria-label="Predicted and realized price scatter"></div></article></div>
+      </section>
+      <section class="panel" id="panel-tail" role="tabpanel" aria-labelledby="tab-tail">
+        <div class="metrics"><div class="metric"><label>Backtest AUC</label><strong>0.482</strong><small>Below 0.5 reference</small></div><div class="metric"><label>Rolling-median AUC</label><strong>0.549</strong><small>Current gate statistic</small></div><div class="metric"><label>Live AUC</label><strong>0.167</strong><small>n = 25 snapshot</small></div><div class="metric"><label>Backtest Brier</label><strong>0.164</strong><small>Probability loss</small></div><div class="metric"><label>Live Brier</label><strong>0.071</strong><small>Null = 0.066</small></div><div class="metric"><label>Live Brier skill</label><strong>−0.079</strong><small>No superiority</small></div></div>
+        <div class="grid2"><article class="card"><span class="kicker">Tail telemetry</span><h2 class="display">Probability is calibrated evidence—not a price call.</h2><div id="tail-chart" class="plot" role="img" aria-label="Tail-event probability history and base rate"></div></article><aside class="card"><span class="kicker">Sample maturity</span><h2 class="display">IMMATURE</h2><p>Part 9 requires at least 60 live observations before significance gates can authorize promotion. The current snapshot contains 25.</p><div class="progress"><span></span></div><p class="muted">41.7% of the minimum evidence count collected.</p><div class="callout"><strong>Do not collapse the metrics.</strong> AUC measures ranking; Brier score measures probability error; ECE measures calibration; none proves economic value by itself.</div></aside></div>
+      </section>
+      <section class="panel" id="panel-governance" role="tabpanel" aria-labelledby="tab-governance">
+        <div class="triple"><article class="card"><span class="kicker">Core publication</span><h2 class="display">NORMAL</h2><p class="muted">The canonical forecast tape may be persisted because current hard-fail checks clear.</p></article><article class="card"><span class="kicker">Auxiliary alpha</span><h2 class="display">SHADOW</h2><p class="muted">The alpha sleeve is recorded but cannot affect live fused output or paper allocation.</p></article><article class="card"><span class="kicker">Trading status</span><h2 class="display">DRY RUN</h2><p class="muted">Part 10 requires live n ≥ 60 and prespecified significance before any promotion.</p></article></div>
+        <div class="grid2" style="margin-top:14px"><article class="card"><span class="kicker">State machine</span><h2 class="display">Evidence changes permissions.</h2><ul class="stage-list"><li><b>01</b><div><strong>SHADOW</strong><br><span class="muted">Log estimates; no portfolio effect.</span></div></li><li><b>02</b><div><strong>ELIGIBLE</strong><br><span class="muted">Data and drift gates clear.</span></div></li><li><b>03</b><div><strong>LIVE_TRIAL</strong><br><span class="muted">Bounded experimental influence.</span></div></li><li><b>04</b><div><strong>LIVE_FUSED</strong><br><span class="muted">Promotion only after live evidence.</span></div></li></ul></article><aside class="card"><span class="kicker">Latest portfolio state</span><h2 class="display">60 / 40</h2><p>VOO / IEF target weights remain at the neutral prior. The latest regime is calm, view confidence is zero, and dead-band hold is active.</p><div class="callout"><strong>Separation of concerns:</strong> NORMAL core publication does not imply live alpha, turnover, or statistical superiority.</div></aside></div>
+      </section>
+      <section class="panel" id="panel-pipeline" role="tabpanel" aria-labelledby="tab-pipeline">
+        <article class="card"><span class="kicker">Canonical execution order</span><h2 class="display">One claim. Eleven controlled modules.</h2><div class="triple"><ol class="stage-list"><li><b>00</b><div><strong>Data</strong><br><span class="muted">Market, volatility, credit, breadth, macro.</span></div></li><li><b>06</b><div><strong>Regimes</strong><br><span class="muted">Four-state HMM.</span></div></li><li><b>01</b><div><strong>Features</strong><br><span class="muted">Locked 14-variable contract.</span></div></li><li><b>02</b><div><strong>Core</strong><br><span class="muted">Rolling price and probability forecasts.</span></div></li></ol><ol class="stage-list"><li><b>2B</b><div><strong>XGBoost sleeve</strong><br><span class="muted">Ten calibrated members.</span></div></li><li><b>2C</b><div><strong>BNN sleeve</strong><br><span class="muted">MC dropout uncertainty.</span></div></li><li><b>2A</b><div><strong>Alpha state</strong><br><span class="muted">Evidence-to-permission mapping.</span></div></li><li><b>07</b><div><strong>Portfolio</strong><br><span class="muted">BL, shrinkage, CVaR.</span></div></li></ol><ol class="stage-list"><li><b>08</b><div><strong>Execution</strong><br><span class="muted">Impact and annual drag.</span></div></li><li><b>03</b><div><strong>Governed tape</strong><br><span class="muted">Fail-closed publication.</span></div></li><li><b>09</b><div><strong>Attribution</strong><br><span class="muted">Live AUC, Brier, drift, tests.</span></div></li><li><b>10</b><div><strong>Paper bot</strong><br><span class="muted">Signal ledger and risk floor.</span></div></li></ol></div></article>
+        <div class="grid2" style="margin-top:14px"><article class="card"><span class="kicker">Reproduce</span><h3>Launch the Tuesday research pipeline</h3><div class="code">python run_tuesday_prediction.py</div><p class="muted">The production workflow restores accumulating artifacts, runs the canonical module order, validates, and commits refreshed outputs.</p></article><aside class="card"><span class="kicker">Security note</span><h3>Keep credentials out of source</h3><p class="muted">Rotate any credential ever committed to code and pass FRED access only through encrypted repository secrets.</p></aside></div>
+      </section>
+      <section class="panel" id="panel-report" role="tabpanel" aria-labelledby="tab-report">
+        <div class="report-card"><div class="report-cover"><small>PRICE-CALL VOO FORECASTING LABORATORY</small><h2>A Governed One-Day VOO Price-Call Laboratory</h2><p>Forecasting Architecture, Live Evidence, and Statistical Control</p><p style="margin-top:60px">Salem Morelli<br>Independent Statistics Research Project<br>August 25, 2026</p></div><div><span class="kicker">25-page APA-style research report</span><h2 class="display">Read the complete statistical audit.</h2><p class="muted">The report formalizes the forecasting object, reconstructs the full architecture, evaluates every realized predicted/actual pair, separates level tracking from directional and tail skill, and documents governance, limitations, references, figures, tables, and reproducible Python code.</p><div class="report-actions"><a class="btn primary" href="report/Price_Call_VOO_Forecasting_APA_Report.pdf" target="_blank" rel="noopener">Open PDF report</a><a class="btn" href="report/reproduce_report_figures.py">View figure code</a></div><div class="callout" style="margin-top:20px"><strong>Principal finding:</strong> engineering maturity currently exceeds live statistical maturity. Continue synchronized, paper-only collection under fixed rules.</div></div></div>
+      </section>
+    </main>
+    <footer><span>Price-Call · Salem Morelli · Research use only</span><span>VOO/IEF forecasting · regime modeling · governed attribution</span></footer>
   </div>
-
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
   <script>
-    const CFG = {
-      owner: "salemmorelli1",
-      repo: "Price-Call",
-      branch: "main",
-      maxDelayDays: 3,
-      files: {
-        predLog: "artifacts_part3/prediction_log.csv",
-        prodTape: "artifacts_part3_v1/v1_final_production_tape.csv",
-        govTape: "artifacts_part3_v1/v1_final_production_governance.csv",
-        allocTape: "artifacts_part3_v1/v1_fusion_allocations.csv",
-        part3Summary: "artifacts_part3_v1/part3_summary.json",
-        part2Summary: "artifacts_part2_g532/predictions/part2_g532_summary.json",
-        part2Diag: "artifacts_part2_g532/predictions/part2_g532_diag.json",
-        alphaSummaryTape: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary_tape.csv",
-        alphaSummaryJson: "artifacts_part2a_alpha/predictions/part2a21_alpha_summary.json",
-        alphaPositions: "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv",
-        alphaEligibility: "artifacts_part2a_alpha/predictions/part2a21_alpha_eligibility.csv",
-        part6Meta: "artifacts_part6/part6_meta.json",
-        part7Weights: "artifacts_part7/portfolio_weights_tape.csv",
-        part7Current: "artifacts_part7/current_target_weights.json",
-        part7Meta: "artifacts_part7/part7_meta.json",
-        part8Meta: "artifacts_part8/part8_meta.json",
-        part8Orders: "artifacts_part8/example_order_instructions.json",
-        part9Report: "artifacts_part9/live_attribution_report.json",
-        // Experimental sleeves — optional, present only after deployment
-        part2bSummary: "artifacts_part2b_xgb/predictions/part2b_xgb_summary.json",
-        part2cSummary: "artifacts_part2c_bnn/predictions/part2c_bnn_summary.json",
-        part10State: "artifacts_part10_bot/portfolio_state.json",
-        part10Report: "artifacts_part10_bot/performance_report.json",
-        part10SignalLog: "artifacts_part10_bot/signal_log.csv",
-        part10TradeLog: "artifacts_part10_bot/trade_log.csv"
-      }
-    };
-
-    const repoBase = `https://github.com/${CFG.owner}/${CFG.repo}`;
-    const rawBase = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}`;
-    document.getElementById("repoLink").href = repoBase;
-
-    window.addEventListener("error", (e) => {
-      const debug = document.getElementById("debugBox");
-      if (debug) debug.innerHTML = `<div class="error">JavaScript error: ${String(e.message || e.error || e)}</div>`;
-    });
-
-    function rawUrl(path) { return `${rawBase}/${path}?t=${Date.now()}`; }
-    function isMissing(value) {
-      if (value === null || value === undefined) return true;
-      const s = String(value).trim();
-      return s === "" || s === "—" || s.toUpperCase() === "NA" || s.toUpperCase() === "N/A" || s.toLowerCase() === "nan" || s.toLowerCase() === "null" || s.toLowerCase() === "none";
-    }
-    function toNumber(value) {
-      if (isMissing(value)) return NaN;
-      if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
-      const cleaned = String(value).replace(/,/g, "").trim();
-      const n = Number(cleaned);
-      return Number.isFinite(n) ? n : NaN;
-    }
-    function fmtNum(x, digits = 4) { const n = toNumber(x); return Number.isFinite(n) ? n.toFixed(digits) : "NA"; }
-    function fmtPct(x, digits = 2) { const n = toNumber(x); return Number.isFinite(n) ? `${(100 * n).toFixed(digits)}%` : "NA"; }
-    function fmtPrice(x) { const n = toNumber(x); return Number.isFinite(n) ? n.toFixed(2) : "NA"; }
-    function fmtDate(value) {
-      if (isMissing(value)) return "NA";
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim();
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? "NA" : d.toISOString().slice(0, 10);
-    }
-    function parseDateOnly(value) {
-      if (isMissing(value)) return null;
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return null;
-      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    }
-    function addCalendarDays(dateObj, days) {
-      if (!dateObj || !Number.isFinite(days)) return null;
-      const d = new Date(dateObj.getTime());
-      d.setUTCDate(d.getUTCDate() + Math.round(days));
-      return d;
-    }
-    function textOrPending(value, pending = "Pending") { return isMissing(value) ? pending : String(value); }
-    function fmtValueOrPending(value, formatter, pendingText = "Pending") {
-      const out = formatter(value);
-      return out === "NA" ? pendingText : out;
-    }
-    function rowHasRealized(row) {
-      if (!row) return false;
-      return Number.isFinite(toNumber(row.px_voo_realized)) && Number.isFinite(toNumber(row.px_ief_realized));
-    }
-
-    function rowCall(row, asset) {
-      if (!row) return NaN;
-      const cols = asset === "VOO"
-        ? ["px_voo_call_1d", "voo_call_1d", "px_voo_call_7d", "voo_call_7d"]
-        : ["px_ief_call_1d", "ief_call_1d", "px_ief_call_7d", "ief_call_7d"];
-      for (const c of cols) {
-        const v = toNumber(row[c]);
-        if (Number.isFinite(v)) return v;
-      }
-      return NaN;
-    }
-
-    function normalizeAllocRow(r) {
-      const sleeve = String(r.sleeve || r.Ticker || r.ticker || r.asset || "").trim();
-      const isAlphaNum = toNumber(r.is_alpha);
-      const isAlpha = Number.isFinite(isAlphaNum)
-        ? isAlphaNum === 1
-        : (!isMissing(r.bucket) && String(r.bucket).toLowerCase().includes("alpha"));
-
-      const state = !isMissing(r.alpha_state_display)
-        ? r.alpha_state_display
-        : (!isMissing(r.alpha_state) ? r.alpha_state : "NA");
-
-      const bucket = isAlpha
-        ? "ALPHA"
-        : (sleeve === "VOO" ? "VOO_CORE" : (sleeve === "IEF" ? "IEF_CORE" : "CORE"));
-
-      const label = isAlpha ? `${sleeve || "ALPHA"} α` : `${sleeve || "CORE"} core`;
-
-      return {
-        ...r,
-        sleeve,
-        weight: toNumber(r.weight),
-        is_alpha: isAlpha ? 1 : 0,
-        alpha_state_display: state,
-        bucket,
-        label,
-        fusion_live: Number.isFinite(toNumber(r.fusion_live)) ? toNumber(r.fusion_live) : (isAlpha ? 1 : 0)
-      };
-    }
-    function deriveTargetDate(row) {
-      if (!row) return "NA";
-      if (!isMissing(row.target_date)) return fmtDate(row.target_date);
-      const decision = parseDateOnly(row.decision_date || row.Date);
-      if (!decision) return "NA";
-      const hRaw = toNumber(row.h_reb);
-      const h = Number.isFinite(hRaw) && hRaw > 0 ? Math.round(hRaw) : 1;
-      const target = addCalendarDays(decision, h);
-      return target ? fmtDate(target) : "NA";
-    }
-    function normalizedPublishMode(v) {
-      const s = isMissing(v) ? "UNKNOWN" : String(v).trim().toUpperCase();
-      return ["NORMAL","DEFENSE_ONLY","FAIL_CLOSED_NEUTRAL"].includes(s) ? s : s;
-    }
-    function csvToObjects(text) {
-      const rows = text.trim().split(/\r?\n/);
-      if (!rows.length) return [];
-      const header = splitCsvRow(rows[0]);
-      return rows.slice(1).filter(r => r.trim().length > 0).map(row => {
-        const vals = splitCsvRow(row);
-        const obj = {};
-        header.forEach((h, i) => obj[h] = vals[i] ?? "");
-        return obj;
-      });
-    }
-    function splitCsvRow(row) {
-      const out = [];
-      let cur = "", q = false;
-      for (let i = 0; i < row.length; i++) {
-        const ch = row[i];
-        if (ch === '"') {
-          if (q && row[i + 1] === '"') { cur += '"'; i++; } else { q = !q; }
-        } else if (ch === "," && !q) {
-          out.push(cur); cur = "";
-        } else {
-          cur += ch;
-        }
-      }
-      out.push(cur);
-      return out;
-    }
-    async function fetchCsv(path) {
-      const res = await fetch(rawUrl(path));
-      if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
-      return csvToObjects(await res.text());
-    }
-    function sanitizeNonStandardJson(text) {
-      let out = "";
-      let i = 0;
-      let inString = false;
-      let escape = false;
-
-      while (i < text.length) {
-        const ch = text[i];
-
-        if (inString) {
-          out += ch;
-          if (escape) {
-            escape = false;
-          } else if (ch === "\\") {
-            escape = true;
-          } else if (ch === '"') {
-            inString = false;
-          }
-          i += 1;
-          continue;
-        }
-
-        if (ch === '"') {
-          inString = true;
-          out += ch;
-          i += 1;
-          continue;
-        }
-
-        if (text.startsWith("-Infinity", i)) {
-          out += "null";
-          i += 9;
-          continue;
-        }
-        if (text.startsWith("Infinity", i)) {
-          out += "null";
-          i += 8;
-          continue;
-        }
-        if (text.startsWith("NaN", i)) {
-          out += "null";
-          i += 3;
-          continue;
-        }
-
-        out += ch;
-        i += 1;
-      }
-
-      return out;
-    }
-
-    async function fetchJson(path, optional = false) {
-      const res = await fetch(rawUrl(path));
-      if (!res.ok) {
-        if (optional) return null;
-        throw new Error(`${path} failed: ${res.status}`);
-      }
-
-      const rawText = await res.text();
-      try {
-        return JSON.parse(rawText);
-      } catch (err) {
-        try {
-          return JSON.parse(sanitizeNonStandardJson(rawText));
-        } catch (err2) {
-          if (optional) return null;
-          throw new Error(`${path} invalid JSON after sanitization: ${err2.message}`);
-        }
-      }
-    }
-    async function fetchCsvOptional(path) {
-      try { return await fetchCsv(path); } catch (e) { return []; }
-    }
-    function sortByDateAsc(rows, col) {
-      return [...rows].sort((a,b) => new Date(a[col]) - new Date(b[col]));
-    }
-    function latestRow(rows, dateCol) {
-      if (!rows || !rows.length) return null;
-      const sorted = sortByDateAsc(rows.filter(r => !isMissing(r[dateCol])), dateCol);
-      return sorted.length ? sorted[sorted.length - 1] : null;
-    }
-    function latestRowsByDate(rows, dateCol) {
-      const last = latestRow(rows, dateCol);
-      if (!last) return [];
-      const lastDate = fmtDate(last[dateCol]);
-      return rows.filter(r => fmtDate(r[dateCol]) === lastDate);
-    }
-    function headRows(rows, n = 20) { return (rows || []).slice(0, n); }
-    function realizedRowCount(predLog) {
-      return predLog.filter(r => Number.isFinite(toNumber(r.px_voo_realized)) && Number.isFinite(toNumber(r.px_ief_realized))).length;
-    }
-    function smartDateRange(dateStrings, padDays = 3) {
-      if (!dateStrings || !dateStrings.length) return null;
-      const parsed = dateStrings.map(parseDateOnly).filter(Boolean);
-      if (!parsed.length) return null;
-      if (parsed.length === 1) {
-        const d = parsed[0];
-        const x0 = new Date(d.getTime()); x0.setUTCDate(x0.getUTCDate() - padDays);
-        const x1 = new Date(d.getTime()); x1.setUTCDate(x1.getUTCDate() + padDays);
-        return [x0.toISOString(), x1.toISOString()];
-      }
-      return null;
-    }
-    function plotBaseLayout(title, xTitle, yTitle, extra = {}) {
-      return {
-        title: { text: title, font: { color: "#ffffff", size: 18 } },
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "#061226",
-        font: { color: "#f8fafc", size: 14 },
-        margin: { l: 78, r: 72, t: 56, b: 100 },
-        legend: { orientation: "h", yanchor: "top", y: -0.18, xanchor: "left", x: 0, font: { size: 12, color: "#f8fafc" } },
-        xaxis: {
-          title: { text: xTitle, standoff: 26, font: { size: 16, color: "#ffffff" } },
-          tickfont: { size: 12, color: "#e2e8f0" },
-          gridcolor: "rgba(148,163,184,0.14)",
-          zerolinecolor: "rgba(148,163,184,0.14)",
-          automargin: true,
-          tickformat: "%b %-d<br>%Y"
-        },
-        yaxis: {
-          title: { text: yTitle, standoff: 18, font: { size: 16, color: "#ffffff" } },
-          tickfont: { size: 12, color: "#e2e8f0" },
-          gridcolor: "rgba(148,163,184,0.14)",
-          zerolinecolor: "rgba(148,163,184,0.14)",
-          automargin: true
-        },
-        ...extra
-      };
-    }
-    function plotConfig() { return { responsive: true, displayModeBar: false }; }
-    function renderEmptyChart(id, title, message) {
-      Plotly.newPlot(id, [], plotBaseLayout(title, "", "", {
-        annotations: [{ text: message, xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { color: "#cbd5e1", size: 18 } }]
-      }), plotConfig());
-    }
-    function formatCell(col, val) {
-      if (isMissing(val)) return "—";
-      const lower = String(col).toLowerCase();
-      const n = toNumber(val);
-      if (lower.includes("date") || lower.endsWith("_at") || lower === "generated_at" || lower === "built_at") return fmtDate(val);
-      if (Number.isFinite(n)) {
-        if (lower.includes("cost") && lower.includes("bps")) return fmtNum(n, 2);
-        if (lower.includes("rate") || lower.includes("pct")) return fmtPct(n);
-        if (lower.includes("price") || lower.includes("px_") || lower.includes("call")) return fmtPrice(n);
-        return fmtNum(n);
-      }
-      return String(val);
-    }
-    function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
-    function setHtml(id, value) { const el = document.getElementById(id); if (el) el.innerHTML = value; }
-    function renderTable(tableId, rows, cols) {
-      const table = document.getElementById(tableId);
-      const thead = table.querySelector("thead");
-      const tbody = table.querySelector("tbody");
-      thead.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
-      tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => `<td>${formatCell(c, r[c])}</td>`).join("")}</tr>`).join("");
-    }
-    function flattenJson(obj, prefix = "", out = []) {
-      if (obj === null || obj === undefined) return out;
-      if (Array.isArray(obj)) {
-        if (!obj.length) out.push({ key: prefix || "value", value: "[]" });
-        obj.forEach((v, i) => flattenJson(v, prefix ? `${prefix}[${i}]` : `[${i}]`, out));
-        return out;
-      }
-      if (typeof obj === "object") {
-        const keys = Object.keys(obj);
-        if (!keys.length && prefix) out.push({ key: prefix, value: "{}" });
-        keys.forEach(k => flattenJson(obj[k], prefix ? `${prefix}.${k}` : k, out));
-        return out;
-      }
-      out.push({ key: prefix || "value", value: obj });
-      return out;
-    }
-    function renderJsonTable(tableId, obj, limit = 40) {
-      const rows = flattenJson(obj).slice(0, limit).map(r => ({ key: r.key, value: r.value }));
-      renderTable(tableId, rows, ["key", "value"]);
-    }
-    function makeKvRow(k, v) {
-      return `<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-    }
-    function renderKvGrid(id, pairs) {
-      setHtml(id, pairs.map(([k,v]) => makeKvRow(k, v)).join(""));
-    }
-
-    function aggregateFusionAllocations(allocRows) {
-      const norm = (allocRows || []).map(normalizeAllocRow);
-      const map = new Map();
-      for (const r of norm) {
-        const dt = fmtDate(r.Date);
-        if (dt === "NA") continue;
-        if (!map.has(dt)) {
-          map.set(dt, { Date: dt, core_voo: 0, core_ief: 0, alpha_gross: 0, total: 0, alpha_state_display: "NA", fusion_live: 0 });
-        }
-        const rec = map.get(dt);
-        const w = toNumber(r.weight);
-        if (!Number.isFinite(w)) continue;
-        rec.total += w;
-        if (r.is_alpha === 1) rec.alpha_gross += w;
-        else if (r.sleeve === "VOO") rec.core_voo += w;
-        else if (r.sleeve === "IEF") rec.core_ief += w;
-        if (!isMissing(r.alpha_state_display)) rec.alpha_state_display = r.alpha_state_display;
-        if (Number.isFinite(toNumber(r.fusion_live))) rec.fusion_live = toNumber(r.fusion_live);
-        else if (r.is_alpha === 1 && w > 0) rec.fusion_live = 1;
-      }
-      return [...map.values()].sort((a, b) => new Date(a.Date) - new Date(b.Date));
-    }
-
-    function buildSystemStatus(prodTape, predLog) {
-      const latestTape = latestRow(prodTape, "Date");
-      const lastDate = latestTape ? parseDateOnly(latestTape.Date) : null;
-      const now = new Date();
-      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      let ageDays = NaN;
-      if (lastDate) ageDays = Math.round((todayUtc - lastDate) / 86400000);
-
-      let status = "STALE";
-      if (Number.isFinite(ageDays) && ageDays <= 1) status = "LIVE";
-      else if (Number.isFinite(ageDays) && ageDays <= CFG.maxDelayDays) status = "DELAYED";
-
-      const realizedRows = realizedRowCount(predLog);
-      const maturity = realizedRows < 60 ? "IMMATURE" : "MATURED";
-
-      return {
-        status,
-        maturity,
-        lastDate: latestTape ? fmtDate(latestTape.Date) : "NA",
-        todayUtc: todayUtc.toISOString().slice(0, 10),
-        ageDays: Number.isFinite(ageDays) ? ageDays : "NA",
-        realizedRows
-      };
-    }
-
-    function buildForecastSnapshot(predLog, prodTape) {
-      const predRow = latestRow(predLog, "decision_date");
-      const latestProdRow = latestRow(prodTape, "Date");
-
-      let matchedProdRow = null;
-      const predDecision = predRow ? fmtDate(predRow.decision_date) : "NA";
-      if (predDecision !== "NA") {
-        const sameDate = (prodTape || []).filter(r => fmtDate(r.Date) === predDecision);
-        if (sameDate.length) matchedProdRow = sameDate[sameDate.length - 1];
-      }
-
-      const baseRow = predRow || matchedProdRow || latestProdRow;
-      if (!baseRow) return null;
-
-      const vooSpot =
-        Number.isFinite(toNumber(predRow?.px_voo_t)) ? toNumber(predRow.px_voo_t) :
-        Number.isFinite(toNumber(matchedProdRow?.px_voo_t)) ? toNumber(matchedProdRow.px_voo_t) :
-        Number.isFinite(toNumber(latestProdRow?.px_voo_t)) ? toNumber(latestProdRow.px_voo_t) :
-        NaN;
-
-      const iefSpot =
-        Number.isFinite(toNumber(predRow?.px_ief_t)) ? toNumber(predRow.px_ief_t) :
-        Number.isFinite(toNumber(matchedProdRow?.px_ief_t)) ? toNumber(matchedProdRow.px_ief_t) :
-        Number.isFinite(toNumber(latestProdRow?.px_ief_t)) ? toNumber(latestProdRow.px_ief_t) :
-        NaN;
-
-      const vooCall =
-        Number.isFinite(rowCall(predRow, "VOO")) ? rowCall(predRow, "VOO") :
-        Number.isFinite(rowCall(matchedProdRow, "VOO")) ? rowCall(matchedProdRow, "VOO") :
-        Number.isFinite(rowCall(latestProdRow, "VOO")) ? rowCall(latestProdRow, "VOO") :
-        NaN;
-
-      const iefCall =
-        Number.isFinite(rowCall(predRow, "IEF")) ? rowCall(predRow, "IEF") :
-        Number.isFinite(rowCall(matchedProdRow, "IEF")) ? rowCall(matchedProdRow, "IEF") :
-        Number.isFinite(rowCall(latestProdRow, "IEF")) ? rowCall(latestProdRow, "IEF") :
-        NaN;
-
-      const vooDelta = Number.isFinite(vooSpot) && vooSpot !== 0 && Number.isFinite(vooCall) ? (vooCall / vooSpot) - 1 : NaN;
-      const iefDelta = Number.isFinite(iefSpot) && iefSpot !== 0 && Number.isFinite(iefCall) ? (iefCall / iefSpot) - 1 : NaN;
-
-      const vooSrc = !isMissing(predRow?.voo_call_src) ? predRow.voo_call_src : (Number.isFinite(vooCall) ? "explicit_call" : "NA");
-      const iefSrc = !isMissing(predRow?.ief_call_src) ? predRow.ief_call_src : (Number.isFinite(iefCall) ? "explicit_call" : "NA");
-
-      return {
-        row: baseRow,
-        decisionDate: predRow ? fmtDate(predRow.decision_date) : fmtDate(baseRow.Date),
-        targetDate: deriveTargetDate(predRow || baseRow),
-        vooSpot,
-        iefSpot,
-        vooCall,
-        iefCall,
-        vooDelta,
-        iefDelta,
-        vooSrc,
-        iefSrc
-      };
-    }
-
-    function buildDefenseSnapshot(prodTape, govTape) {
-      const tapeRow = latestRow(prodTape, "Date");
-      const govRow = latestRow(govTape, "Date");
-      const row = govRow || tapeRow;
-      if (!row) return null;
-
-      const publishMode = !isMissing(govRow?.publish_mode)
-        ? String(govRow.publish_mode)
-        : (!isMissing(tapeRow?.publish_mode) ? String(tapeRow.publish_mode) : "NA");
-
-      const blockers = !isMissing(govRow?.alpha_blockers)
-        ? String(govRow.alpha_blockers)
-        : (!isMissing(tapeRow?.alpha_blockers) ? String(tapeRow.alpha_blockers) : "NA");
-
-      return {
-        date: row ? fmtDate(row.Date) : "NA",
-        GovMode: publishMode,
-        GovReason: blockers,
-        wExec: Number.isFinite(toNumber(tapeRow?.w_exec)) ? toNumber(tapeRow.w_exec) : NaN,
-        scale: Number.isFinite(toNumber(tapeRow?.alpha_scale)) ? toNumber(tapeRow.alpha_scale) :
-               Number.isFinite(toNumber(govRow?.budget_mult)) ? toNumber(govRow.budget_mult) : NaN,
-        finalPass: govRow?.final_pass,
-        qualityOk: govRow?.quality_ok,
-        driftOk: govRow?.drift_ok,
-        trialGateOpen: govRow?.trial_gate_open,
-        fusedGateOpen: govRow?.fused_gate_open,
-        promotionReady: govRow?.promotion_ready,
-        alphaStateDisplay: govRow?.alpha_state_display || "NA",
-        alphaLive: govRow?.alpha_live,
-        driftRate: govRow?.drift_rate,
-        budgetMult: govRow?.budget_mult,
-        zeroActive: govRow?.quality_ok,
-        tooGood: govRow?.drift_ok
-      };
-    }
-
-    function buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility) {
-      const tapeRow = latestRow(prodTape, "Date");
-      const summaryRow = latestRow(alphaSummaryTape, "Date");
-      const posRow = latestRow(alphaPositions, "Date");
-      const eligRow = latestRow(alphaEligibility, "Date");
-
-      const selectedCount = Number.isFinite(toNumber(posRow?.alpha_position)) && toNumber(posRow.alpha_position) > 0 ? 1 : 0;
-      const eligibleFlag = Number.isFinite(toNumber(eligRow?.eligible)) ? Math.round(toNumber(eligRow.eligible)) : NaN;
-
-      return {
-        alphaState: !isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : (!isMissing(tapeRow?.alpha_state) ? tapeRow.alpha_state : "UNAVAILABLE"),
-        alphaLive: toNumber(tapeRow?.alpha_live),
-        fusionLive: toNumber(tapeRow?.fusion_live),
-        budgetMult: toNumber(tapeRow?.budget_mult),
-        realizedDates: toNumber(tapeRow?.realized_dates),
-        meanRankIc: Number.isFinite(toNumber(tapeRow?.mean_rank_ic)) ? toNumber(tapeRow.mean_rank_ic) : toNumber(summaryRow?.rank_ic_roll),
-        meanTopkNet: Number.isFinite(toNumber(tapeRow?.mean_topk_rel_ret_net)) ? toNumber(tapeRow.mean_topk_rel_ret_net) :
-                     (Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net)),
-        irTopk: toNumber(tapeRow?.ir_topk_rel_ret_net),
-        driftRate: toNumber(tapeRow?.alpha_drift_alarm_rate),
-        qualityOk: toNumber(tapeRow?.alpha_quality_ok),
-        driftOk: toNumber(tapeRow?.alpha_drift_ok),
-        trialOpen: toNumber(tapeRow?.alpha_trial_gate_open),
-        fusedOpen: toNumber(tapeRow?.alpha_fused_gate_open),
-        ready: toNumber(tapeRow?.alpha_promotion_ready),
-        blocker: !isMissing(tapeRow?.alpha_blocker_text) ? tapeRow.alpha_blocker_text : "NONE",
-        tier: !isMissing(summaryRow?.alpha_governance_tier) ? summaryRow.alpha_governance_tier : (!isMissing(tapeRow?.alpha_state_display) ? tapeRow.alpha_state_display : "NA"),
-        driftAlarm: toNumber(summaryRow?.alpha_drift_alarm),
-        overlayScale: toNumber(summaryRow?.alpha_overlay_scale),
-        rankIcRoll: toNumber(summaryRow?.rank_ic_roll),
-        topkRoll: Number.isFinite(toNumber(summaryRow?.topk_rel_ret_net_roll)) ? toNumber(summaryRow.topk_rel_ret_net_roll) : toNumber(summaryRow?.topk_rel_ret_net),
-        budgetUsed: toNumber(summaryRow?.gross_alpha_budget_used),
-        eligibleBreadth: Number.isFinite(toNumber(summaryRow?.eligible_breadth)) ? toNumber(summaryRow.eligible_breadth) : eligibleFlag,
-        hitRate: toNumber(summaryRow?.selection_hit_rate),
-        date: summaryRow ? fmtDate(summaryRow.Date) : (tapeRow ? fmtDate(tapeRow.Date) : "NA"),
-        selectedCount,
-        eligibleNames: eligibleFlag === 1 ? "VOO" : "NA",
-        selectedNames: selectedCount > 0 ? (posRow?.alpha_leg || "VOO") : "NA"
-      };
-    }
-
-    function buildFusionMeta(allocRows) {
-      const latestAlloc = latestRowsByDate((allocRows || []).map(normalizeAllocRow), "Date");
-      const meta = { allocDate: "NA", coreVoo: NaN, coreIef: NaN, alphaGross: NaN, sumWeight: NaN, nRows: 0 };
-      if (!latestAlloc.length) return { meta, latestAlloc: [] };
-      meta.allocDate = fmtDate(latestAlloc[0].Date);
-      meta.nRows = latestAlloc.length;
-      let coreVoo = 0, coreIef = 0, alphaGross = 0, sum = 0;
-      for (const r of latestAlloc) {
-        const w = toNumber(r.weight);
-        if (!Number.isFinite(w)) continue;
-        sum += w;
-        if (r.is_alpha === 1) alphaGross += w;
-        else if (r.sleeve === "VOO") coreVoo += w;
-        else if (r.sleeve === "IEF") coreIef += w;
-      }
-      meta.coreVoo = coreVoo;
-      meta.coreIef = coreIef;
-      meta.alphaGross = alphaGross;
-      meta.sumWeight = sum;
-      return { meta, latestAlloc: latestAlloc.sort((a, b) => toNumber(b.weight) - toNumber(a.weight)) };
-    }
-
-    function buildValidationSnapshot(part2Summary, part3Summary) {
-      return {
-        p2Mode: normalizedPublishMode(part2Summary?.publish_mode),
-        p2FinalPass: part2Summary?.final_pass,
-        p3Mode: normalizedPublishMode(part3Summary?.publish_mode),
-        p3FinalPass: part3Summary?.final_pass,
-        alphaFamily: part3Summary?.alpha_family || "NA",
-        alphaContract: part3Summary?.alpha_contract || "NA",
-        preferredAlphaFamily: part3Summary?.preferred_alpha_family || "NA",
-        strictDriveOnly: part3Summary?.strict_drive_only,
-        latestAlphaState: part3Summary?.latest_alpha_state_display || part3Summary?.latest_alpha_state || "NA",
-        predictionLogPath: part3Summary?.prediction_log_path || "NA",
-        sourceHealth: [
-          part3Summary?.defense_source,
-          part3Summary?.alpha_positions_source,
-          part3Summary?.alpha_summary_source,
-          part3Summary?.alpha_eligibility_source,
-          part3Summary?.alpha_summary_json_source
-        ].filter(v => !isMissing(v)).length
-      };
-    }
-
-    function buildRegimeSnapshot(part6Meta) {
-      const dist = part6Meta?.regime_distribution || {};
-      let topState = "NA", topPct = NaN;
-      for (const [k, v] of Object.entries(dist)) {
-        const n = toNumber(v);
-        if (Number.isFinite(n) && (!Number.isFinite(topPct) || n > topPct)) { topState = k; topPct = n; }
-      }
-      return {
-        modelType: part6Meta?.model_type || "NA",
-        nRegimes: part6Meta?.n_regimes,
-        featureCount: Array.isArray(part6Meta?.feature_cols) ? part6Meta.feature_cols.length : NaN,
-        topState,
-        topPct,
-        distribution: dist
-      };
-    }
-
-    function buildPortfolioSnapshot(part7Current, part7Meta) {
-      return {
-        date: fmtDate(part7Current?.Date),
-        wTargetVoo: toNumber(part7Current?.w_target_voo),
-        wTargetIef: toNumber(part7Current?.w_target_ief),
-        regimeLabel: part7Current?.regime_label || "NA",
-        pTailBase: toNumber(part7Current?.p_tail_base),
-        baseRate: toNumber(part7Current?.base_rate),
-        rawValAuc: toNumber(part7Current?.raw_val_auc),
-        portfolioVolAnn: toNumber(part7Current?.portfolio_vol_ann),
-        viewConfidence: toNumber(part7Current?.view_confidence),
-        edge: toNumber(part7Current?.edge),
-        optimizer: part7Current?.optimizer || part7Meta?.optimizer || "NA"
-      };
-    }
-
-    function buildExecutionSnapshot(part8Meta, part8Orders) {
-      const latestOrder = part8Meta?.latest_order_instructions || part8Orders || {};
-      const instructions = Array.isArray(latestOrder?.instructions) ? latestOrder.instructions : [];
-      const annual = part8Meta?.annual_drag_summary || {};
-
-      const assetsModeled = Array.isArray(part8Meta?.assets_modeled)
-        ? part8Meta.assets_modeled
-        : (instructions.length ? [...new Set(instructions.map(x => String(x.ticker || "").trim()).filter(Boolean))] : []);
-
-      const model =
-        part8Meta?.model ||
-        part8Meta?.execution_model ||
-        ((!isMissing(latestOrder?.execute_window) || assetsModeled.length) ? "almgren_chriss_sqrt_impact" : "NA");
-
-      const optimalWindow =
-        part8Meta?.optimal_window ||
-        part8Meta?.optimal_exec_window ||
-        latestOrder?.execute_window ||
-        "NA";
-
-      const cost1M =
-        Number.isFinite(toNumber(part8Meta?.example_cost_1M_portfolio_voo)) ? toNumber(part8Meta.example_cost_1M_portfolio_voo) :
-        Number.isFinite(toNumber(part8Meta?.example_cost_1m_voo_bps)) ? toNumber(part8Meta.example_cost_1m_voo_bps) :
-        Number.isFinite(toNumber(annual?.avg_cost_bps_actual)) ? toNumber(annual.avg_cost_bps_actual) :
-        toNumber(latestOrder?.total_estimated_cost_bps);
-
-      const cost10M =
-        Number.isFinite(toNumber(part8Meta?.example_cost_10M_portfolio_voo)) ? toNumber(part8Meta.example_cost_10M_portfolio_voo) :
-        Number.isFinite(toNumber(part8Meta?.example_cost_10m_voo_bps)) ? toNumber(part8Meta.example_cost_10m_voo_bps) :
-        Number.isFinite(toNumber(annual?.annual_drag_bps_actual)) ? toNumber(annual.annual_drag_bps_actual) :
-        NaN;
-
-      return {
-        model,
-        optimalWindow,
-        cost1M,
-        cost10M,
-        note: part8Meta?.note_on_current_model || annual?.note || "NA",
-        assetsModeled: assetsModeled.length ? assetsModeled.join(", ") : "NA",
-        totalEstimatedCostDollars: toNumber(part8Orders?.total_estimated_cost_dollars || latestOrder?.total_estimated_cost_dollars),
-        totalEstimatedCostBps: toNumber(part8Orders?.total_estimated_cost_bps || latestOrder?.total_estimated_cost_bps),
-        executeWindow: part8Orders?.execute_window || latestOrder?.execute_window || optimalWindow
-      };
-    }
-
-    function buildLiveSnapshot(part9Report) {
-      const cs = part9Report?.classification_stats_backtest || {};
-      const dm = part9Report?.diebold_mariano_vs_naive || {};
-      const cal = part9Report?.calibration_backtest || {};
-      const attr = part9Report?.factor_attribution || {};
-      return {
-        healthStatus: part9Report?.health_status || part9Report?.status || "NA",
-        healthReasons: Array.isArray(part9Report?.health_reasons) ? part9Report.health_reasons.join(" | ") : (part9Report?.message || "NA"),
-        nLiveRealized: toNumber(part9Report?.n_live_realized),
-        totalPredictions: toNumber(part9Report?.total_predictions),
-        vooMaeLive: toNumber(part9Report?.voo_mae_live),
-        vooRmseLive: toNumber(part9Report?.voo_rmse_live),
-        vooHitRate: toNumber(part9Report?.voo_hit_rate),
-        auc: toNumber(cs.auc),
-        aucT: toNumber(cs.t_stat_auc),
-        accuracy: toNumber(cs.accuracy),
-        accuracyT: toNumber(cs.t_stat_accuracy),
-        brierSkill: toNumber(cs.brier_skill_score),
-        dmStat: toNumber(dm.dm_stat),
-        dmP: toNumber(dm.p_value),
-        mseReductionPct: toNumber(dm.mse_reduction_pct) / 100,
-        ece: toNumber(cal.ece),
-        brier: toNumber(cal.brier),
-        alpha: toNumber(attr.alpha),
-        beta: toNumber(attr.beta)
-      };
-    }
-
-    function populateSummaryBrief(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
-      const notes = [];
-      notes.push(`System ${system.status.toLowerCase()} and ${system.maturity.toLowerCase()}.`);
-      notes.push(`Latest decision ${forecast?.decisionDate || "NA"}${forecast?.targetDate && forecast.targetDate !== "NA" ? ` targets ${forecast.targetDate}.` : "."}`);
-      notes.push(`Defense is ${String(defense?.GovMode || "NA").toLowerCase()}; alpha state is ${String(alpha?.alphaState || "NA").toLowerCase()}.`);
-      notes.push(`Validation shows Part 2=${validation.p2Mode} and Part 3=${validation.p3Mode}.`);
-      if (!isMissing(regime.modelType)) notes.push(`Regime engine is ${String(regime.modelType).toUpperCase()} with ${Number.isFinite(toNumber(regime.nRegimes)) ? Math.round(toNumber(regime.nRegimes)) : "NA"} states.`);
-      if (Number.isFinite(portfolio.wTargetVoo)) notes.push(`Latest Part 7 target is VOO ${fmtPct(portfolio.wTargetVoo)} / IEF ${fmtPct(portfolio.wTargetIef)}.`);
-      if (!isMissing(live.healthStatus)) notes.push(`Part 9 health is ${String(live.healthStatus).toLowerCase()}.`);
-      if (system.realizedRows < 2) notes.push("Rolling forecast-error panels will fill in as more realized rows mature.");
-      setText("summaryBrief", notes.join(" "));
-    }
-
-    function populateFooter(counts, forecast) {
-      setText("footerSource", `Source: GitHub ${CFG.branch}`);
-      setText("footerDecision", `Decision: ${forecast?.decisionDate || "NA"}`);
-      setText("footerTarget", `Target: ${forecast?.targetDate || "Pending"}`);
-      setText("footerLoaded", `Rows loaded: pred ${counts.predictionRows} | tape ${counts.productionRows} | gov ${counts.governanceRows} | p7 ${counts.part7Rows}`);
-    }
-
-    function populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live) {
-      setText("heroVooCall", fmtPrice(forecast?.vooCall));
-      setText("heroVooMeta", `Current: ${fmtPrice(forecast?.vooSpot)} | Δ: ${fmtPct(forecast?.vooDelta)}`);
-      setText("heroVooSrc", `Source: ${forecast?.vooSrc || "NA"}`);
-
-      setText("heroIefCall", fmtPrice(forecast?.iefCall));
-      setText("heroIefMeta", `Current: ${fmtPrice(forecast?.iefSpot)} | Δ: ${fmtPct(forecast?.iefDelta)}`);
-      setText("heroIefSrc", `Source: ${forecast?.iefSrc || "NA"}`);
-
-      setText("heroSystemStatus", system.status);
-      setText("heroMaturity", `Maturity: ${system.maturity}`);
-      setText("heroUpdatedUtc", `Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`);
-
-      setText("heroDecisionDate", forecast?.decisionDate || "NA");
-      setText("heroTargetDate", `Target date: ${forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending"}`);
-      setText("heroRealizedRows", `Realized rows: ${system.realizedRows}`);
-
-      setText("heroGovMode", defense?.GovMode || "NA");
-      setText("heroGovReason", `Gov reason: ${defense?.GovReason || "NA"}`);
-      setText("heroGovScale", `w_exec: ${fmtNum(defense?.wExec)} | scale: ${fmtNum(defense?.scale)}`);
-
-      setText("heroAlphaState", alpha.alphaState || "UNAVAILABLE");
-      setText("heroAlphaLive", `Alpha live: ${toNumber(alpha.alphaLive) === 1 ? "YES" : "NO"} | Fusion live: ${toNumber(alpha.fusionLive) === 1 ? "YES" : "NO"}`);
-      setText("heroBudgetMult", `Budget mult: ${fmtNum(alpha.budgetMult, 2)}`);
-
-      const p2Pass = toNumber(validation.p2FinalPass) === 1 || validation.p2FinalPass === true ? "PASS" : "FAIL";
-      const p3Pass = toNumber(validation.p3FinalPass) === 1 || validation.p3FinalPass === true ? "PASS" : "FAIL";
-      setText("heroValidation", `${p2Pass} / ${p3Pass}`);
-      setText("heroValidationMode", `Part 2: ${validation.p2Mode} | Part 3: ${validation.p3Mode}`);
-      setText("heroValidationAlpha", `Alpha family: ${validation.alphaFamily}`);
-
-      setText("heroRegimeModel", String(regime.modelType || "NA").toUpperCase());
-      setText("heroRegimeStates", `Regimes: ${Number.isFinite(toNumber(regime.nRegimes)) ? Math.round(toNumber(regime.nRegimes)) : "NA"} | Features: ${Number.isFinite(toNumber(regime.featureCount)) ? Math.round(toNumber(regime.featureCount)) : "NA"}`);
-      setText("heroRegimeDist", `Top state: ${regime.topState}${Number.isFinite(toNumber(regime.topPct)) ? ` (${fmtPct(regime.topPct)})` : ""}`);
-
-      setText("heroTargetVoo", fmtPct(portfolio.wTargetVoo));
-      setText("heroTargetIef", `IEF: ${fmtPct(portfolio.wTargetIef)}`);
-      setText("heroTargetOpt", `Optimizer: ${portfolio.optimizer || "NA"}`);
-
-      setText("heroExecCost", `${fmtNum(execution.cost1M, 2)} bp`);
-      setText("heroExecWindow", `Window: ${execution.optimalWindow || "NA"}`);
-      setText("heroExecModel", `Model: ${execution.model || "NA"}`);
-
-      setText("heroLiveHealth", live.healthStatus || "NA");
-      setText("heroLiveN", `Live realized: ${Number.isFinite(toNumber(live.nLiveRealized)) ? Math.round(toNumber(live.nLiveRealized)) : "NA"} / ${Number.isFinite(toNumber(live.totalPredictions)) ? Math.round(toNumber(live.totalPredictions)) : "NA"}`);
-      setText("heroLiveAuc", `AUC / DM: ${fmtNum(live.auc, 3)} / ${fmtNum(live.dmStat, 3)}`);
-
-      setText("heroRankIc", fmtNum(alpha.rankIcRoll));
-      setText("heroTopkNet", `TopK net: ${fmtNum(alpha.topkRoll, 6)} | IR: ${fmtValueOrPending(alpha.irTopk, v => fmtNum(v, 3))}`);
-      setText("heroDriftRate", `Drift rate: ${fmtValueOrPending(alpha.driftRate, v => fmtPct(v))}`);
-    }
-
-    function buildStatusPills(system, forecast, defense, alpha, validation, live) {
-      const latestRealizedFilled = rowHasRealized(forecast?.row);
-      const pills = [];
-      pills.push({ text: system.status === "LIVE" ? "🟢 SYSTEM LIVE" : system.status === "DELAYED" ? "🔵 SYSTEM DELAYED" : "🔴 SYSTEM STALE", cls: system.status === "LIVE" ? "good" : system.status === "DELAYED" ? "info" : "bad" });
-      pills.push({ text: system.maturity, cls: system.maturity === "MATURED" ? "good" : "warn" });
-      pills.push({ text: `α ${alpha.alphaState || "UNAVAILABLE"}`, cls: (alpha.alphaState || "").includes("LIVE") ? "info" : "warn" });
-      pills.push({ text: `Part2 ${validation.p2Mode}`, cls: validation.p2Mode === "NORMAL" ? "good" : "warn" });
-      pills.push({ text: `Part3 ${validation.p3Mode}`, cls: validation.p3Mode === "NORMAL" ? "good" : "warn" });
-      pills.push({ text: `Health ${live.healthStatus || "NA"}`, cls: String(live.healthStatus || "").toUpperCase() === "ACTIVE" ? "good" : String(live.healthStatus || "").toUpperCase() === "IMMATURE" ? "info" : "warn" });
-      pills.push({ text: forecast?.targetDate && forecast.targetDate !== "NA" ? `Target ${forecast.targetDate}` : "Target Pending", cls: forecast?.targetDate && forecast.targetDate !== "NA" ? "good" : "warn" });
-      pills.push({ text: latestRealizedFilled ? "Realized Filled" : "Awaiting Realized", cls: latestRealizedFilled ? "good" : "warn" });
-      setHtml("statusRow", pills.map(p => `<div class="status-pill ${p.cls}">${p.text}</div>`).join(""));
-      setText("statusSummary", `Latest row: decision=${forecast?.decisionDate || "NA"} | target=${forecast?.targetDate || "NA"} | VOO call=${fmtPrice(forecast?.vooCall)} | IEF call=${fmtPrice(forecast?.iefCall)} | Part9=${live.healthStatus || "NA"}`);
-    }
-
-    function buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary, part2bSummary, part2cSummary) {
-      const lines = [];
-      lines.push(`Updated: ${new Date().toISOString().replace("T", " ").replace("Z", " (UTC)")}`);
-      lines.push("");
-      lines.push(`SYSTEM STATUS: ${system.status} | MATURITY: ${system.maturity}`);
-      lines.push(`- last_tape_date=${system.lastDate}`);
-      lines.push(`- today_utc=${system.todayUtc}`);
-      lines.push(`- age_days=${system.ageDays}`);
-      lines.push(`- realized_rows=${system.realizedRows}`);
-      lines.push("");
-      lines.push("LATEST FORECAST SNAPSHOT:");
-      lines.push(`- decision_date=${forecast?.decisionDate || "NA"}`);
-      lines.push(`- target_date=${forecast?.targetDate || "NA"}`);
-      lines.push(`- px_voo_t=${fmtPrice(forecast?.vooSpot)}`);
-      lines.push(`- px_voo_call_1d=${fmtPrice(forecast?.vooCall)}`);
-      lines.push(`- px_ief_t=${fmtPrice(forecast?.iefSpot)}`);
-      lines.push(`- px_ief_call_1d=${fmtPrice(forecast?.iefCall)}`);
-      lines.push("");
-      lines.push("VALIDATION / CONTRACT:");
-      lines.push(`- part2_publish_mode=${validation.p2Mode}`);
-      lines.push(`- part2_final_pass=${validation.p2FinalPass}`);
-      lines.push(`- part3_publish_mode=${validation.p3Mode}`);
-      lines.push(`- part3_final_pass=${validation.p3FinalPass}`);
-      lines.push(`- alpha_family=${validation.alphaFamily}`);
-      lines.push(`- alpha_contract=${validation.alphaContract}`);
-      lines.push(`- preferred_alpha_family=${validation.preferredAlphaFamily}`);
-      lines.push(`- strict_drive_only=${validation.strictDriveOnly}`);
-      lines.push(`- latest_alpha_state=${validation.latestAlphaState}`);
-      lines.push("");
-      lines.push("REGIME / PORTFOLIO / EXECUTION:");
-      lines.push(`- regime_model=${regime.modelType}`);
-      lines.push(`- n_regimes=${regime.nRegimes}`);
-      lines.push(`- top_regime=${regime.topState}`);
-      lines.push(`- w_target_voo=${fmtNum(portfolio.wTargetVoo)}`);
-      lines.push(`- w_target_ief=${fmtNum(portfolio.wTargetIef)}`);
-      lines.push(`- optimizer=${portfolio.optimizer}`);
-      lines.push(`- execution_model=${execution.model}`);
-      lines.push(`- optimal_window=${execution.optimalWindow}`);
-      lines.push(`- example_cost_1m_voo_bps=${fmtNum(execution.cost1M, 2)}`);
-      lines.push(`- example_cost_10m_voo_bps=${fmtNum(execution.cost10M, 2)}`);
-      lines.push("");
-      lines.push("LIVE ATTRIBUTION:");
-      lines.push(`- health_status=${live.healthStatus}`);
-      lines.push(`- health_reasons=${live.healthReasons}`);
-      lines.push(`- n_live_realized=${Number.isFinite(toNumber(live.nLiveRealized)) ? Math.round(toNumber(live.nLiveRealized)) : "NA"}`);
-      lines.push(`- auc=${fmtNum(live.auc, 4)}`);
-      lines.push(`- accuracy=${fmtPct(live.accuracy)}`);
-      lines.push(`- dm_stat=${fmtNum(live.dmStat, 3)}`);
-      lines.push(`- dm_p=${fmtNum(live.dmP, 4)}`);
-      lines.push(`- ece=${fmtNum(live.ece, 4)}`);
-      lines.push(`- brier=${fmtNum(live.brier, 4)}`);
-      lines.push("");
-      lines.push("PART 2 SUMMARY:");
-      if (part2Summary) {
-        lines.push(`- model_feature_count=${part2Summary.model_feature_count}`);
-        lines.push(`- dist_overlay_on_rate=${fmtNum(part2Summary.dist_overlay_on_rate, 3)}`);
-        lines.push(`- drift_alarm_rate=${part2Summary.drift_alarm_rate}`);
-        lines.push(`- active_ret_net_ir=${part2Summary.active_ret_net_ir}`);
-        lines.push(`- strategy_ret_net_ir=${part2Summary.strategy_ret_net_ir}`);
-      }
-      lines.push("");
-      lines.push("PART 2 DIAGNOSTICS:");
-      if (part2Diag?.distribution_validation) {
-        lines.push(`- raw_coverage_mean=${fmtNum(part2Diag.distribution_validation.raw_coverage_mean)}`);
-        lines.push(`- conf_coverage_mean=${fmtNum(part2Diag.distribution_validation.conf_coverage_mean)}`);
-        lines.push(`- median_rmse_mean=${fmtNum(part2Diag.distribution_validation.median_rmse_mean)}`);
-      }
-      lines.push("");
-      lines.push("PART 2B — XGB ENSEMBLE UNCERTAINTY:");
-      if (part2bSummary) {
-        lines.push(`- gate_validation_passed=${part2bSummary.gate_validation_passed}`);
-        lines.push(`- bnn_sleeve_recommended=${part2bSummary.bnn_sleeve_recommended}`);
-        lines.push(`- holdout_auc=${fmtNum(part2bSummary.holdout_auc, 4)}`);
-        lines.push(`- holdout_ece=${fmtNum(part2bSummary.holdout_ece, 4)}`);
-        lines.push(`- walkforward_ece_gap=${fmtNum(part2bSummary.walkforward_ece_gap, 4)}`);
-        lines.push(`- spread_corr_vs_caution=${fmtNum(part2bSummary.walkforward_spread_corr_vs_caution, 3)}`);
-        lines.push(`- epist_threshold=${fmtNum(part2bSummary.epist_overlay_threshold_75pct, 5)}`);
-        lines.push(`- n_wf_eval_rows=${part2bSummary.n_walkforward_eval_rows ?? "NA"}`);
-      } else {
-        lines.push("- not deployed");
-      }
-      lines.push("");
-      lines.push("PART 2C — BNN SLEEVE:");
-      if (part2cSummary) {
-        lines.push(`- backend=${part2cSummary.backend}`);
-        lines.push(`- holdout_auc=${fmtNum(part2cSummary.holdout_auc, 4)}`);
-        lines.push(`- holdout_ece=${fmtNum(part2cSummary.holdout_ece, 4)}`);
-        lines.push(`- epist_threshold=${fmtNum(part2cSummary.epist_overlay_threshold_75pct, 5)}`);
-        lines.push(`- n_wf_eval_rows=${part2cSummary.n_walkforward_eval_rows ?? "NA"}`);
-        lines.push(`- live_p_bnn_mean=${fmtNum(part2cSummary.live_p_bnn_mean, 4)}`);
-        lines.push(`- live_bnn_overlay_on=${part2cSummary.live_bnn_overlay_on ?? "NA"}`);
-      } else {
-        lines.push("- not deployed");
-      }
-      lines.push("");
-      lines.push("PART 3 SUMMARY:");
-      if (part3Summary) {
-        lines.push(`- fusion_live_rate=${fmtPct(part3Summary.fusion_live_rate)}`);
-        lines.push(`- defense_ir_net=${fmtNum(part3Summary.defense_ir_net, 3)}`);
-        lines.push(`- fused_ir_net=${fmtNum(part3Summary.fused_ir_net, 3)}`);
-      }
-      lines.push("");
-      lines.push("ROW COUNTS:");
-      Object.entries(counts).forEach(([k, v]) => lines.push(`- ${k}=${v}`));
-      return lines.join("\n");
-    }
-    function populatePredictionSnapshotCard(forecast) {
-      const row = forecast?.row || null;
-      const latestRealizedFilled = rowHasRealized(row);
-      setText("predSnapDate", forecast?.decisionDate || "NA");
-      const badges = [];
-      badges.push(`<div class="status-pill ${latestRealizedFilled ? "good" : "warn"}">${latestRealizedFilled ? "REALIZED FILLED" : "AWAITING REALIZED"}</div>`);
-      badges.push(`<div class="status-pill good">VOO CALL: ${fmtPrice(forecast?.vooCall)}</div>`);
-      badges.push(`<div class="status-pill good">IEF CALL: ${fmtPrice(forecast?.iefCall)}</div>`);
-      setHtml("predSnapBadges", badges.join(""));
-      setText("predSnapTarget", forecast?.targetDate && forecast.targetDate !== "NA" ? forecast.targetDate : "Pending");
-      setText("predSnapTier", !isMissing(row?.governance_tier) ? row.governance_tier : "Pending");
-      setText("predSnapPFinal", fmtNum(row?.p_final_cal || row?.p_final_use, 4));
-      setText("predSnapAlphaScale", fmtNum(row?.alpha_scale));
-      setText("predSnapVoo", `${fmtPrice(forecast?.vooSpot)} / ${fmtPrice(forecast?.vooCall)}`);
-      setText("predSnapIef", `${fmtPrice(forecast?.iefSpot)} / ${fmtPrice(forecast?.iefCall)}`);
-    }
-
-    function populateGovernanceSnapshot(defense) {
-      setText("govSnapMode", defense?.GovMode || "NA");
-      setText("govSnapReason", `Blockers: ${defense?.GovReason || "NA"}`);
-      setText("govBadgeMode", `Publish Mode: ${defense?.GovMode || "NA"}`);
-      setText("govBadgeZero", `Quality OK: ${Number.isFinite(toNumber(defense?.qualityOk)) ? Math.round(toNumber(defense.qualityOk)) : 0}`);
-      setText("govBadgeTooGood", `Drift OK: ${Number.isFinite(toNumber(defense?.driftOk)) ? Math.round(toNumber(defense.driftOk)) : 0}`);
-      setText("govSnapDate", defense?.date || "NA");
-      setText("govSnapAlphaEff", String(defense?.finalPass ?? "NA"));
-      setText("govSnapScale", String(defense?.qualityOk ?? "NA"));
-      setText("govSnapHealthLive", String(defense?.driftOk ?? "NA"));
-      setText("govSnapHealthReal", String(defense?.trialGateOpen ?? "NA"));
-      setText("govSnapLift", String(defense?.fusedGateOpen ?? "NA"));
-      setText("govSnapDes", String(defense?.promotionReady ?? "NA"));
-      setText("govSnapCost", defense?.alphaStateDisplay || "NA");
-      setText("govSnapTurnEff", String(defense?.alphaLive ?? "NA"));
-      setText("govSnapHealthAny", fmtNum(defense?.driftRate, 4));
-    }
-
-    function populateAlphaSnapshot(alpha) {
-      setText("alphaSnapTier", alpha.tier || alpha.alphaState || "NA");
-      setText("alphaBadgeDrift", `Drift Alarm: ${Number.isFinite(toNumber(alpha.driftAlarm)) ? Math.round(toNumber(alpha.driftAlarm)) : 0}`);
-      setText("alphaBadgeSelected", `Selected: ${alpha.selectedCount}`);
-      setText("alphaBadgeOverlay", `Overlay Scale: ${fmtValueOrPending(alpha.overlayScale, v => fmtNum(v, 2))}`);
-      setText("alphaSnapDate", alpha.date || "NA");
-      setText("alphaSnapRankIc", fmtValueOrPending(alpha.rankIcRoll, v => fmtNum(v)));
-      setText("alphaSnapTopk", fmtValueOrPending(alpha.topkRoll, v => fmtNum(v, 6)));
-      setText("alphaSnapBudget", fmtValueOrPending(alpha.budgetUsed, v => fmtNum(v)));
-      setText("alphaSnapEligibleBreadth", Number.isFinite(toNumber(alpha.eligibleBreadth)) ? String(Math.round(toNumber(alpha.eligibleBreadth))) : "Pending");
-      setText("alphaSnapHitRate", fmtValueOrPending(alpha.hitRate, v => fmtPct(v)));
-      setText("alphaSnapEligibleNames", alpha.eligibleNames || "Pending");
-      setText("alphaSnapSelectedNames", alpha.selectedNames || "Pending");
-    }
-
-    function populateOpsGrids(validation, live, execution, portfolio) {
-      renderKvGrid("validationGrid", [
-        ["Part 2 publish_mode", validation.p2Mode || "NA"],
-        ["Part 2 final_pass", String(validation.p2FinalPass)],
-        ["Part 3 publish_mode", validation.p3Mode || "NA"],
-        ["Part 3 final_pass", String(validation.p3FinalPass)],
-        ["Alpha family", validation.alphaFamily || "NA"],
-        ["Alpha contract", validation.alphaContract || "NA"],
-        ["Preferred alpha family", validation.preferredAlphaFamily || "NA"],
-        ["strict_drive_only", String(validation.strictDriveOnly)],
-        ["Latest alpha state", validation.latestAlphaState || "NA"],
-        ["Prediction log path", validation.predictionLogPath || "NA"],
-      ]);
-
-      renderKvGrid("liveGrid", [
-        ["Health status", live.healthStatus || "NA"],
-        ["Health reasons", live.healthReasons || "NA"],
-        ["Live realized rows", Number.isFinite(toNumber(live.nLiveRealized)) ? String(Math.round(toNumber(live.nLiveRealized))) : "NA"],
-        ["VOO MAE live", fmtNum(live.vooMaeLive, 4)],
-        ["VOO RMSE live", fmtNum(live.vooRmseLive, 4)],
-        ["VOO hit rate", fmtPct(live.vooHitRate)],
-        ["AUC / t", `${fmtNum(live.auc, 3)} / ${fmtNum(live.aucT, 2)}`],
-        ["Accuracy / t", `${fmtPct(live.accuracy)} / ${fmtNum(live.accuracyT, 2)}`],
-        ["DM stat / p", `${fmtNum(live.dmStat, 3)} / ${fmtNum(live.dmP, 4)}`],
-        ["ECE / Brier", `${fmtNum(live.ece, 4)} / ${fmtNum(live.brier, 4)}`]
-      ]);
-
-      renderKvGrid("execGrid", [
-        ["Execution model", execution.model || "NA"],
-        ["Optimal window", execution.optimalWindow || "NA"],
-        ["Assets modeled", execution.assetsModeled || "NA"],
-        ["Example cost $1M VOO", `${fmtNum(execution.cost1M, 2)} bp`],
-        ["Example cost $10M VOO", `${fmtNum(execution.cost10M, 2)} bp`],
-        ["Order est. total $", fmtNum(execution.totalEstimatedCostDollars, 2)],
-        ["Order est. total bps", fmtNum(execution.totalEstimatedCostBps, 2)],
-        ["Order execute window", execution.executeWindow || "NA"],
-        ["Execution note", execution.note || "NA"],
-      ]);
-
-      renderKvGrid("portfolioGrid", [
-        ["Date", portfolio.date || "NA"],
-        ["Target VOO", fmtPct(portfolio.wTargetVoo)],
-        ["Target IEF", fmtPct(portfolio.wTargetIef)],
-        ["Regime label", portfolio.regimeLabel || "NA"],
-        ["p_tail_base", fmtNum(portfolio.pTailBase, 4)],
-        ["base_rate", fmtNum(portfolio.baseRate, 4)],
-        ["raw_val_auc", fmtNum(portfolio.rawValAuc, 4)],
-        ["portfolio_vol_ann", fmtPct(portfolio.portfolioVolAnn)],
-        ["view_confidence", fmtNum(portfolio.viewConfidence, 3)],
-        ["edge", fmtNum(portfolio.edge, 4)],
-        ["optimizer", portfolio.optimizer || "NA"]
-      ]);
-    }
-
-    function renderPredictionChart(predLog) {
-      const rows = sortByDateAsc(predLog.filter(r => !isMissing(r.decision_date)), "decision_date");
-      if (!rows.length) return renderEmptyChart("predChart", "Prediction Log: Calls vs Realized", "No prediction-log rows found.");
-      const x = rows.map(r => fmtDate(r.decision_date));
-      const traces = [];
-      const makeTrace = (getter, name, color) => {
-        const y = rows.map(getter);
-        if (!y.some(v => Number.isFinite(v))) return;
-        traces.push({
-          x, y,
-          type: "scatter",
-          mode: rows.length === 1 ? "markers+text" : "lines+markers",
-          name,
-          marker: { size: rows.length === 1 ? 8 : 6, color },
-          line: { width: 2, color },
-          text: rows.length === 1 ? [name] : undefined,
-          textposition: rows.length === 1 ? "top center" : undefined
-        });
-      };
-      makeTrace(r => rowCall(r, "VOO"), "VOO call", "#38bdf8");
-      makeTrace(r => rowCall(r, "IEF"), "IEF call", "#fb923c");
-      makeTrace(r => toNumber(r.px_voo_realized), "VOO realized", "#22c55e");
-      makeTrace(r => toNumber(r.px_ief_realized), "IEF realized", "#ef4444");
-      const layout = plotBaseLayout("Prediction Log: Calls vs Realized", "Decision Date", "Price");
-      const range = smartDateRange(x, 4);
-      if (range) layout.xaxis.range = range;
-      Plotly.newPlot("predChart", traces, layout, plotConfig());
-    }
-
-    function renderErrorPanel(predLog) {
-      const realized = sortByDateAsc(
-        predLog.filter(r =>
-          !isMissing(r.decision_date) &&
-          Number.isFinite(toNumber(r.px_voo_realized)) &&
-          Number.isFinite(toNumber(r.px_ief_realized))
-        ),
-        "decision_date"
-      );
-      if (!realized.length) return renderEmptyChart("errorChart", "1-Day Forecast Error Panel", "No matured 1-day forecasts yet.");
-      const calc = realized.map(r => {
-        const vooCall = rowCall(r, "VOO");
-        const iefCall = rowCall(r, "IEF");
-        const vooErr = toNumber(r.px_voo_realized) - vooCall;
-        const iefErr = toNumber(r.px_ief_realized) - iefCall;
-        const vooAbs = Math.abs(vooErr), iefAbs = Math.abs(iefErr);
-        const vooApe = Number.isFinite(toNumber(r.px_voo_realized)) && toNumber(r.px_voo_realized) !== 0 ? vooAbs / Math.abs(toNumber(r.px_voo_realized)) : NaN;
-        const iefApe = Number.isFinite(toNumber(r.px_ief_realized)) && toNumber(r.px_ief_realized) !== 0 ? iefAbs / Math.abs(toNumber(r.px_ief_realized)) : NaN;
-        return { ...r, voo_err: vooErr, ief_err: iefErr, voo_abs_err: vooAbs, ief_abs_err: iefAbs, voo_ape: vooApe, ief_ape: iefApe };
-      });
-      if (calc.length === 1) {
-        const r = calc[0];
-        const x = ["VOO MAE","IEF MAE","VOO MAPE%","IEF MAPE%","VOO Bias","IEF Bias"];
-        const y = [r.voo_abs_err, r.ief_abs_err, 100 * r.voo_ape, 100 * r.ief_ape, r.voo_err, r.ief_err];
-        return Plotly.newPlot("errorChart", [{
-          x, y, type: "bar",
-          marker: { color: ["#38bdf8","#fb923c","#22c55e","#ef4444","#a855f7","#f472b6"] },
-          text: y.map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
-          textposition: "outside",
-          cliponaxis: false
-        }], plotBaseLayout("1-Day Forecast Error Panel", "Metric", "Value"), plotConfig());
-      }
-      const rollN = 10;
-      const series = [];
-      for (let i = 0; i < calc.length; i++) {
-        const start = Math.max(0, i - rollN + 1);
-        const win = calc.slice(start, i + 1);
-        const mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-        series.push({
-          decision_date: fmtDate(calc[i].decision_date),
-          voo_mae_roll: mean(win.map(r => r.voo_abs_err)),
-          ief_mae_roll: mean(win.map(r => r.ief_abs_err)),
-          voo_mape_roll: 100 * mean(win.map(r => r.voo_ape)),
-          ief_mape_roll: 100 * mean(win.map(r => r.ief_ape)),
-          voo_bias_roll: mean(win.map(r => r.voo_err)),
-          ief_bias_roll: mean(win.map(r => r.ief_err))
-        });
-      }
-      const x = series.map(r => r.decision_date);
-      Plotly.newPlot("errorChart", [
-        { x, y: series.map(r => r.voo_mae_roll), type: "scatter", mode: "lines", name: "VOO MAE (roll)", line: { color: "#38bdf8", width: 2 } },
-        { x, y: series.map(r => r.ief_mae_roll), type: "scatter", mode: "lines", name: "IEF MAE (roll)", line: { color: "#fb923c", width: 2 } },
-        { x, y: series.map(r => r.voo_mape_roll), type: "scatter", mode: "lines", name: "VOO MAPE% (roll)", line: { color: "#22c55e", width: 2 } },
-        { x, y: series.map(r => r.ief_mape_roll), type: "scatter", mode: "lines", name: "IEF MAPE% (roll)", line: { color: "#ef4444", width: 2 } },
-        { x, y: series.map(r => r.voo_bias_roll), type: "scatter", mode: "lines", name: "VOO Bias (roll)", line: { color: "#a855f7", width: 2 } },
-        { x, y: series.map(r => r.ief_bias_roll), type: "scatter", mode: "lines", name: "IEF Bias (roll)", line: { color: "#f472b6", width: 2 } }
-      ], plotBaseLayout("1-Day Forecast Error Panel (rolling window = 10 decisions)", "Decision Date", "Metric value"), plotConfig());
-    }
-
-    function renderErrorDistribution(predLog) {
-      const realized = sortByDateAsc(
-        predLog.filter(r =>
-          !isMissing(r.decision_date) &&
-          Number.isFinite(toNumber(r.px_voo_realized)) &&
-          Number.isFinite(toNumber(r.px_ief_realized))
-        ),
-        "decision_date"
-      );
-      if (!realized.length) return renderEmptyChart("distChart", "Forecast Error Distribution", "No matured 1-day forecasts yet.");
-      const vooErr = realized.map(r => toNumber(r.px_voo_realized) - rowCall(r, "VOO"));
-      const iefErr = realized.map(r => toNumber(r.px_ief_realized) - rowCall(r, "IEF"));
-      if (realized.length === 1) {
-        return Plotly.newPlot("distChart", [{
-          x: ["VOO error","IEF error"],
-          y: [vooErr[0], iefErr[0]],
-          type: "bar",
-          marker: { color: ["#38bdf8","#fb923c"] },
-          text: [vooErr[0], iefErr[0]].map(v => Number.isFinite(v) ? v.toFixed(2) : "NA"),
-          textposition: "outside"
-        }], plotBaseLayout("Forecast Error Distribution", "Series", "Realized - Call"), plotConfig());
-      }
-      Plotly.newPlot("distChart", [
-        { x: vooErr, type: "histogram", name: "VOO error", opacity: 0.65, marker: { color: "#38bdf8" } },
-        { x: iefErr, type: "histogram", name: "IEF error", opacity: 0.65, marker: { color: "#fb923c" } }
-      ], plotBaseLayout("Forecast Error Distribution", "Realized - Call", "Count", { barmode: "overlay" }), plotConfig());
-    }
-
-    function mergeDefenseFlags(prodTape, govTape) {
-      const govMap = new Map();
-      for (const r of govTape) {
-        const dt = fmtDate(r.Date); if (dt === "NA") continue;
-        govMap.set(dt, { drift: !isMissing(r.GovReason) ? String(r.GovReason).toUpperCase() !== "OK" : (Number.isFinite(toNumber(r.gov_scale)) ? toNumber(r.gov_scale) < 1 : false), zero: toNumber(r.ZeRO_Active_End) === 1, tg: toNumber(r.TooGood_Alarm_End) === 1 });
-      }
-      return prodTape.map(r => { const dt = fmtDate(r.Date); const flags = govMap.get(dt) || { drift: false, zero: false, tg: false }; return { ...r, _drift_flag: flags.drift, _zero_flag: flags.zero, _tg_flag: flags.tg }; });
-    }
-
-    function addRegimeShapes(layout, rows) {
-      const toSegments = flagKey => {
-        const segs = [];
-        let start = null;
-        for (let i=0;i<rows.length;i++) {
-          const flag = !!rows[i][flagKey];
-          const dt = fmtDate(rows[i].Date);
-          if (flag && start === null) start = dt;
-          if ((!flag || i === rows.length-1) && start !== null) {
-            const end = flag && i === rows.length-1 ? dt : fmtDate(rows[Math.max(0,i-1)].Date);
-            segs.push([start,end]); start = null;
-          }
-        }
-        return segs;
-      };
-      const shapes = [];
-      const addColor = (segments, color) => segments.forEach(([x0,x1]) => shapes.push({ type: "rect", xref: "x", yref: "paper", x0, x1, y0:0, y1:1, fillcolor: color, line: { width: 0 }, layer: "below" }));
-      addColor(toSegments("_drift_flag"), "rgba(245,158,11,0.12)");
-      addColor(toSegments("_zero_flag"), "rgba(168,85,247,0.08)");
-      addColor(toSegments("_tg_flag"), "rgba(239,68,68,0.08)");
-      layout.shapes = shapes;
-    }
-
-    function renderDefenseSignalChart(prodTape, govTape) {
-      const rows = sortByDateAsc(mergeDefenseFlags(prodTape, govTape), "Date");
-      if (!rows.length) return renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "No Part 3 tape loaded.");
-      const pCol = ["p_final_use","p_final_cal","p_final","p_final_raw"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
-      const p0Col = ["p0_eff","p0"].find(c => rows.some(r => Number.isFinite(toNumber(r[c]))));
-      if (!pCol) return renderEmptyChart("defSignalChart", "Defense Signal Probability vs Anchor", "Tape missing probability columns.");
-      const x = rows.map(r => fmtDate(r.Date));
-      const traces = [{ x, y: rows.map(r => toNumber(r[pCol])), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: pCol, line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 }, text: rows.length === 1 ? [pCol] : undefined, textposition: rows.length === 1 ? "top center" : undefined }];
-      if (p0Col) traces.push({ x, y: rows.map(r => toNumber(r[p0Col])), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: p0Col, line: { color: "#f59e0b", width: 2, dash: "dot" }, marker: { color: "#f59e0b", size: 6 }, text: rows.length === 1 ? [p0Col] : undefined, textposition: rows.length === 1 ? "bottom center" : undefined });
-      const layout = plotBaseLayout("Defense Signal Probability vs Anchor", "Date", "Probability");
-      addRegimeShapes(layout, rows);
-      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
-      Plotly.newPlot("defSignalChart", traces, layout, plotConfig());
-    }
-
-    function renderAlphaStateTimeline(prodTape) {
-      const rows = sortByDateAsc(prodTape.filter(r => !isMissing(r.Date)), "Date");
-      if (!rows.length) return renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "No Part 3 tape loaded.");
-      const x = rows.map(r => fmtDate(r.Date));
-      const traces = [];
-      const maybePush = (col, name, yaxis, color) => {
-        if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis, line: { width: 2, color } });
-      };
-      maybePush("mean_rank_ic", "mean_rank_ic", "y", "#38bdf8");
-      maybePush("mean_topk_rel_ret_net", "mean_topk_rel_ret_net", "y", "#fb923c");
-      maybePush("ir_topk_rel_ret_net", "ir_topk_rel_ret_net", "y", "#22c55e");
-      maybePush("budget_mult", "budget_mult", "y", "#ef4444");
-      maybePush("realized_dates", "realized_dates", "y2", "#a855f7");
-      if (!traces.length) return renderEmptyChart("alphaStateChart", "Alpha / Fusion State Timeline", "Expected alpha-state columns were not found in Part 3 tape.");
-      const rowsWithFlags = rows.map(r => ({ ...r, _candidate: String(r.alpha_state_display || "").toUpperCase() === "CANDIDATE", _fusion: toNumber(r.fusion_live) === 1 }));
-      const layout = plotBaseLayout("Alpha / Fusion State Timeline", "Date", "Signal quality / returns", { yaxis2: { title: { text: "Budget / realized dates", standoff: 14, font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } });
-      const shapes = [];
-      const addSegments = (flagKey, color) => {
-        let start = null;
-        for (let i=0;i<rowsWithFlags.length;i++) {
-          const flag = !!rowsWithFlags[i][flagKey], dt = fmtDate(rowsWithFlags[i].Date);
-          if (flag && start === null) start = dt;
-          if ((!flag || i === rowsWithFlags.length-1) && start !== null) {
-            const end = flag && i === rowsWithFlags.length-1 ? dt : fmtDate(rowsWithFlags[Math.max(0,i-1)].Date);
-            shapes.push({ type: "rect", xref: "x", yref: "paper", x0: start, x1: end, y0:0, y1:1, fillcolor: color, line: { width: 0 }, layer: "below" });
-            start = null;
-          }
-        }
-      };
-      addSegments("_candidate", "rgba(37,99,235,0.10)");
-      addSegments("_fusion", "rgba(6,182,212,0.10)");
-      layout.shapes = shapes;
-      Plotly.newPlot("alphaStateChart", traces, layout, plotConfig());
-    }
-
-    function renderFusionFundingPath(prodTape, allocRows) {
-      const tapeRows = sortByDateAsc(prodTape.filter(r => !isMissing(r.Date)), "Date");
-      let traces = [], x = [];
-      const hasTapeCols = ["w_defense_voo", "w_core_voo", "w_core_ief", "alpha_gross_weight"].some(c => tapeRows.some(r => Number.isFinite(toNumber(r[c]))));
-      if (hasTapeCols) {
-        x = tapeRows.map(r => fmtDate(r.Date));
-        const add = (col, name, color) => { if (tapeRows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: tapeRows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, line: { width: 2, color } }); };
-        add("w_defense_voo", "w_defense_voo", "#38bdf8");
-        add("w_core_voo", "w_core_voo", "#fb923c");
-        add("w_core_ief", "w_core_ief", "#22c55e");
-        add("alpha_gross_weight", "alpha_gross_weight", "#ef4444");
-      } else {
-        const agg = aggregateFusionAllocations(allocRows);
-        x = agg.map(r => r.Date);
-        if (agg.length) {
-          traces = [
-            { x, y: agg.map(r => r.core_voo), type: "scatter", mode: "lines", name: "w_core_voo", line: { width: 2, color: "#38bdf8" } },
-            { x, y: agg.map(r => r.core_ief), type: "scatter", mode: "lines", name: "w_core_ief", line: { width: 2, color: "#22c55e" } },
-            { x, y: agg.map(r => r.alpha_gross), type: "scatter", mode: "lines", name: "alpha_gross_weight", line: { width: 2, color: "#ef4444" } }
-          ];
-        }
-      }
-      if (!traces.length) return renderEmptyChart("fusionPathChart", "Fusion Funding Path", "Expected fusion allocation path columns were not found.");
-      Plotly.newPlot("fusionPathChart", traces, plotBaseLayout("Fusion Funding Path", "Date", "Weight"), plotConfig());
-    }
-
-    function renderLatestFusionAllocations(allocRows) {
-      const { meta, latestAlloc } = buildFusionMeta(allocRows);
-      if (!latestAlloc.length) return renderEmptyChart("fusionAllocChart", "Latest Fusion Allocations", "No fusion allocation rows loaded.");
-      const stateDisplay = !isMissing(latestAlloc[0].alpha_state_display) ? latestAlloc[0].alpha_state_display : "NA";
-      const fusionLive = Number.isFinite(toNumber(latestAlloc[0].fusion_live))
-        ? Math.round(toNumber(latestAlloc[0].fusion_live))
-        : ((latestAlloc.some(r => r.is_alpha === 1 && toNumber(r.weight) > 0)) ? 1 : 0);
-      Plotly.newPlot("fusionAllocChart", [{
-        x: latestAlloc.map(r => r.label),
-        y: latestAlloc.map(r => toNumber(r.weight)),
-        type: "bar",
-        marker: { color: latestAlloc.map(r => r.is_alpha === 1 ? "#a855f7" : (r.sleeve === "VOO" ? "#38bdf8" : "#22c55e")) },
-        text: latestAlloc.map(r => fmtNum(r.weight)),
-        textposition: "outside",
-        cliponaxis: false
-      }], plotBaseLayout(`Latest Fusion Allocations | date=${meta.allocDate} | state=${stateDisplay} | fusion_live=${fusionLive}`, "Sleeve", "Weight", { margin: { l: 78, r: 72, t: 72, b: 95 } }), plotConfig());
-    }
-
-    function renderAlphaSleeveSummary(alphaSummaryTape) {
-      const rows = sortByDateAsc(alphaSummaryTape.filter(r => !isMissing(r.Date)), "Date");
-      if (!rows.length) return renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "No alpha summary tape loaded.");
-      const x = rows.map(r => fmtDate(r.Date));
-      const traces = [];
-      const addLeft = (col, name, color) => { if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis: "y", line: { width: 2, color } }); };
-      const addRight = (col, name, color) => { if (rows.some(r => Number.isFinite(toNumber(r[col])))) traces.push({ x, y: rows.map(r => toNumber(r[col])), type: "scatter", mode: "lines", name, yaxis: "y2", line: { width: 2, color } }); };
-      addLeft("topk_rel_ret_net_roll", "topk_rel_ret_net_roll", "#38bdf8");
-      addLeft("rank_ic_roll", "rank_ic_roll", "#fb923c");
-      addLeft("alpha_overlay_scale", "alpha_overlay_scale", "#22c55e");
-      addRight("breadth_selected", "breadth_selected", "#ef4444");
-      addRight("eligible_breadth", "eligible_breadth", "#a855f7");
-      if (!traces.length) return renderEmptyChart("alphaSummaryChart", "Alpha Sleeve Summary", "Expected alpha summary columns were not found.");
-      Plotly.newPlot("alphaSummaryChart", traces, plotBaseLayout("Alpha Sleeve Summary", "Date", "Return / IC / Scale", { yaxis2: { title: { text: "Breadth", standoff: 14, font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } }), plotConfig());
-    }
-
-    function renderAlphaEligibilityBreadth(alphaEligibility) {
-      const rows = sortByDateAsc(
-        (alphaEligibility || [])
-          .filter(r => !isMissing(r.Date))
-          .map(r => ({ Date: fmtDate(r.Date), count: Number.isFinite(toNumber(r.eligible)) ? Math.round(toNumber(r.eligible)) : 0 })),
-        "Date"
-      );
-      if (!rows.length) return renderEmptyChart("alphaBreadthChart", "Alpha Eligibility Breadth", "No alpha eligibility history loaded.");
-      Plotly.newPlot("alphaBreadthChart", [{
-        x: rows.map(r => r.Date),
-        y: rows.map(r => r.count),
-        type: "scatter",
-        mode: rows.length === 1 ? "markers+text" : "lines+markers",
-        name: "eligible count",
-        line: { width: 2, color: "#38bdf8" },
-        marker: { size: 6, color: "#38bdf8" },
-        text: rows.length === 1 ? rows.map(r => String(r.count)) : undefined,
-        textposition: rows.length === 1 ? "top center" : undefined
-      }], plotBaseLayout("Alpha Eligibility Breadth", "Date", "Eligible Count"), plotConfig());
-    }
-
-    function renderTargetWeightsChart(part7Weights) {
-      const rows = sortByDateAsc(part7Weights.filter(r => !isMissing(r.Date)), "Date");
-      if (!rows.length) return renderEmptyChart("targetWeightsChart", "Part 7 Target Weights", "No Part 7 weights tape found.");
-      const x = rows.map(r => fmtDate(r.Date));
-      Plotly.newPlot("targetWeightsChart", [
-        { x, y: rows.map(r => toNumber(r.w_target_voo)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: "w_target_voo", line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 }, text: rows.length === 1 ? ["VOO"] : undefined, textposition: rows.length === 1 ? "top center" : undefined },
-        { x, y: rows.map(r => toNumber(r.w_target_ief)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines", name: "w_target_ief", line: { color: "#22c55e", width: 2 }, marker: { color: "#22c55e", size: 7 }, text: rows.length === 1 ? ["IEF"] : undefined, textposition: rows.length === 1 ? "bottom center" : undefined },
-        { x, y: rows.map(r => toNumber(r.edge)), type: "scatter", mode: "lines", name: "edge", yaxis: "y2", line: { color: "#fb923c", width: 2, dash: "dot" } }
-      ], plotBaseLayout("Part 7 Target Weights", "Date", "Weight", {
-        yaxis2: { title: { text: "Edge", font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } }
-      }), plotConfig());
-    }
-
-    function renderRegimeChart(part6Meta) {
-      const dist = part6Meta?.regime_distribution || {};
-      const keys = Object.keys(dist);
-      if (!keys.length) return renderEmptyChart("regimeChart", "Part 6 Regime Distribution", "No Part 6 metadata found.");
-      Plotly.newPlot("regimeChart", [{
-        x: keys,
-        y: keys.map(k => toNumber(dist[k]) * 100),
-        type: "bar",
-        marker: { color: "#7c83ff" },
-        text: keys.map(k => fmtPct(dist[k])),
-        textposition: "outside",
-        cliponaxis: false
-      }], plotBaseLayout("Part 6 Regime Distribution", "Regime", "Share of History (%)"), plotConfig());
-    }
-
-    function renderExecCostChart(execution) {
-      if (!Number.isFinite(toNumber(execution.cost1M)) && !Number.isFinite(toNumber(execution.cost10M))) {
-        return renderEmptyChart("execCostChart", "Part 8 Execution Analytics", "No Part 8 metadata found.");
-      }
-      Plotly.newPlot("execCostChart", [{
-        x: ["$1M VOO example", "$10M VOO example"],
-        y: [toNumber(execution.cost1M), toNumber(execution.cost10M)],
-        type: "bar",
-        marker: { color: ["#38bdf8", "#ef4444"] },
-        text: [fmtNum(execution.cost1M, 2), fmtNum(execution.cost10M, 2)].map(v => `${v} bp`),
-        textposition: "outside",
-        cliponaxis: false
-      }], plotBaseLayout("Part 8 Execution Analytics", "Portfolio Scale", "Estimated Cost (bps)"), plotConfig());
-    }
-
-    function populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMeta, part9Report) {
-      const predDisplayRows = headRows(
-        sortByDateAsc(predLog, "decision_date")
-          .slice()
-          .reverse()
-          .map(r => ({
-            ...r,
-            target_date: deriveTargetDate(r),
-            px_voo_call_1d: rowCall(r, "VOO"),
-            px_ief_call_1d: rowCall(r, "IEF")
-          })),
-        20
-      );
-      renderTable("predTable", predDisplayRows, ["decision_date","target_date","p_final_cal","p0","alpha_scale","governance_tier","px_voo_t","px_voo_call_1d","px_voo_realized","voo_err","px_ief_t","px_ief_call_1d","px_ief_realized","ief_err","hit_direction"]);
-
-      const allocDisplayRows = headRows(sortByDateAsc((allocRows || []).map(normalizeAllocRow), "Date").slice().reverse(), 20);
-      renderTable("allocTable", allocDisplayRows, ["Date","sleeve","weight","is_alpha","bucket","alpha_state_display"]);
-
-      renderTable("govTable", headRows(sortByDateAsc(govTape, "Date").slice().reverse(), 20), ["Date","publish_mode","final_pass","quality_ok","drift_ok","trial_gate_open","fused_gate_open","promotion_ready","alpha_state","alpha_state_display","alpha_live","drift_alarm","drift_rate","budget_mult","alpha_blockers"]);
-
-      renderTable("alphaSummaryTable", headRows(sortByDateAsc(alphaSummaryTape, "Date").slice().reverse(), 20), ["Date","rank_ic","rank_ic_roll","topk_rel_ret_net","topk_rel_ret_net_roll","selection_hit_rate","breadth_selected","eligible_breadth","gross_alpha_budget_used","alpha_drift_alarm","alpha_overlay_scale","alpha_governance_tier"]);
-
-      renderTable("alphaPosTable", headRows(sortByDateAsc(alphaPositions, "Date").slice().reverse(), 20), ["Date","eligible","eligibility_reason","alpha_leg","alpha_position","alpha_abs","alpha_score","caution_shrink","alpha_scale_effective","prob_voo","signal_strength"]);
-
-      renderTable("alphaEligTable", headRows(sortByDateAsc(alphaEligibility, "Date").slice().reverse(), 20), ["Date","eligible","eligibility_reason","prob_voo","alpha_score","component_agreement","entry_z_eff","agreement_min_eff","signal_strength","excess_vol10","alpha_position","dist_overlay_on_g53","dist_overlay_strength_g53","dist_width_caution_g53","uncertainty_penalty_g5"]);
-
-      renderJsonTable("part3SummaryTable", part3Summary || {});
-      renderJsonTable("part2SummaryTable", part2Summary || {});
-      renderJsonTable("opsMetaTable", opsMeta || {});
-      renderJsonTable("part9Table", part9Report || {});
-    }
-
-    function buildBotSnapshot(portfolioState, performanceReport, signalLog, tradeLog, liveReport) {
-      const latestSignal = latestRow(signalLog, "date");
-      const latestTrade = latestRow(tradeLog, "decision_date");
-      const liveN = Number.isFinite(toNumber(liveReport?.n_live_realized)) ? Math.round(toNumber(liveReport.n_live_realized)) : 0;
-      const gateN = 60;
-      const initialized = portfolioState?.initialized === true || String(portfolioState?.initialized).toLowerCase() === "true";
-      const isStopped = portfolioState?.is_stopped === true || String(portfolioState?.is_stopped).toLowerCase() === "true";
-      const accuracyGatePassed = latestSignal ? String(latestSignal.accuracy_gate_passed).toLowerCase() === "true" || toNumber(latestSignal.accuracy_gate_passed) === 1 : false;
-
-      let mode = "DRY_RUN";
-      if (isStopped) mode = "STOPPED";
-      else if (accuracyGatePassed && liveN >= gateN) mode = "ACTIVE";
-
-      return {
-        mode,
-        asOf: portfolioState?.last_updated || performanceReport?.as_of_date || (latestSignal ? fmtDate(latestSignal.date) : "NA"),
-        nav: toNumber(portfolioState?.nav),
-        totalReturnPct: toNumber(portfolioState?.total_return_pct),
-        drawdownPct: toNumber(portfolioState?.drawdown_from_peak),
-        cash: toNumber(portfolioState?.cash),
-        sharesVoo: toNumber(portfolioState?.shares_voo),
-        sharesIef: toNumber(portfolioState?.shares_ief),
-        tradeCount: Number.isFinite(toNumber(portfolioState?.trade_count)) ? Math.round(toNumber(portfolioState.trade_count)) : tradeLog.length,
-        stopFloor: toNumber(portfolioState?.stop_loss_floor),
-        initialized,
-        isStopped,
-        latestSignalDate: latestSignal ? fmtDate(latestSignal.date) : "NA",
-        latestPTail: latestSignal ? toNumber(latestSignal.p_tail) : NaN,
-        latestEdge: latestSignal ? toNumber(latestSignal.edge) : NaN,
-        latestTargetW: latestSignal ? toNumber(latestSignal.target_w_voo) : NaN,
-        publishMode: latestSignal?.publish_mode || "NA",
-        finalPass: latestSignal?.final_pass ?? "NA",
-        accuracyGatePassed,
-        accuracyGateReason: latestSignal?.accuracy_gate_reason || performanceReport?.error || "NA",
-        latestActionReason: latestSignal?.action_reason || "NA",
-        targetSource: latestSignal?.target_source || "NA",
-        liveProgress: `${liveN}/${gateN}`,
-        liveProgressPct: gateN > 0 ? liveN / gateN : 0,
-        latestTradeDate: latestTrade ? fmtDate(latestTrade.decision_date) : "NA",
-        latestTradeMode: latestTrade?.mode || "NA"
-      };
-    }
-
-    function populateBotSnapshot(bot) {
-      setText("botSnapMode", bot.mode || "NA");
-      setText("botSnapAsOf", `As of: ${bot.asOf || "NA"}`);
-      const badges = [];
-      badges.push(`<div class="status-pill ${bot.mode === "ACTIVE" ? "good" : bot.mode === "STOPPED" ? "bad" : "info"}">${bot.mode}</div>`);
-      badges.push(`<div class="status-pill ${bot.accuracyGatePassed ? "good" : "warn"}">Gate ${bot.accuracyGatePassed ? "PASSED" : "WAITING"}</div>`);
-      badges.push(`<div class="status-pill ${bot.isStopped ? "bad" : "good"}">Stop ${bot.isStopped ? "TRIGGERED" : "CLEAR"}</div>`);
-      badges.push(`<div class="status-pill info">Signals ${bot.liveProgress}</div>`);
-      setHtml("botSnapBadges", badges.join(""));
-
-      setText("botSnapProgress", `${bot.liveProgress} (${fmtPct(bot.liveProgressPct)})`);
-      setText("botSnapNav", Number.isFinite(bot.nav) ? `$${fmtNum(bot.nav, 2)}` : "NA");
-      setText("botSnapReturn", Number.isFinite(bot.totalReturnPct) ? `${fmtNum(bot.totalReturnPct, 2)}%` : "NA");
-      setText("botSnapDrawdown", Number.isFinite(bot.drawdownPct) ? `${fmtNum(bot.drawdownPct, 2)}%` : "NA");
-      setText("botSnapCash", Number.isFinite(bot.cash) ? `$${fmtNum(bot.cash, 2)}` : "NA");
-      setText("botSnapShares", `${fmtNum(bot.sharesVoo, 4)} / ${fmtNum(bot.sharesIef, 4)}`);
-      setText("botSnapTrades", String(bot.tradeCount ?? 0));
-      setText("botSnapStop", Number.isFinite(bot.stopFloor) ? `$${fmtNum(bot.stopFloor, 2)}` : "NA");
-      setText("botSnapReason", bot.latestActionReason || "NA");
-      setText("botSnapGate", bot.accuracyGateReason || "NA");
-
-      renderKvGrid("botGrid", [
-        ["Latest signal date", bot.latestSignalDate || "NA"],
-        ["Latest trade date", bot.latestTradeDate || "NA"],
-        ["Target source", bot.targetSource || "NA"],
-        ["Latest target VOO", fmtPct(bot.latestTargetW)],
-        ["Latest p_tail", fmtNum(bot.latestPTail, 4)],
-        ["Latest edge", fmtNum(bot.latestEdge, 4)],
-        ["Publish mode", bot.publishMode || "NA"],
-        ["Final pass", String(bot.finalPass)],
-        ["Initialized", bot.initialized ? "YES" : "NO"],
-        ["Latest trade mode", bot.latestTradeMode || "NA"]
-      ]);
-    }
-
-    function renderBotNavChart(signalLog, portfolioState) {
-      const rows = sortByDateAsc(signalLog.filter(r => !isMissing(r.date)), "date");
-      if (!rows.length) return renderEmptyChart("botNavChart", "Bot NAV / Paper Equity", "No Part 10 signal history loaded.");
-      const x = rows.map(r => fmtDate(r.date));
-      const nav = rows.map(r => toNumber(r.nav));
-      const traces = [{ x, y: nav, type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "signal_log NAV", line: { color: "#38bdf8", width: 2 }, marker: { color: "#38bdf8", size: 7 } }];
-      const stop = toNumber(portfolioState?.stop_loss_floor);
-      const layout = plotBaseLayout("Bot NAV / Paper Equity", "Date", "NAV ($)");
-      if (Number.isFinite(stop)) {
-        layout.shapes = [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: stop, y1: stop, line: { color: "#ef4444", width: 2, dash: "dot" } }];
-        layout.annotations = [{ xref: "paper", yref: "y", x: 1, y: stop, text: `stop floor ${fmtNum(stop,2)}`, showarrow: false, xanchor: "right", yanchor: "bottom", font: { color: "#fca5a5", size: 12 } }];
-      }
-      const range = smartDateRange(x, 4); if (range) layout.xaxis.range = range;
-      Plotly.newPlot("botNavChart", traces, layout, plotConfig());
-    }
-
-    function renderBotSignalChart(signalLog) {
-      const rows = sortByDateAsc(signalLog.filter(r => !isMissing(r.date)), "date");
-      if (!rows.length) return renderEmptyChart("botSignalChart", "Bot Target Weight / Signal Edge", "No Part 10 signal history loaded.");
-      const x = rows.map(r => fmtDate(r.date));
-      Plotly.newPlot("botSignalChart", [
-        { x, y: rows.map(r => toNumber(r.target_w_voo)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "target_w_voo", line: { color: "#22c55e", width: 2 }, marker: { color: "#22c55e", size: 7 } },
-        { x, y: rows.map(r => toNumber(r.edge)), type: "scatter", mode: rows.length === 1 ? "markers+text" : "lines+markers", name: "edge", yaxis: "y2", line: { color: "#fb923c", width: 2 }, marker: { color: "#fb923c", size: 7 } },
-        { x, y: rows.map(r => toNumber(r.p_tail)), type: "scatter", mode: "lines", name: "p_tail", yaxis: "y2", line: { color: "#a855f7", width: 2, dash: "dot" } }
-      ], plotBaseLayout("Bot Target Weight / Signal Edge", "Date", "Target VOO Weight", { yaxis2: { title: { text: "Edge / p_tail", font: { size: 16, color: "#ffffff" } }, overlaying: "y", side: "right", showgrid: false, tickfont: { size: 12, color: "#e2e8f0" } } }), plotConfig());
-    }
-
-    function populateBotTables(signalLog, tradeLog) {
-      const sigRows = headRows(sortByDateAsc(signalLog, "date").slice().reverse(), 20);
-      renderTable("botSignalTable", sigRows, ["date","p_tail","base_rate","edge","target_w_voo","action_reason","target_source","dry_run","accuracy_gate_passed","accuracy_gate_reason","publish_mode","final_pass","raw_val_auc","px_voo","px_ief","nav"]);
-      const trRows = headRows(sortByDateAsc(tradeLog, "decision_date").slice().reverse(), 20);
-      renderTable("botTradeTable", trRows, ["decision_date","executed_at","signal_p_tail","action_reason","target_source","w_voo_before","w_voo_after","delta_w_voo","trade_voo_shares","trade_ief_shares","px_voo","px_ief","tc_dollars","tc_bps","nav_before","nav_after","drawdown","trade_count","is_stopped","mode"]);
-    }
-
-    function setupTabs() {
-      const buttons = document.querySelectorAll(".tab-btn");
-      const panels = document.querySelectorAll(".tab-panel");
-      buttons.forEach(btn => {
-        btn.addEventListener("click", () => {
-          buttons.forEach(b => b.classList.remove("active"));
-          panels.forEach(p => p.classList.remove("active"));
-          btn.classList.add("active");
-          const target = document.getElementById(btn.dataset.tab);
-          if (target) target.classList.add("active");
-          setTimeout(() => window.dispatchEvent(new Event("resize")), 80);
-        });
-      });
-    }
-
-    function resizeAllPlots() {
-      ["predChart","errorChart","distChart","defSignalChart","alphaStateChart","fusionPathChart","fusionAllocChart","alphaSummaryChart","alphaBreadthChart","targetWeightsChart","regimeChart","execCostChart","botNavChart","botSignalChart"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el && el.data) Plotly.Plots.resize(el);
-      });
-    }
-
-    function populateUncertaintySleeveGrids(part2bSummary, part2cSummary) {
-      // ── Part 2B: XGBoost Ensemble ──────────────────────────────────────
-      if (document.getElementById("part2bGrid")) {
-        if (!part2bSummary) {
-          renderKvGrid("part2bGrid", [
-            ["Status", "<span style='color:var(--muted-2)'>Not deployed — push part2b_xgb_ensemble.py to activate</span>"]
-          ]);
-        } else {
-          const gateOk = part2bSummary.gate_validation_passed;
-          const bnnRec  = part2bSummary.bnn_sleeve_recommended;
-          renderKvGrid("part2bGrid", [
-            ["Gate validated",          `<span style="color:${gateOk ? "var(--good)" : "var(--bad)"};font-weight:700">${gateOk ? "✅ PASSED" : "❌ FAILED"}</span>`],
-            ["BNN recommended",         `<span style="color:${bnnRec  ? "var(--good)" : "var(--warn)"};font-weight:700">${bnnRec  ? "✅ YES"    : "⚠️ NOT YET"}</span>`],
-            ["Ensemble size",            part2bSummary.n_ensemble ?? "—"],
-            ["Holdout AUC",              fmtNum(part2bSummary.holdout_auc, 4)],
-            ["Holdout ECE",              fmtNum(part2bSummary.holdout_ece, 4)],
-            ["WF ECE gap (hi−lo)",       fmtNum(part2bSummary.walkforward_ece_gap, 4)],
-            ["Spread vs caution corr",   fmtNum(part2bSummary.walkforward_spread_corr_vs_caution, 3)],
-            ["Overlay threshold",        fmtNum(part2bSummary.epist_overlay_threshold_75pct, 5)],
-            ["WF eval rows (row-level)", part2bSummary.n_walkforward_eval_rows ?? "—"],
-            ["Decision utility",         fmtNum(part2bSummary.holdout_decision_utility, 4)],
-            ["Built at",                 part2bSummary.built_at ? String(part2bSummary.built_at).slice(0, 19).replace("T", " ") : "—"],
-          ]);
-        }
-      }
-
-      // ── Part 2C: BNN Sleeve ────────────────────────────────────────────
-      if (document.getElementById("part2cGrid")) {
-        if (!part2cSummary) {
-          const msg = part2bSummary?.bnn_sleeve_recommended
-            ? "Part 2B recommends BNN — push part2c_bnn_sleeve.py + uncomment torch in requirements.txt"
-            : "Not deployed — activate only after Part 2B earns bnn_sleeve_recommended: true";
-          renderKvGrid("part2cGrid", [
-            ["Status", `<span style='color:var(--muted-2)'>${msg}</span>`]
-          ]);
-        } else {
-          renderKvGrid("part2cGrid", [
-            ["Backend",                  part2cSummary.backend ?? "—"],
-            ["Ensemble size",            part2cSummary.n_ensemble ?? "—"],
-            ["MC samples",               part2cSummary.n_mc_samples ?? "—"],
-            ["Holdout AUC",              fmtNum(part2cSummary.holdout_auc, 4)],
-            ["Holdout ECE",              fmtNum(part2cSummary.holdout_ece, 4)],
-            ["Holdout Brier",            fmtNum(part2cSummary.holdout_brier, 4)],
-            ["Decision utility",         fmtNum(part2cSummary.holdout_decision_utility, 4)],
-            ["Overlay threshold",        fmtNum(part2cSummary.epist_overlay_threshold_75pct, 5)],
-            ["WF eval rows (row-level)", part2cSummary.n_walkforward_eval_rows ?? "—"],
-            ["Row-level mean epist",     fmtNum(part2cSummary.row_level_mean_epist, 5)],
-            ["Live p_bnn_mean",          fmtNum(part2cSummary.live_p_bnn_mean, 4)],
-            ["Live p_bnn_epistemic",     fmtNum(part2cSummary.live_p_bnn_epistemic, 5)],
-            ["Live overlay on",          part2cSummary.live_bnn_overlay_on !== undefined ? String(part2cSummary.live_bnn_overlay_on) : "—"],
-            ["Built at",                 part2cSummary.built_at ? String(part2cSummary.built_at).slice(0, 19).replace("T", " ") : "—"],
-          ]);
-        }
-      }
-    }
-
-    async function loadAll() {
-      const debug = document.getElementById("debugBox");
-      debug.textContent = "Loading GitHub artifacts...";
-      try {
-        const [
-          predLogRaw,
-          prodTapeRaw,
-          govTapeRaw,
-          allocRaw,
-          alphaSummaryTapeRaw,
-          alphaPositionsRaw,
-          alphaEligibilityRaw,
-          part3Summary,
-          part2Summary,
-          part2Diag,
-          alphaSummaryJson,
-          part6Meta,
-          part7WeightsRaw,
-          part7Current,
-          part7Meta,
-          part8Meta,
-          part8Orders,
-          part9Report,
-          part10State,
-          part10Report,
-          part10SignalLogRaw,
-          part10TradeLogRaw,
-          part2bSummary,
-          part2cSummary
-        ] = await Promise.all([
-          fetchCsv(CFG.files.predLog),
-          fetchCsv(CFG.files.prodTape),
-          fetchCsv(CFG.files.govTape),
-          fetchCsv(CFG.files.allocTape),
-          fetchCsv(CFG.files.alphaSummaryTape),
-          fetchCsv(CFG.files.alphaPositions),
-          fetchCsv(CFG.files.alphaEligibility),
-          fetchJson(CFG.files.part3Summary, true),
-          fetchJson(CFG.files.part2Summary, true),
-          fetchJson(CFG.files.part2Diag, true),
-          fetchJson(CFG.files.alphaSummaryJson, true),
-          fetchJson(CFG.files.part6Meta, true),
-          fetchCsvOptional(CFG.files.part7Weights),
-          fetchJson(CFG.files.part7Current, true),
-          fetchJson(CFG.files.part7Meta, true),
-          fetchJson(CFG.files.part8Meta, true),
-          fetchJson(CFG.files.part8Orders, true),
-          fetchJson(CFG.files.part9Report, true),
-          fetchJson(CFG.files.part10State, true),
-          fetchJson(CFG.files.part10Report, true),
-          fetchCsvOptional(CFG.files.part10SignalLog),
-          fetchCsvOptional(CFG.files.part10TradeLog),
-          fetchJson(CFG.files.part2bSummary, true),
-          fetchJson(CFG.files.part2cSummary, true)
-        ]);
-
-        const predLog = sortByDateAsc(predLogRaw, "decision_date");
-        const prodTape = sortByDateAsc(prodTapeRaw, "Date");
-        const govTape = sortByDateAsc(govTapeRaw, "Date");
-        const allocRows = sortByDateAsc(allocRaw, "Date");
-        const alphaSummaryTape = sortByDateAsc(alphaSummaryTapeRaw, "Date");
-        const alphaPositions = sortByDateAsc(alphaPositionsRaw, "Date");
-        const alphaEligibility = sortByDateAsc(alphaEligibilityRaw, "Date");
-        const part7Weights = sortByDateAsc(part7WeightsRaw, "Date");
-        const part10SignalLog = sortByDateAsc(part10SignalLogRaw, "date");
-        const part10TradeLog = sortByDateAsc(part10TradeLogRaw, "decision_date");
-
-        const system = buildSystemStatus(prodTape, predLog);
-        const forecast = buildForecastSnapshot(predLog, prodTape);
-        const defense = buildDefenseSnapshot(prodTape, govTape);
-        const alpha = buildAlphaSnapshot(prodTape, alphaSummaryTape, alphaPositions, alphaEligibility);
-        const validation = buildValidationSnapshot(part2Summary, part3Summary);
-        const regime = buildRegimeSnapshot(part6Meta);
-        const portfolio = buildPortfolioSnapshot(part7Current, part7Meta);
-        const execution = buildExecutionSnapshot(part8Meta, part8Orders);
-        const live = buildLiveSnapshot(part9Report);
-        const fusion = buildFusionMeta(allocRows);
-        const bot = buildBotSnapshot(part10State, part10Report, part10SignalLog, part10TradeLog, part9Report);
-
-        populateHeroCards(system, forecast, defense, alpha, validation, regime, portfolio, execution, live);
-        buildStatusPills(system, forecast, defense, alpha, validation, live);
-        populateSummaryBrief(system, forecast, defense, alpha, validation, regime, portfolio, execution, live);
-        populatePredictionSnapshotCard(forecast);
-        populateGovernanceSnapshot(defense);
-        populateAlphaSnapshot(alpha);
-        populateOpsGrids(validation, live, execution, portfolio);
-        populateUncertaintySleeveGrids(part2bSummary, part2cSummary);
-        populateBotSnapshot(bot);
-
-        const counts = {
-          predictionRows: predLog.length,
-          productionRows: prodTape.length,
-          governanceRows: govTape.length,
-          allocationRows: allocRows.length,
-          alphaSummaryRows: alphaSummaryTape.length,
-          alphaPositionRows: alphaPositions.length,
-          alphaEligibilityRows: alphaEligibility.length,
-          part7Rows: part7Weights.length,
-          part10SignalRows: part10SignalLog.length,
-          part10TradeRows: part10TradeLog.length
-        };
-        setText("statusSummaryPre", buildSummaryText(system, forecast, defense, alpha, validation, regime, portfolio, execution, live, counts, part2Summary, part2Diag, part3Summary, part2bSummary, part2cSummary));
-        populateFooter(counts, forecast);
-
-        renderPredictionChart(predLog);
-        renderErrorPanel(predLog);
-        renderErrorDistribution(predLog);
-        renderDefenseSignalChart(prodTape, govTape);
-        renderAlphaStateTimeline(prodTape);
-        renderFusionFundingPath(prodTape, allocRows);
-        renderLatestFusionAllocations(allocRows);
-        renderAlphaSleeveSummary(alphaSummaryTape);
-        renderAlphaEligibilityBreadth(alphaEligibility);
-        renderTargetWeightsChart(part7Weights);
-        renderRegimeChart(part6Meta);
-        renderExecCostChart(execution);
-        renderBotNavChart(part10SignalLog, part10State);
-        renderBotSignalChart(part10SignalLog);
-
-        const opsMetaCombined = {
-          part6_meta: part6Meta || {},
-          part7_meta: part7Meta || {},
-          part7_current_target: part7Current || {},
-          part8_meta: part8Meta || {},
-          part8_orders: part8Orders || {},
-          alpha_summary_json: alphaSummaryJson || {}
-        };
-        populateDataTables(predLog, allocRows, govTape, alphaSummaryTape, alphaPositions, alphaEligibility, part3Summary, part2Summary, opsMetaCombined, part9Report);
-        renderJsonTable("part2bSummaryTable", part2bSummary || {});
-        renderJsonTable("part2cSummaryTable", part2cSummary || {});
-        populateBotTables(part10SignalLog, part10TradeLog);
-
-        document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
-        debug.textContent = `Loaded pred=${predLog.length}, tape=${prodTape.length}, gov=${govTape.length}, alloc=${allocRows.length}, alpha_summary=${alphaSummaryTape.length}, alpha_pos=${alphaPositions.length}, alpha_elig=${alphaEligibility.length}, part7=${part7Weights.length}, bot_signal=${part10SignalLog.length}, bot_trade=${part10TradeLog.length}. Optional JSONs: part3=${!!part3Summary}, part2=${!!part2Summary}, part6=${!!part6Meta}, part7current=${!!part7Current}, part8=${!!part8Meta}, part9=${!!part9Report}, part10state=${!!part10State}, part10report=${!!part10Report}, part2b=${!!part2bSummary}${part2bSummary ? `(gate_ok=${part2bSummary.gate_validation_passed})` : ""}, part2c=${!!part2cSummary}.`;
-
-        setTimeout(resizeAllPlots, 100);
-      } catch (err) {
-        console.error(err);
-        debug.innerHTML = `<div class="error">Failed to load dashboard data.\n${String(err && err.stack ? err.stack : err)}</div>`;
-      }
-    }
-
-    document.getElementById("refreshBtn").addEventListener("click", loadAll);
-    window.addEventListener("resize", resizeAllPlots);
-    setupTabs();
-    loadAll();
+    (()=>{
+      const rows=[{"target_date":"2026-06-18","px_voo_call_1d":681.2636758086383,"px_voo_realized":686.1119384765625,"px_ief_call_1d":94.04562429521394,"px_ief_realized":93.7279281616211,"p_final_cal":0.1828139311518352,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-06-22","px_voo_call_1d":688.4079160652061,"px_voo_realized":684.1077880859375,"px_ief_call_1d":94.38220100938452,"px_ief_realized":93.3703384399414,"p_final_cal":0.1786119174046764,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-06-23","px_voo_call_1d":688.4890506367556,"px_voo_realized":674.3761596679688,"px_ief_call_1d":94.38539852572995,"px_ief_realized":93.48954010009766,"p_final_cal":0.1783385482621284,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-06-24","px_voo_call_1d":685.7486232152158,"px_voo_realized":673.72802734375,"px_ief_call_1d":94.05951227735012,"px_ief_realized":94.09545135498048,"p_final_cal":0.1875446705778198,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-06-29","px_voo_call_1d":676.4795347012463,"px_voo_realized":681.010009765625,"px_ief_call_1d":94.91053716667602,"px_ief_realized":94.4232406616211,"p_final_cal":0.1817552654403247,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-02","px_voo_call_1d":685.131363852638,"px_voo_realized":684.8400268554688,"px_ief_call_1d":94.10362858037082,"px_ief_realized":93.79800415039062,"p_final_cal":0.1933008498589178,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-06","px_voo_call_1d":684.6634096801457,"px_voo_realized":690.6199951171875,"px_ief_call_1d":94.1073288066082,"px_ief_realized":93.85779571533205,"p_final_cal":0.1956900455531043,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-08","px_voo_call_1d":687.5777102587775,"px_voo_realized":685.260009765625,"px_ief_call_1d":93.7739996358734,"px_ief_realized":93.1900863647461,"p_final_cal":0.2056231342064974,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-14","px_voo_call_1d":694.015473432121,"px_voo_realized":691.0999755859375,"px_ief_call_1d":93.72138762678684,"px_ief_realized":93.22994995117188,"p_final_cal":0.2099332168422468,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-15","px_voo_call_1d":688.4766423125005,"px_voo_realized":693.7999877929688,"px_ief_call_1d":93.28245470400904,"px_ief_realized":93.45915985107422,"p_final_cal":0.2493310368799024,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-07-16","px_voo_call_1d":693.9080248197002,"px_voo_realized":690.1400146484375,"px_ief_call_1d":93.75512541618652,"px_ief_realized":93.3993682861328,"p_final_cal":0.2170815469620156,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-21","px_voo_call_1d":683.2102235680015,"px_voo_realized":687.8699951171875,"px_ief_call_1d":93.85541903460803,"px_ief_realized":92.9907684326172,"p_final_cal":0.2142477116315234,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-22","px_voo_call_1d":682.2194017385492,"px_voo_realized":687.030029296875,"px_ief_call_1d":93.5555221816086,"px_ief_realized":92.78148651123048,"p_final_cal":0.2284011573948236,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-23","px_voo_call_1d":686.6459562384771,"px_voo_realized":678.6099853515625,"px_ief_call_1d":92.8470022455096,"px_ief_realized":92.53234100341795,"p_final_cal":0.2900167828450462,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-07-24","px_voo_call_1d":678.5712920673244,"px_voo_realized":679.1400146484375,"px_ief_call_1d":92.48211446045656,"px_ief_realized":92.71172332763672,"p_final_cal":0.2354466342935209,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-11","px_voo_call_1d":710.977686194178,"px_voo_realized":708.4199829101562,"px_ief_call_1d":93.25581438908672,"px_ief_realized":92.87000274658205,"p_final_cal":0.2150560684338096,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-12","px_voo_call_1d":710.7330579571385,"px_voo_realized":710.1699829101562,"px_ief_call_1d":92.85844222650525,"px_ief_realized":92.95999908447266,"p_final_cal":0.2114071371651639,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-13","px_voo_call_1d":709.0168502479078,"px_voo_realized":714.9500122070312,"px_ief_call_1d":92.9475214804658,"px_ief_realized":93.3000030517578,"p_final_cal":0.2122819026775025,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-14","px_voo_call_1d":710.4395092147072,"px_voo_realized":713.6099853515625,"px_ief_call_1d":93.04758177704,"px_ief_realized":93.04000091552734,"p_final_cal":0.2264770960742878,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-17","px_voo_call_1d":715.4740633451601,"px_voo_realized":710.27001953125,"px_ief_call_1d":93.388162163079,"px_ief_realized":92.83999633789062,"p_final_cal":0.2149250583875588,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-18","px_voo_call_1d":713.8120177236196,"px_voo_realized":705.4000244140625,"px_ief_call_1d":93.12166942314424,"px_ief_realized":92.93000030517578,"p_final_cal":0.2339593314133808,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-19","px_voo_call_1d":714.0968230401455,"px_voo_realized":706.9099731445312,"px_ief_call_1d":93.08102561675749,"px_ief_realized":93.37999725341795,"p_final_cal":0.2050122811548823,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-20","px_voo_call_1d":705.8361104380167,"px_voo_realized":701.010009765625,"px_ief_call_1d":92.96833980605658,"px_ief_realized":93,"p_final_cal":0.2281524466559961,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-21","px_voo_call_1d":701.6175424114211,"px_voo_realized":703.7100219726562,"px_ief_call_1d":93.07308790916412,"px_ief_realized":92.81999969482422,"p_final_cal":0.232509379279039,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-24","px_voo_call_1d":701.1816232545896,"px_voo_realized":701.8300170898438,"px_ief_call_1d":93.0357520247096,"px_ief_realized":93.01000213623048,"p_final_cal":0.2197556318748218,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-25","px_voo_call_1d":703.78757037086,"px_voo_realized":704.02001953125,"px_ief_call_1d":92.8698012235951,"px_ief_realized":93.51000213623048,"p_final_cal":0.2252885018172462,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-26","px_voo_call_1d":702.1248753695664,"px_voo_realized":null,"px_ief_call_1d":93.08204081852388,"px_ief_realized":null,"p_final_cal":0.2337508343244746,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":null}];
+      const root=document.getElementById('price-call-lab');
+      const colors={bg:'#0b1622',grid:'#20374a',text:'#a9bdcc',VOO:'#ffb84d',VOOR:'#55d6e8',IEF:'#9d7cff',IEFR:'#49d6a0',error:'#ff6b6b'};
+      const baseLayout={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{family:'Inter,system-ui,sans-serif',color:colors.text},margin:{l:58,r:18,t:30,b:52},hovermode:'x unified',legend:{orientation:'h',y:1.11,x:0},xaxis:{gridcolor:colors.grid,zerolinecolor:colors.grid},yaxis:{gridcolor:colors.grid,zerolinecolor:colors.grid},uirevision:'stable'};
+      const config={displaylogo:false,responsive:true,scrollZoom:false,modeBarButtonsToRemove:['lasso2d','select2d']};
+      const realized=()=>rows.filter(r=>Number.isFinite(r.px_voo_realized)&&Number.isFinite(r.px_ief_realized));
+      const metric=(data,predKey,actualKey)=>{const d=data.filter(r=>Number.isFinite(r[predKey])&&Number.isFinite(r[actualKey]));const e=d.map(r=>r[predKey]-r[actualKey]);const abs=e.map(Math.abs);const mean=a=>a.reduce((s,v)=>s+v,0)/(a.length||1);const ap=d.map((r,i)=>Math.abs(e[i]/r[actualKey])*100);const x=d.map(r=>r[predKey]),y=d.map(r=>r[actualKey]);const mx=mean(x),my=mean(y);const cov=mean(x.map((v,i)=>(v-mx)*(y[i]-my)));const sx=Math.sqrt(mean(x.map(v=>(v-mx)**2))),sy=Math.sqrt(mean(y.map(v=>(v-my)**2)));return{n:d.length,mae:mean(abs),rmse:Math.sqrt(mean(e.map(v=>v*v))),bias:mean(e),mape:mean(ap),corr:sx&&sy?cov/(sx*sy):NaN};};
+      const fmt=(v,d=3)=>Number.isFinite(v)?v.toFixed(d):'—';
+      function metricCards(target,m,asset){document.getElementById(target).innerHTML=[['Realized n',m.n,'observations'],['MAE','$'+fmt(m.mae),'mean absolute error'],['RMSE','$'+fmt(m.rmse),'root mean squared error'],['Bias','$'+fmt(m.bias),'predicted − realized'],['MAPE',fmt(m.mape)+'%','scale-adjusted error'],['Correlation',fmt(m.corr),asset+' level tracking']].map(x=>`<div class="metric"><label>${x[0]}</label><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join('');}
+      const dates=rows.map(r=>r.target_date);
+      function drawOverview(){const traces=[{x:dates,y:rows.map(r=>r.px_voo_call_1d),name:'VOO predicted',line:{color:colors.VOO,width:3}},{x:dates,y:rows.map(r=>r.px_voo_realized),name:'VOO realized',line:{color:colors.VOOR,width:3,dash:'dot'}},{x:dates,y:rows.map(r=>r.px_ief_call_1d),name:'IEF predicted',yaxis:'y2',line:{color:colors.IEF,width:2}},{x:dates,y:rows.map(r=>r.px_ief_realized),name:'IEF realized',yaxis:'y2',line:{color:colors.IEFR,width:2,dash:'dot'}}];const layout={...baseLayout,yaxis:{...baseLayout.yaxis,title:'VOO close ($)'},yaxis2:{title:'IEF close ($)',overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)'},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.11}}};Plotly.newPlot('overview-chart',traces,layout,config)}
+      let state={asset:'VOO',scale:'price',range:'all'};
+      function currentRows(){if(state.range==='all')return rows;const max=new Date(rows.at(-1).target_date);const min=new Date(max);min.setDate(min.getDate()-Number(state.range));return rows.filter(r=>new Date(r.target_date)>=min)}
+      function seriesFor(asset,data){const k=asset.toLowerCase();let p=data.map(r=>r[`px_${k}_call_1d`]),a=data.map(r=>r[`px_${k}_realized`]);if(state.scale==='index'){const p0=p.find(Number.isFinite),a0=a.find(Number.isFinite);p=p.map(v=>Number.isFinite(v)?100*v/p0:null);a=a.map(v=>Number.isFinite(v)?100*v/a0:null)}if(state.scale==='error'){p=data.map(r=>Number.isFinite(r[`px_${k}_realized`])?r[`px_${k}_call_1d`]-r[`px_${k}_realized`]:null);a=[]}return{p,a}}
+      function drawExplorer(){const data=currentRows(),x=data.map(r=>r.target_date),assets=state.asset==='BOTH'?['VOO','IEF']:[state.asset],traces=[];assets.forEach(asset=>{const s=seriesFor(asset,data),isV=asset==='VOO';traces.push({x,y:s.p,name:state.scale==='error'?`${asset} error`:`${asset} predicted`,line:{color:isV?colors.VOO:colors.IEF,width:3},yaxis:state.asset==='BOTH'&&!isV?'y2':'y'});if(state.scale!=='error')traces.push({x,y:s.a,name:`${asset} realized`,line:{color:isV?colors.VOOR:colors.IEFR,width:3,dash:'dot'},yaxis:state.asset==='BOTH'&&!isV?'y2':'y'})});const ylabel=state.scale==='price'?(state.asset==='BOTH'?'VOO close ($)':`${state.asset} close ($)`):state.scale==='index'?'Indexed value (first = 100)':'Signed error ($)';const layout={...baseLayout,yaxis:{...baseLayout.yaxis,title:ylabel},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.1}}};if(state.asset==='BOTH')layout.yaxis2={title:'IEF close ($)',overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)'};Plotly.react('explorer-chart',traces,layout,config);const asset=state.asset==='IEF'?'IEF':'VOO',k=asset.toLowerCase(),m=metric(data,`px_${k}_call_1d`,`px_${k}_realized`);metricCards('window-metrics',m,asset);document.getElementById('visible-window-label').textContent=`${m.n} realized ${asset} observations visible`;drawDiagnostics(data,asset)}
+      function drawDiagnostics(data,asset){const k=asset.toLowerCase(),d=data.filter(r=>Number.isFinite(r[`px_${k}_realized`]));const x=d.map(r=>r.target_date),err=d.map(r=>r[`px_${k}_call_1d`]-r[`px_${k}_realized`]);Plotly.react('error-chart',[{x,y:err,type:'bar',name:'Signed error',marker:{color:err.map(v=>v>=0?colors.VOO:colors.error)}}],{...baseLayout,margin:{l:52,r:12,t:20,b:45},showlegend:false,yaxis:{...baseLayout.yaxis,title:'Error ($)',zeroline:true,zerolinecolor:'#d5e7f2'}},config);const actual=d.map(r=>r[`px_${k}_realized`]),pred=d.map(r=>r[`px_${k}_call_1d`]),lo=Math.min(...actual,...pred),hi=Math.max(...actual,...pred);Plotly.react('scatter-chart',[{x:actual,y:pred,mode:'markers',name:'Calls',marker:{color:asset==='VOO'?colors.VOO:colors.IEF,size:9,line:{color:'#08121c',width:1}}},{x:[lo,hi],y:[lo,hi],mode:'lines',name:'Perfect fit',line:{color:colors.text,dash:'dot'}}],{...baseLayout,margin:{l:52,r:12,t:20,b:50},hovermode:'closest',xaxis:{...baseLayout.xaxis,title:'Realized ($)'},yaxis:{...baseLayout.yaxis,title:'Predicted ($)'}},config)}
+      function drawTail(){Plotly.newPlot('tail-chart',[{x:dates,y:rows.map(r=>r.p_final_cal),name:'Tail probability',line:{color:colors.IEF,width:3},mode:'lines+markers'},{x:dates,y:rows.map(()=>0.207),name:'Live base rate',line:{color:colors.VOOR,width:2,dash:'dash'}}],{...baseLayout,yaxis:{...baseLayout.yaxis,title:'Probability',range:[0,.35],tickformat:'.0%'},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.1}}},config)}
+      function activate(id){root.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',String(t.id===`tab-${id}`)));root.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${id}`));setTimeout(()=>window.dispatchEvent(new Event('resize')),20)}
+      root.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>activate(tab.id.replace('tab-',''))));document.getElementById('open-explorer').addEventListener('click',()=>{activate('explorer');document.querySelector('.tabs').scrollIntoView({behavior:'smooth',block:'start'})});document.getElementById('open-governance').addEventListener('click',()=>{activate('governance');document.querySelector('.tabs').scrollIntoView({behavior:'smooth',block:'start'})});
+      root.querySelectorAll('.seg').forEach(seg=>seg.addEventListener('click',e=>{if(!e.target.matches('button'))return;seg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));e.target.classList.add('active');state[seg.dataset.control]=e.target.dataset.value;drawExplorer()}));
+      const voo=metric(realized(),'px_voo_call_1d','px_voo_realized');document.getElementById('headline-metrics').innerHTML=[['VOO MAE','$'+fmt(voo.mae),'26 realized calls'],['VOO RMSE','$'+fmt(voo.rmse),'absolute scale'],['VOO MAPE',fmt(voo.mape)+'%','level error'],['VOO correlation',fmt(voo.corr),'level tracking'],['Direction hit','42.3%','below 50%'],['Live maturity','25 / 60','IMMATURE']].map(x=>`<div class="metric"><label>${x[0]}</label><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join('');
+      drawOverview();drawExplorer();drawTail();
+    })();
   </script>
+</div>
+
+<script id="codex-visualization-floating-ui-core" src="https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js"></script>
+<script id="codex-visualization-floating-ui-dom" src="https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js"></script>
+<script id="codex-visualization-lucide" async src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+<script id="codex-visualization-tooltip">/* oxlint-disable typescript/no-unsafe-argument, typescript/no-unsafe-call, typescript/no-unsafe-return */
+// Runs inside the visualization sandbox, not the host webview.
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =>
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest("[data-tooltip]")
+      : null;
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    document.removeEventListener("pointerover", handlePointerOpen);
+    document.removeEventListener("pointerout", handleLeave);
+    document.removeEventListener("focusin", handleFocusIn);
+    document.removeEventListener("focusout", handleLeave);
+    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("contextmenu", handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener("pointerover", handlePointerOpen);
+  document.addEventListener("pointerout", handleLeave);
+  document.addEventListener("focusin", handleFocusIn);
+  document.addEventListener("focusout", handleLeave);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("contextmenu", handleContextMenu);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+<script id="codex-visualization-lucide-initialization">(() => {
+  const initialize = () => {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById("codex-visualization-lucide")
+    ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
