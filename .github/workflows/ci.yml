@@ -24,7 +24,13 @@ jobs:
       # The legacy research scripts intentionally contain unresolved optional
       # branches, so fatal-name lint is scoped to the new regression tests.
       - run: ruff check --select E9,F63,F7,F82 tests/
-      - name: Test causal controls
-        run: pytest -q tests/test_causal_controls.py
+      - name: Test causal base rate
+        run: pytest -q tests/test_causal_controls.py::test_causal_base_rate_uses_only_supplied_history
+      - name: Test execution lag
+        run: pytest -q tests/test_causal_controls.py::test_execution_weights_are_lagged_one_row
+      - name: Test imbalanced classification null
+        run: pytest -q tests/test_causal_controls.py::test_majority_class_forecast_has_balanced_accuracy_half
+      - name: Test completed-close selection
+        run: pytest -q tests/test_causal_controls.py::test_latest_completed_close_uses_last_available_row
       - name: Test regime causality
         run: pytest -q tests/test_regime_causality.py
