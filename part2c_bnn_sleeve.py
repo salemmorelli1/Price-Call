@@ -1175,6 +1175,8 @@ def main() -> int:
     # bnn_overlay_on, and epist_threshold are always computed and always available
     # for Part 3 and Part 7 uncertainty gating. Only the p_bnn_mean probability
     # blend contribution and the production_candidate label are affected.
+    _wf_mean_ece_for_gate = float(wf_df["ece"].mean()) if len(wf_df) > 0 else float("nan")
+
     production_candidate = bool(
         uncertainty_backend_valid and
         np.isfinite(holdout_auc) and
@@ -1198,7 +1200,6 @@ def main() -> int:
     # holdout substantially understates realistic out-of-sample calibration error.
     # Using the max ensures neither estimate can individually pass a gate that the other
     # fails. Falls back to whichever estimate is finite if only one is available.
-    _wf_mean_ece_for_gate = float(wf_df["ece"].mean()) if len(wf_df) > 0 else float("nan")
     _worst_ece_for_gate = (
         max(holdout_ece, _wf_mean_ece_for_gate)
         if np.isfinite(holdout_ece) and np.isfinite(_wf_mean_ece_for_gate)
