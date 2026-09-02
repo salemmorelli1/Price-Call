@@ -2,20 +2,10 @@ name: Daily Backfill Realized
 
 on:
   schedule:
-    # FIX (Reviewer finding, Audit 2026-04-21):
-    # A single cron at UTC 20:00 is 4:00 PM EDT (summer, UTC-4) but only
-    # 3:00 PM EST (winter, UTC-5) — before U.S. market close. Settled closing
-    # prices are not yet available at 3 PM, so any realized prices backfilled
-    # then would be intraday values, not official closes.
-    #
-    # Fix: two crons mirror the Tuesday production pipeline pattern.
-    #   20:00 UTC fires at 4:00 PM EDT in summer  (UTC-4, Mar–Nov)
-    #   21:00 UTC fires at 4:00 PM EST in winter  (UTC-5, Nov–Mar)
-    # Both fire on every weekday, so the backfill always runs at 4:00 PM ET
-    # regardless of DST. The backfill script is idempotent — re-running on
-    # an already-backfilled day costs a few seconds and writes nothing new.
-    - cron: "0 20 * * 1-5"   # 4:00 PM EDT (UTC-4, summer)
-    - cron: "0 21 * * 1-5"   # 4:00 PM EST (UTC-5, winter)
+    # 16:30 Eastern target with a second DST-covering trigger. The runtime
+    # gate rejects any job that arrives before 16:20 Eastern.
+    - cron: "30 20 * * 1-5"   # 4:30 PM EDT (summer)
+    - cron: "30 21 * * 1-5"   # 4:30 PM EST (winter)
   workflow_dispatch:
 
 # ── Same concurrency group as the production pipeline ────────────────────
@@ -58,7 +48,7 @@ jobs:
       # realized prices are appended to the full history, not written over it.
       - name: Restore accumulating artifacts from remote
         run: |
-          git fetch origin "${GITHUB_REF_NAME}" --quiet || true
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
           git checkout "origin/${GITHUB_REF_NAME}" -- \
             artifacts_part3/prediction_log.csv \
             2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
@@ -94,10 +84,28 @@ jobs:
             artifacts_part3_v1/v1_final_production_governance.csv \
             2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
 
+      - name: Check for a completed market session
+        id: gate
+        run: |
+          python - <<'PYEOF'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          now = datetime.now(ZoneInfo("America/New_York"))
+          manual = os.environ.get("GITHUB_EVENT_NAME", "") == "workflow_dispatch"
+          settled = now.weekday() < 5 and (now.hour > 16 or (now.hour == 16 and now.minute >= 20))
+          should_run = manual or settled
+          print(f"NY time={now.isoformat()} settled={settled} manual={manual}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"run={'true' if should_run else 'false'}\n")
+          PYEOF
+
       - name: Run backfill
+        if: steps.gate.outputs.run == 'true'
         run: python backfill_realized.py
 
       - name: Commit and push backfill artifacts
+        if: steps.gate.outputs.run == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -143,6 +151,6 @@ jobs:
           git pull origin "${GITHUB_REF_NAME}" \
             --no-rebase \
             --strategy-option=ours \
-            --no-edit || true
+            --no-edit
 
           git push origin HEAD:"${GITHUB_REF_NAME}"

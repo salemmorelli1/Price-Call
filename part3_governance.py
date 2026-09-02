@@ -1169,7 +1169,7 @@ def _fit_regime_platt_scaling(
             .join(y_df[["y_rel_tail_voo_vs_ief"]], how="inner")
             .join(reg_df[["regime_label"]], how="left")
         )
-        merged = merged.dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
+        merged = merged.dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"]).sort_index()
         if len(merged) < 50:
             return {}
 
@@ -1186,8 +1186,13 @@ def _fit_regime_platt_scaling(
             sub = merged[merged["regime_label"] == regime].copy()
             if len(sub) < 30:
                 continue
-            p = sub["p_final_cal"].clip(0.01, 0.99).values
-            y = sub["y_rel_tail_voo_vs_ief"].values
+            split = max(20, int(len(sub) * 0.75))
+            fit_sub = sub.iloc[:split]
+            hold_sub = sub.iloc[split:]
+            if len(hold_sub) < 10 or fit_sub["y_rel_tail_voo_vs_ief"].nunique() < 2:
+                continue
+            p = fit_sub["p_final_cal"].clip(0.01, 0.99).values
+            y = fit_sub["y_rel_tail_voo_vs_ief"].values
             X = _logit(p).reshape(-1, 1)
             # FIX (F6, Audit 2026-05-10 — Quant-Guild Part 20):
             # risk_on has n=55 and AUC=0.527 (0.83 SE above random — not significant).
@@ -1227,8 +1232,22 @@ def _fit_regime_platt_scaling(
             # _global fallback (range=0.064) with a worse fit.  The a < _PLATT_MIN_SLOPE
             # gate catches this degenerate case the same way Part 2B's platt_degenerate
             # flag catches it there (both use threshold 0.25 for internal consistency).
-            if a < _PLATT_MIN_SLOPE:
-                reason = "ANTI-PREDICTIVE (a<0)" if a < 0 else f"DEGENERATE SLOPE (a={a:.4f} < {_PLATT_MIN_SLOPE})"
+            hold_p = hold_sub["p_final_cal"].clip(0.01, 0.99).values
+            hold_y = hold_sub["y_rel_tail_voo_vs_ief"].astype(float).values
+            hold_cal = 1.0 / (1.0 + np.exp(-(a * _logit(hold_p) + b)))
+            hold_brier_raw = float(np.mean((hold_y - hold_p) ** 2))
+            hold_brier_cal = float(np.mean((hold_y - hold_cal) ** 2))
+
+            if a < _PLATT_MIN_SLOPE or hold_brier_cal >= hold_brier_raw:
+                if a < 0:
+                    reason = "ANTI-PREDICTIVE (a<0)"
+                elif a < _PLATT_MIN_SLOPE:
+                    reason = f"DEGENERATE SLOPE (a={a:.4f} < {_PLATT_MIN_SLOPE})"
+                else:
+                    reason = (
+                        f"NO CHRONOLOGICAL HOLDOUT IMPROVEMENT "
+                        f"(Brier {hold_brier_cal:.5f} >= {hold_brier_raw:.5f})"
+                    )
                 print(
                     f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)} "
                     f"-- {reason}: EXCLUDED. _global fallback will apply."
@@ -1291,8 +1310,8 @@ def _fit_regime_platt_scaling(
             # arrays already computed above.
             try:
                 from sklearn.metrics import roc_auc_score as _p3_roc_auc
-                _p3_y = y.astype(float)
-                _p3_p = p.clip(1e-6, 1 - 1e-6)
+                _p3_y = sub["y_rel_tail_voo_vs_ief"].astype(float).values
+                _p3_p = sub["p_final_cal"].clip(1e-6, 1 - 1e-6).values
                 if len(np.unique(_p3_y)) >= 2:
                     _p3_auc = float(_p3_roc_auc(_p3_y, _p3_p))
                     _p3_n1 = int(_p3_y.sum())
@@ -1339,8 +1358,11 @@ def _fit_regime_platt_scaling(
             )
 
         # Global fallback (all regimes combined)
-        p_all = merged["p_final_cal"].clip(0.01, 0.99).values
-        y_all = merged["y_rel_tail_voo_vs_ief"].values
+        global_split = max(40, int(len(merged) * 0.75))
+        global_fit = merged.iloc[:global_split]
+        global_hold = merged.iloc[global_split:]
+        p_all = global_fit["p_final_cal"].clip(0.01, 0.99).values
+        y_all = global_fit["y_rel_tail_voo_vs_ief"].values
         lr_global = _LogisticRegression(C=1e4, max_iter=2000, solver="lbfgs")
         lr_global.fit(_logit(p_all).reshape(-1, 1), y_all)
         _a_global = float(lr_global.coef_[0][0])
@@ -1370,9 +1392,30 @@ def _fit_regime_platt_scaling(
         # discarding it would leave literally nothing to fall back to — the
         # transparent pass-through (return p_cal unchanged) is applied at the
         # point of use instead, matching the existing "params empty" behavior.
-        _global_degenerate = _a_global < _PLATT_MIN_SLOPE
+        _global_hold_p = global_hold["p_final_cal"].clip(0.01, 0.99).values
+        _global_hold_y = global_hold["y_rel_tail_voo_vs_ief"].astype(float).values
+        _global_hold_cal = 1.0 / (
+            1.0 + np.exp(-(_a_global * _logit(_global_hold_p) + _b_global))
+        )
+        _global_hold_raw_brier = float(np.mean((_global_hold_y - _global_hold_p) ** 2))
+        _global_hold_cal_brier = float(np.mean((_global_hold_y - _global_hold_cal) ** 2))
+        _global_degenerate = (
+            _a_global < _PLATT_MIN_SLOPE
+            or len(global_hold) < 20
+            or _global_hold_cal_brier >= _global_hold_raw_brier
+        )
         if _global_degenerate:
-            _reason = "ANTI-PREDICTIVE (a<0)" if _a_global < 0 else f"DEGENERATE SLOPE (a={_a_global:.4f} < {_PLATT_MIN_SLOPE})"
+            if _a_global < 0:
+                _reason = "ANTI-PREDICTIVE (a<0)"
+            elif _a_global < _PLATT_MIN_SLOPE:
+                _reason = f"DEGENERATE SLOPE (a={_a_global:.4f} < {_PLATT_MIN_SLOPE})"
+            elif len(global_hold) < 20:
+                _reason = "INSUFFICIENT CHRONOLOGICAL HOLDOUT"
+            else:
+                _reason = (
+                    f"NO CHRONOLOGICAL HOLDOUT IMPROVEMENT "
+                    f"(Brier {_global_hold_cal_brier:.5f} >= {_global_hold_raw_brier:.5f})"
+                )
             print(
                 f"[Part 3] Platt(_global    ): a={_a_global:.4f}  b={_b_global:.4f}  n={len(merged)} "
                 f"-- {_reason}: _global fallback is ALSO degenerate. No further fallback exists; "

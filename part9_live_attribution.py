@@ -176,7 +176,10 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     y, p = y[finite], p[finite]
     n = len(y)
 
-    _null = {"n": n, "t_stat_accuracy": np.nan, "p_value_accuracy": np.nan,
+    _null = {"n": n, "accuracy": np.nan, "balanced_accuracy": np.nan,
+             "matthews_corrcoef": np.nan,
+             "accuracy_null": "class-balanced label permutation",
+             "t_stat_accuracy": np.nan, "p_value_accuracy": np.nan,
              "auc": np.nan, "t_stat_auc": np.nan,
              "brier": np.nan, "brier_null": np.nan, "brier_skill_score": np.nan,
              "better_than_null_acc_5pct": False, "better_than_null_acc_1pct": False,
@@ -192,23 +195,26 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     brier_null  = float(np.mean((y - base_rate) ** 2))
     bss = 1.0 - brier_model / (brier_null + 1e-10)
 
-    # Direction accuracy
-    pred_up   = p < base_rate
-    actual_up = y < 0.5
-    correct   = (pred_up == actual_up).astype(float)
-    accuracy  = float(correct.mean())
+    # Raw accuracy is retained for description, but the inferential null is
+    # balanced accuracy. A majority-class forecast must score 0.5, not ~80%.
+    from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef
+    pred_event = p >= base_rate
+    actual_event = y >= 0.5
+    correct = (pred_event == actual_event).astype(float)
+    accuracy = float(correct.mean())
+    balanced_accuracy = float(balanced_accuracy_score(actual_event, pred_event))
+    mcc = float(matthews_corrcoef(actual_event, pred_event))
 
-    # t-test: is accuracy > 0.5?
-    # Guard: if std == 0 (all correct or all wrong), the t-test is undefined.
-    # Report nan rather than ±inf so downstream gates never fire on degenerate samples.
-    correct_std = float(np.std(correct, ddof=1))
-    if correct_std < 1e-12 or n < 3:
-        t    = np.nan
-        pval = np.nan
-    else:
-        t, pval = stats.ttest_1samp(correct, 0.5)
-        t    = float(t)
-        pval = float(pval)
+    # Deterministic label-permutation null preserves the observed event prevalence.
+    rng = np.random.default_rng(42)
+    n_perm = 2000
+    perm_scores = np.empty(n_perm, dtype=float)
+    for i in range(n_perm):
+        perm_scores[i] = balanced_accuracy_score(rng.permutation(actual_event), pred_event)
+    perm_mean = float(np.mean(perm_scores))
+    perm_std = float(np.std(perm_scores, ddof=1))
+    t = float((balanced_accuracy - perm_mean) / perm_std) if perm_std > 1e-12 else np.nan
+    pval = float((1 + np.sum(perm_scores >= balanced_accuracy)) / (n_perm + 1))
 
     # AUC — requires at least one sample from each class
     from sklearn.metrics import roc_auc_score
@@ -246,6 +252,10 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
     return {
         "n": n,
         "accuracy": accuracy,
+        "balanced_accuracy": balanced_accuracy,
+        "matthews_corrcoef": mcc,
+        "accuracy_null": "class-balanced label permutation",
+        "permutation_count": n_perm,
         "t_stat_accuracy": t,
         "p_value_accuracy": pval,
         "auc": auc,

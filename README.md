@@ -107,3 +107,40 @@ python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+For development checks:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+The experimental BNN sleeve is optional:
+
+```bash
+pip install -r requirements-bnn.txt
+PRICECALL_ENABLE_BNN=1 python run_tuesday_prediction.py --force
+```
+
+## Research status
+
+This repository is a **paper-only statistical research system**, not an investment
+recommendation or an autonomous trading system. Historical artifacts created before
+the causal-hardening release must be regenerated before they are used for research
+claims. The pipeline now fails closed when raw source data is stale, full-period
+AUC is below 0.50, or Brier skill is negative versus the causal prevalence forecast.
+
+## Causal hardening — 2026-09
+
+- Regime history is walk-forward and trained strictly before each labeled date.
+- Macro values may be forward-filled after publication, but are never backward-filled.
+- Historical event prevalence is estimated only from each row's prior train/validation window.
+- Strategy returns use a one-rebalance-row execution lag.
+- Platt scaling must improve Brier loss on a newer chronological holdout.
+- Live direction monitoring uses balanced accuracy and a prevalence-preserving permutation null.
+- Raw data freshness is recorded and participates in fail-closed governance.
+- Scheduled runs use idempotent date markers so delayed GitHub jobs still execute once.
+- PyTorch is removed from core dependencies; the BNN sleeve requires explicit opt-in.
+
+See `docs/CAUSAL_RESEARCH_PROTOCOL.md` for the temporal and governance contracts.

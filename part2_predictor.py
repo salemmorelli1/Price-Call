@@ -1845,6 +1845,17 @@ def _regime_for_current(train_df: pd.DataFrame, val_df: pd.DataFrame, current_ro
     return reg_bundle, reg_val, str(reg_cur)
 
 
+def _causal_base_rate(train_df: pd.DataFrame, val_df: Optional[pd.DataFrame] = None, fallback: float = 0.20) -> float:
+    """Estimate event prevalence using only rows available before prediction time."""
+    pieces = [train_df]
+    if val_df is not None:
+        pieces.append(val_df)
+    hist = pd.concat(pieces, axis=0, ignore_index=True)
+    values = pd.to_numeric(hist.get("y_rel_tail_voo_vs_ief"), errors="coerce").dropna()
+    rate = float(values.mean()) if len(values) else float(fallback)
+    return float(np.clip(rate, 1e-6, 1.0 - 1e-6))
+
+
 # FIX: was Part2Gen5Config (undefined), corrected to Part2Gen53Config
 def _build_fit_bundle(train_df: pd.DataFrame, val_df: pd.DataFrame, current_row: pd.DataFrame, feature_cols: List[str], cfg: Part2Gen53Config):
     reg_bundle, reg_val, current_regime = _regime_for_current(train_df, val_df, current_row[[c for c in cfg.REGIME_FEATURES if c in current_row.columns]].copy(), cfg)
@@ -1856,7 +1867,16 @@ def _build_fit_bundle(train_df: pd.DataFrame, val_df: pd.DataFrame, current_row:
     reg_voo = _fit_reg_ensemble(train_df[feature_cols], train_df["fwd_voo"], val_df[feature_cols], val_df["fwd_voo"], reg_val, current_regime, cfg)
     reg_ief = _fit_reg_ensemble(train_df[feature_cols], train_df["fwd_ief"], val_df[feature_cols], val_df["fwd_ief"], reg_val, current_regime, cfg)
     dist_bundle = _fit_dist_bundle(train_df[feature_cols], train_df["excess_ret"], val_df[feature_cols], val_df["excess_ret"], reg_val, current_regime, cfg)
-    return {"prob": prob_bundle, "voo": reg_voo, "ief": reg_ief, "dist": dist_bundle, "regime": reg_bundle, "current_regime": current_regime}
+    return {
+        "prob": prob_bundle,
+        "voo": reg_voo,
+        "ief": reg_ief,
+        "dist": dist_bundle,
+        "regime": reg_bundle,
+        "current_regime": current_regime,
+        "base_rate": _causal_base_rate(train_df, val_df),
+        "base_rate_source": "train_and_validation_rows_strictly_before_prediction",
+    }
 
 
 # FIX: was Part2Gen5Config (undefined), corrected to Part2Gen53Config
@@ -2314,6 +2334,7 @@ def _validate_output_schema(out: pd.DataFrame) -> None:
         "Date", "p_final_cal", "p_tail_base", "p_tail_dist", "p_final_g5",
         "spread_q05", "spread_q50", "spread_q95", "spread_q05_conf", "spread_q95_conf",
         "fwd_voo_hat_final", "fwd_ief_hat_final", "w_strategy_voo", "w_strategy_ief",
+        "w_executed_voo", "w_executed_ief",
         "active_weight_raw", "active_weight_capped", "deploy_downside", "deploy_upside",
         "drift_alarm", "high_risk_state", "strategy_ret_net", "active_ret_net",
         "benchmark_ret", "turnover", "cost_model", "raw_val_auc", "calibration_gate_on",
@@ -2387,6 +2408,8 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
         # final_pass=False gating bot LIVE mode and alpha LIVE_TRIAL/LIVE_FUSED states,
         # without requiring publish_mode=FAIL_CLOSED_NEUTRAL.
         bool(summary.get("suspicious_perf_flag", False))
+        or (not bool(summary.get("historical_evidence_ok", False)))
+        or (not bool(summary.get("part1_data_freshness_ok", False)))
         or (np.isfinite(summary.get("drift_alarm_rate", np.nan)) and float(summary.get("drift_alarm_rate")) > drift_limit)
         # FIX (2026-04-13): was '> cal_limit', which incorrectly triggered fail_closed
         # when calibration was GOOD (e.g. 98.8% > 85%). The intent is to fail closed
@@ -2405,6 +2428,8 @@ def _apply_fail_closed_neutral(out: pd.DataFrame, cfg) -> pd.DataFrame:
     out["publish_fail_closed"] = 1
     out["w_strategy_voo"] = cfg.BASE_WEIGHT_VOO
     out["w_strategy_ief"] = cfg.BASE_WEIGHT_IEF
+    out["w_executed_voo"] = cfg.BASE_WEIGHT_VOO
+    out["w_executed_ief"] = cfg.BASE_WEIGHT_IEF
     if "y_avail" in out.columns:
         mask = out["y_avail"] == 1
         prev = cfg.BASE_WEIGHT_VOO
@@ -2446,6 +2471,11 @@ def _environment_metadata(script_path: str) -> Dict[str, object]:
         "script_path": os.path.basename(script_path),
         "script_sha256": _sha256_file(script_path) if os.path.exists(script_path) else _sha256_text(str(script_path)),
     }
+
+
+def _lag_execution_weights(signal_weights: pd.Series, neutral_weight: float) -> pd.Series:
+    """One-observation execution lag: a decision can affect only the next return."""
+    return pd.to_numeric(signal_weights, errors="coerce").shift(1).fillna(float(neutral_weight))
 
 
 def _classification_metrics(y_true: np.ndarray, p: np.ndarray, bins: int) -> Dict[str, float]:
@@ -2910,8 +2940,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     rebal_dates = _build_rebalance_dates(cal_for_rebal, cfg)
     rebal_set = set(pd.to_datetime(rebal_dates["Date"]).dt.normalize())
     rebal_idx = [i for i, d in enumerate(full["Date"]) if d in rebal_set]
-    base_rate = float(full.loc[full["y_avail"] == 1, "y_rel_tail_voo_vs_ief"].mean())
-    base_rate = base_rate if np.isfinite(base_rate) else 0.20
+    # A full-tape prevalence estimate leaks future labels into historical rows.
+    # Each row receives the base rate stored in its causal fit bundle instead.
+    base_rate = 0.20
     tail_threshold = float(part1_meta.get("tail_threshold", cfg.TAIL_EVENT_THRESHOLD))
 
     rows = []
@@ -2931,6 +2962,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             fit_train_df = train_df.copy()
         else:
             train_df = fit_train_df.copy()
+
+        base_rate = float(fit_bundle["base_rate"])
 
         if fit_bundle["regime"] is not None:
             current_regime = _predict_regime(fit_bundle["regime"], current_row[[c for c in cfg.REGIME_FEATURES if c in current_row.columns]]).iloc[0]
@@ -3073,6 +3106,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "sign": float(np.sign(p_final_g5 - base_rate)),
             "T": float(base_rate),
             "b": float(base_rate),
+            "base_rate": float(base_rate),
+            "base_rate_source": str(fit_bundle["base_rate_source"]),
             "lam": float(prob_pred["agreement_std"]),
             "calibration_gate_on": int(prob_pred["calibration_gate_on"]),
             "raw_val_auc": float(prob_pred["raw_val_auc"]) if np.isfinite(prob_pred["raw_val_auc"]) else np.nan,
@@ -3286,21 +3321,22 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     # vectorised operations on the realized subset.
     realized_mask = out["y_avail"].astype(int) == 1
     realized_idx = out.index[realized_mask]
+    # Signals are produced after the decision close. Apply a conservative
+    # one-row execution lag before pairing weights with forward returns.
+    out["w_executed_voo"] = _lag_execution_weights(
+        out["w_strategy_voo"], cfg.BASE_WEIGHT_VOO
+    )
+    out["w_executed_ief"] = 1.0 - out["w_executed_voo"]
     if len(realized_idx) > 0:
-        # Compute prev_w for each realized row (prior realized row's w_strategy_voo)
-        _w_voo_arr = out["w_strategy_voo"].values.copy()
-        _prev_w_arr = np.empty(len(out), dtype=float)
-        _prev_w_arr[0] = cfg.BASE_WEIGHT_VOO
-        _prev_w_arr[1:] = _w_voo_arr[:-1]
-        # For rows where the prior row was not realized, the prior w was still
-        # w_strategy_voo (Part 2 sets it on every row), so _prev_w_arr is correct.
-        out.loc[realized_mask, "turnover"] = np.abs(
-            _w_voo_arr[realized_mask.values] - _prev_w_arr[realized_mask.values]
-        )
+        _exec_prev = out["w_executed_voo"].shift(1).fillna(cfg.BASE_WEIGHT_VOO)
+        out.loc[realized_mask, "turnover"] = (
+            out.loc[realized_mask, "w_executed_voo"]
+            - _exec_prev.loc[realized_mask]
+        ).abs()
         out.loc[realized_mask, "cost_model"] = (cfg.SLIP_BPS / 10000.0) * out.loc[realized_mask, "turnover"]
         out.loc[realized_mask, "strategy_ret_gross"] = (
-            out.loc[realized_mask, "w_strategy_voo"] * out.loc[realized_mask, "fwd_voo"]
-            + (1.0 - out.loc[realized_mask, "w_strategy_voo"]) * out.loc[realized_mask, "fwd_ief"]
+            out.loc[realized_mask, "w_executed_voo"] * out.loc[realized_mask, "fwd_voo"]
+            + out.loc[realized_mask, "w_executed_ief"] * out.loc[realized_mask, "fwd_ief"]
         )
         # FIX (F1, Quant-Guild Part 39 Audit): overwrite benchmark_ret with the
         # contemporaneous 60/40 forward return.  bench_60_40 from carry_cols is the
@@ -3321,6 +3357,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             out.loc[realized_mask & _bench_finite, "active_ret_gross"]
             - out.loc[realized_mask & _bench_finite, "cost_model"]
         )
+
+    # Refresh after the vectorized execution-lag reconstruction.
+    realized = out.loc[out["y_avail"] == 1].copy()
 
     cls_base = cls_dist = cls_final = {"auc": np.nan, "pr": np.nan, "lift": np.nan, "brier": np.nan, "ece": np.nan}
     dist_diag = {"raw_coverage": np.nan, "conf_coverage": np.nan, "median_rmse": np.nan}
@@ -3385,6 +3424,26 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     stress_panel = _compute_stress_panel(out, cfg)
     cls_base_lift = float(cls_base.get("lift", np.nan))
     cls_base_ece = float(cls_base.get("ece", np.nan))
+    if len(realized) and "base_rate" in realized.columns:
+        _null_brier = float(np.mean(
+            (realized["y_rel_tail_voo_vs_ief"].astype(float).values
+             - realized["base_rate"].astype(float).values) ** 2
+        ))
+    else:
+        _null_brier = np.nan
+    _model_brier = float(cls_final.get("brier", np.nan))
+    historical_brier_skill = (
+        float(1.0 - _model_brier / _null_brier)
+        if np.isfinite(_model_brier) and np.isfinite(_null_brier) and _null_brier > 0
+        else np.nan
+    )
+    historical_evidence_ok = bool(
+        np.isfinite(cls_final.get("auc", np.nan))
+        and float(cls_final["auc"]) >= 0.50
+        and np.isfinite(historical_brier_skill)
+        and historical_brier_skill >= 0.0
+    )
+    part1_data_freshness_ok = bool(part1_meta.get("data_freshness_ok", False))
     # FIX (Audit 2026-05-07 — Circular Deadlock):
     # The previous definition included `active_mean > 0.0` as a required condition.
     # This created an unescapable structural deadlock:
@@ -3659,8 +3718,16 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "effective_final_pass_drift_rate_max": float(final_pass_drift_max_eff),
         "effective_fail_closed_drift_rate": float(fail_closed_drift_rate_eff),
         "effective_fail_closed_cal_gate": float(fail_closed_cal_gate_eff),
+        "historical_null_brier_causal": _null_brier,
+        "historical_brier_skill_causal": historical_brier_skill,
+        "historical_evidence_ok": historical_evidence_ok,
+        "part1_data_freshness_ok": part1_data_freshness_ok,
+        "execution_alignment": "one_rebalance_row_lag",
+        "base_rate_contract": "train_and_validation_rows_strictly_before_prediction",
         "predictive_quality_ok": predictive_quality_ok,
         "final_pass": bool(
+            historical_evidence_ok and
+            part1_data_freshness_ok and
             # FIX (Finding A, Audit 2026-04-21):
             # The prior gate used cls_final["auc"] — the single-pass holdout AUC
             # computed over the full 2020–2026 period. This is a single unrepeated

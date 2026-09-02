@@ -605,6 +605,11 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
             print(f"[{label}] not found — skipping (optional experimental sleeve)")
             continue
 
+        # Part 2C is opt-in because PyTorch is intentionally not a core dependency.
+        if label == "PART 2C" and os.environ.get("PRICECALL_ENABLE_BNN", "0") != "1":
+            print(f"[{label}] SKIPPED — set PRICECALL_ENABLE_BNN=1 and install requirements-bnn.txt to enable.")
+            continue
+
         # Gate check for Part 2C specifically
         if label == "PART 2C":
             p2b_summary_path = root / "artifacts_part2b_xgb" / "predictions" / "part2b_xgb_summary.json"
