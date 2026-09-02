@@ -6,6 +6,7 @@ on:
     # gate rejects any job that arrives before 16:20 Eastern.
     - cron: "30 20 * * 1-5"   # 4:30 PM EDT (summer)
     - cron: "30 21 * * 1-5"   # 4:30 PM EST (winter)
+    - cron: "30 23 * * 1-5"   # DST-independent catch-up if an earlier job was delayed
   workflow_dispatch:
 
 # ── Same concurrency group as the production pipeline ────────────────────
@@ -90,19 +91,44 @@ jobs:
           python - <<'PYEOF'
           import os
           from datetime import datetime
+          from pathlib import Path
           from zoneinfo import ZoneInfo
           now = datetime.now(ZoneInfo("America/New_York"))
           manual = os.environ.get("GITHUB_EVENT_NAME", "") == "workflow_dispatch"
           settled = now.weekday() < 5 and (now.hour > 16 or (now.hour == 16 and now.minute >= 20))
-          should_run = manual or settled
-          print(f"NY time={now.isoformat()} settled={settled} manual={manual}")
+          if manual and not settled:
+              raise SystemExit("Manual backfill refused: the current market session is not settled (requires weekday at/after 16:20 ET).")
+          marker = Path("artifacts_part9/backfill_run_date.txt")
+          completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+          should_run = settled and completed != now.date().isoformat()
+          status = "RUN" if should_run else ("ALREADY_COMPLETE" if completed == now.date().isoformat() else "PRE_CLOSE")
+          print(f"NY time={now.isoformat()} settled={settled} manual={manual} completed={completed or 'none'} status={status}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"run={'true' if should_run else 'false'}\n")
+              f.write(f"status={status}\n")
           PYEOF
 
       - name: Run backfill
         if: steps.gate.outputs.run == 'true'
         run: python backfill_realized.py
+
+      - name: Record successful backfill date
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python - <<'PYEOF'
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          marker = Path("artifacts_part9/backfill_run_date.txt")
+          marker.parent.mkdir(parents=True, exist_ok=True)
+          marker.write_text(datetime.now(ZoneInfo("America/New_York")).date().isoformat() + "\n", encoding="utf-8")
+          PYEOF
+
+      - name: Synchronize dashboard and verify published artifacts
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python sync_dashboard.py --root .
+          python artifact_integrity.py --root .
 
       - name: Commit and push backfill artifacts
         if: steps.gate.outputs.run == 'true'
@@ -139,14 +165,18 @@ jobs:
           git add -f \
             artifacts_part3/prediction_log.csv \
             artifacts_part3_v1/part3_summary.json \
-            artifacts_part9/live_attribution_report.json || true
+            artifacts_part9/live_attribution_report.json \
+            artifacts_part9/backfill_run_date.txt \
+            artifacts_dashboard/dashboard_snapshot.json \
+            artifacts_manifest.json \
+            index.html
 
           if git diff --cached --quiet; then
             echo "No backfill changes to commit."
             exit 0
           fi
 
-          git commit -m "Backfill realized prices [skip ci]"
+          git commit -m "Backfill realized prices and refresh dashboard"
 
           git pull origin "${GITHUB_REF_NAME}" \
             --no-rebase \
@@ -154,3 +184,7 @@ jobs:
             --no-edit
 
           git push origin HEAD:"${GITHUB_REF_NAME}"
+
+      - name: Report backfill gate status
+        if: always()
+        run: echo "Backfill gate status — ${{ steps.gate.outputs.status || 'FAILED_BEFORE_GATE' }}" >> "$GITHUB_STEP_SUMMARY"

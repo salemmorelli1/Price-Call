@@ -166,8 +166,12 @@ jobs:
               today = now.date().isoformat()
               marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
               completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-              should_run = now.weekday() < 5 and completed != today
-              reason = f"weekday={now.weekday()} completed={completed or 'none'} today={today}"
+              after_start = now.hour >= 8
+              should_run = now.weekday() < 5 and after_start and completed != today
+              reason = (
+                  f"weekday={now.weekday()} after_08_et={after_start} "
+                  f"completed={completed or 'none'} today={today}"
+              )
 
           print(f"run={should_run} ({reason})")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
@@ -176,7 +180,11 @@ jobs:
 
       - name: Run pipeline
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
-        run: python run_tuesday_prediction.py --force
+        run: python run_tuesday_prediction.py --force --direct
+
+      - name: Synchronize dashboard
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python sync_dashboard.py --root .
 
       # ── Artifact verification ─────────────────────────────────────────
       - name: Verify required artifacts
@@ -192,7 +200,10 @@ jobs:
             "artifacts_part6/part6_meta.json" \
             "artifacts_part7/current_target_weights.json" \
             "artifacts_part8/part8_meta.json" \
-            "artifacts_part9/live_attribution_report.json"
+            "artifacts_part8/execution_instructions.json" \
+            "artifacts_part9/live_attribution_report.json" \
+            "artifacts_dashboard/dashboard_snapshot.json" \
+            "index.html"
           do
             if [ -f "$path" ]; then
               echo "OK: $path"
@@ -223,6 +234,10 @@ jobs:
           marker.write_text(datetime.now(ZoneInfo("America/New_York")).date().isoformat() + "\n", encoding="utf-8")
           PYEOF
 
+      - name: Record provenance and validate strict JSON
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python artifact_integrity.py --root . --write-pipeline-status
+
       # ── Commit and push ───────────────────────────────────────────────
       # Uses --no-rebase merge with -X ours to resolve any artifact
       # conflicts in favour of the current run's output. Artifact files
@@ -243,7 +258,10 @@ jobs:
             artifacts_part7/ \
             artifacts_part8/ \
             artifacts_part9/ \
-            artifacts_part10_bot/ || true
+            artifacts_part10_bot/ \
+            artifacts_dashboard/ \
+            artifacts_manifest.json \
+            index.html
           git add -f artifacts_part2b_xgb/ 2>/dev/null || true
           git add -f artifacts_part2c_bnn/ 2>/dev/null || true
 

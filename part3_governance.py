@@ -41,6 +41,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from artifact_integrity import LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION
+
 # ── Optional: regime-conditional Platt scaling (scipy + sklearn) ──────────
 try:
     from scipy.special import logit as _logit, expit as _expit
@@ -783,7 +785,15 @@ def _count_realized_predlog_rows(predlog_df: pd.DataFrame) -> int:
     icol = _first_col(predlog_df, ["px_ief_realized", "ief_realized"])
     if vcol is None or icol is None:
         return 0
-    return int((predlog_df[vcol].notna() & predlog_df[icol].notna()).sum())
+    realized = predlog_df[vcol].notna() & predlog_df[icol].notna()
+    if "model_protocol_version" not in predlog_df.columns:
+        return 0
+    current = predlog_df["model_protocol_version"].fillna(LEGACY_PROTOCOL_VERSION).astype(str).eq(PROTOCOL_VERSION)
+    eligible = pd.to_numeric(
+        predlog_df.get("evidence_eligible", pd.Series(0, index=predlog_df.index)),
+        errors="coerce",
+    ).fillna(0).astype(int).eq(1)
+    return int((realized & current & eligible).sum())
 
 
 def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, target_date: pd.Timestamp,
@@ -813,8 +823,27 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             "current_alpha_eligible", "current_alpha_abs",
             "defense_source", "alpha_positions_source", "alpha_summary_source",
             "alpha_eligibility_source", "alpha_summary_json_source",
-            "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction"
+            "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction",
+            "model_protocol_version", "model_code_sha", "pipeline_run_id",
+            "evidence_cohort", "evidence_eligible", "data_freshness_ok"
         ])
+
+    # Preserve old observations as an explicit legacy cohort.  They remain in
+    # the audit ledger but cannot be counted toward current-method promotion.
+    if "model_protocol_version" not in predlog_df.columns:
+        predlog_df["model_protocol_version"] = LEGACY_PROTOCOL_VERSION
+    predlog_df["model_protocol_version"] = predlog_df["model_protocol_version"].fillna(
+        LEGACY_PROTOCOL_VERSION
+    ).astype(str)
+    if "evidence_cohort" not in predlog_df.columns:
+        predlog_df["evidence_cohort"] = predlog_df["model_protocol_version"]
+    if "evidence_eligible" not in predlog_df.columns:
+        predlog_df["evidence_eligible"] = 0
+
+    data_freshness_ok = bool(
+        part2_summary.get("part1_data_freshness_ok", False)
+        and part2_summary.get("macro_point_in_time_ok", False)
+    )
 
     row = {
         "decision_date": pd.Timestamp(decision_date).normalize(),
@@ -908,6 +937,12 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "alpha_summary_source": str(alpha_sources["summary_tape"]),
         "alpha_eligibility_source": str(alpha_sources["eligibility"]),
         "alpha_summary_json_source": str(alpha_sources["summary_json"]),
+        "model_protocol_version": PROTOCOL_VERSION,
+        "model_code_sha": os.environ.get("GITHUB_SHA") or os.environ.get("PRICECALL_CODE_SHA"),
+        "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "evidence_cohort": PROTOCOL_VERSION,
+        "evidence_eligible": int(data_freshness_ok),
+        "data_freshness_ok": int(data_freshness_ok),
     }
 
     # FIX (F2, Quant-Guild Part 53 Audit): Convert all Timestamp values in the row
@@ -945,7 +980,10 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
 
     if "decision_date" in predlog_df.columns:
         predlog_df["decision_date"] = pd.to_datetime(predlog_df["decision_date"], errors="coerce")
-        mask = predlog_df["decision_date"] == row["decision_date"]
+        mask = (
+            predlog_df["decision_date"].eq(row["decision_date"])
+            & predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
+        )
         if mask.any():
             for k, v in _row_for_update.items():
                 try:
@@ -2248,8 +2286,12 @@ def main(cfg: Part3Config = CFG) -> None:
 
     # Add regime-recalibrated probability to the prediction log row
     if not predlog_df.empty and p_regime_recal is not None:
-        predlog_df["p_regime_recal"] = np.nan
-        date_mask = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
+        if "p_regime_recal" not in predlog_df.columns:
+            predlog_df["p_regime_recal"] = np.nan
+        date_mask = (
+            pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce").eq(decision_date)
+            & predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
+        )
         if date_mask.any():
             predlog_df.loc[date_mask, "p_regime_recal"] = p_regime_recal
         predlog_df.to_csv(predlog_out, index=False)
@@ -2262,7 +2304,10 @@ def main(cfg: Part3Config = CFG) -> None:
     if not predlog_df.empty and p_raw is not None:
         if "p_final_cal_blended" not in predlog_df.columns:
             predlog_df["p_final_cal_blended"] = np.nan
-        date_mask2 = pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce") == decision_date
+        date_mask2 = (
+            pd.to_datetime(predlog_df.get("decision_date", pd.Series(dtype="object")), errors="coerce").eq(decision_date)
+            & predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
+        )
         if date_mask2.any():
             predlog_df.loc[date_mask2, "p_final_cal_blended"] = float(p_raw)
         predlog_df.to_csv(predlog_out, index=False)
@@ -2345,6 +2390,10 @@ def main(cfg: Part3Config = CFG) -> None:
 
     summary = {
         "part": "PART3_V1",
+        "protocol_version": PROTOCOL_VERSION,
+        "evidence_cohort": PROTOCOL_VERSION,
+        "source_code_sha": os.environ.get("GITHUB_SHA") or os.environ.get("PRICECALL_CODE_SHA"),
+        "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
         "root": str(root),
         "defense_source": str(part2_tape),
         "part2_summary_source": str(part2_summary_path),
@@ -2376,6 +2425,18 @@ def main(cfg: Part3Config = CFG) -> None:
         # On a timing-race run where pre-upsert=0 but post-upsert=1, this corrects the summary
         # from 0 → 1 without changing the alpha promotion state (which used pre-upsert=0).
         "live_realized_dates": _post_upsert_realized_rows,  # FIX S51 F2: was alpha_status["realized_dates"] (pre-upsert, stale on timing-race runs)
+        "legacy_prediction_rows": int(
+            predlog_df["model_protocol_version"].ne(PROTOCOL_VERSION).sum()
+        ),
+        "current_cohort_prediction_rows": int(
+            predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION).sum()
+        ),
+        "current_cohort_evidence_eligible_rows": int(
+            (
+                predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
+                & pd.to_numeric(predlog_df["evidence_eligible"], errors="coerce").fillna(0).astype(int).eq(1)
+            ).sum()
+        ),
         "realized_dates_note": "realized_dates=backtest rows (display only). live_realized_dates=post-upsert prediction-log realized rows (used for reporting; promotion gate uses pre-upsert count).",
         "budget_mult": alpha_status["budget_mult"],
         "drift_rate": alpha_status["drift_rate"],
@@ -2726,9 +2787,6 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
-
-
-
 
 
 

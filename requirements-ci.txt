@@ -1,13 +1,10 @@
+# Minimal dependencies for import, lint, and causal-control regression tests.
 numpy>=2.0,<3
 pandas>=2.2,<4
 scipy>=1.13,<2
 scikit-learn>=1.5,<2
 yfinance>=0.2.54,<2
 fredapi>=0.5.2,<1
-duckdb>=1,<2
-pyarrow>=16,<24
-xgboost>=2,<4
 hmmlearn>=0.3,<1
-cvxpy>=1.5,<2
-gradio>=5,<7
-plotly>=5,<7
+pytest>=8,<10
+ruff>=0.8,<1

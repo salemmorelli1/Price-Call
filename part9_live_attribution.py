@@ -46,6 +46,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy import stats
+from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_score
+
+from artifact_integrity import PROTOCOL_VERSION, write_json_strict
 
 warnings.filterwarnings("ignore")
 
@@ -156,32 +159,49 @@ def _delong_se_auc(y: np.ndarray, p: np.ndarray) -> float:
     return float(np.sqrt(max(var_auc, 1e-12)))
 
 
-def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: float) -> Dict:
-    """
-    Test if model's sign accuracy is statistically better than base rate.
-    Null hypothesis: P(correct direction) = 0.5
+def t_stat_sign_accuracy(
+    y_true: np.ndarray,
+    p_pred: np.ndarray,
+    base_rate: float | np.ndarray,
+    *,
+    min_class_n: int = 5,
+    n_perm: int = 2000,
+) -> Dict:
+    """Describe classification quality and run guarded permutation inference.
 
-    FIX (Findings #5 & #9, 2026-04):
-    - Guard against t=∞ when n<10 or correct[] has zero variance (all same value).
-      scipy.stats.ttest_1samp returns t=inf / p=0 when std=0, which triggered
-      significant_5pct=True for n=2 — a mathematically invalid result.
-    - Replace plug-in SE(AUC) = sqrt(AUC*(1-AUC)/n) with the DeLong estimator.
-      The plug-in formula ignores the correlation structure of the Wilcoxon
-      U-statistic and systematically underestimates SE, inflating t_stat_auc.
-    - Minimum sample guard: significant_* flags are suppressed for n < 10.
+    ``base_rate`` may be a scalar or a per-observation causal forecast.  The
+    latter is required for historical scoring because each decision date has a
+    different training-window prevalence.  Directional significance is never
+    reported until *both* classes meet ``min_class_n``.
     """
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(p_pred, dtype=float)
-    finite = np.isfinite(y) & np.isfinite(p)
-    y, p = y[finite], p[finite]
+    br = np.asarray(base_rate, dtype=float)
+    if br.ndim == 0:
+        br = np.full(y.shape, float(br), dtype=float)
+    else:
+        br = np.broadcast_to(br, y.shape).astype(float, copy=False)
+    finite = np.isfinite(y) & np.isfinite(p) & np.isfinite(br)
+    y, p, br = y[finite], p[finite], br[finite]
     n = len(y)
+
+    actual_event = y >= 0.5
+    n_positive = int(actual_event.sum())
+    n_negative = int(n - n_positive)
+    inference_eligible = bool(n_positive >= min_class_n and n_negative >= min_class_n)
 
     _null = {"n": n, "accuracy": np.nan, "balanced_accuracy": np.nan,
              "matthews_corrcoef": np.nan,
              "accuracy_null": "class-balanced label permutation",
              "t_stat_accuracy": np.nan, "p_value_accuracy": np.nan,
+             "p_value_accuracy_better": np.nan, "p_value_accuracy_worse": np.nan,
              "auc": np.nan, "t_stat_auc": np.nan,
+             "p_value_auc_better": np.nan, "p_value_auc_worse": np.nan,
              "brier": np.nan, "brier_null": np.nan, "brier_skill_score": np.nan,
+             "n_positive": n_positive, "n_negative": n_negative,
+             "minimum_class_count": int(min_class_n),
+             "inference_eligible": inference_eligible,
+             "inference_status": "eligible" if inference_eligible else "insufficient_class_counts",
              "better_than_null_acc_5pct": False, "better_than_null_acc_1pct": False,
              "worse_than_null_acc_5pct": False, "worse_than_null_acc_1pct": False,
              "better_than_null_auc_5pct": False, "better_than_null_auc_1pct": False,
@@ -192,62 +212,83 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
 
     # Brier skill score vs base rate
     brier_model = float(np.mean((y - p) ** 2))
-    brier_null  = float(np.mean((y - base_rate) ** 2))
+    brier_null = float(np.mean((y - br) ** 2))
     bss = 1.0 - brier_model / (brier_null + 1e-10)
 
     # Raw accuracy is retained for description, but the inferential null is
     # balanced accuracy. A majority-class forecast must score 0.5, not ~80%.
-    from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef
-    pred_event = p >= base_rate
-    actual_event = y >= 0.5
+    pred_event = p >= br
     correct = (pred_event == actual_event).astype(float)
     accuracy = float(correct.mean())
-    balanced_accuracy = float(balanced_accuracy_score(actual_event, pred_event))
+    balanced_accuracy = (
+        float(balanced_accuracy_score(actual_event, pred_event))
+        if n_positive and n_negative else np.nan
+    )
     mcc = float(matthews_corrcoef(actual_event, pred_event))
 
-    # Deterministic label-permutation null preserves the observed event prevalence.
+    # Deterministic label permutations preserve event prevalence and produce
+    # directional, finite-sample p-values.  They are descriptive only until the
+    # prespecified class-count guard is met.
     rng = np.random.default_rng(42)
-    n_perm = 2000
     perm_scores = np.empty(n_perm, dtype=float)
-    for i in range(n_perm):
-        perm_scores[i] = balanced_accuracy_score(rng.permutation(actual_event), pred_event)
-    perm_mean = float(np.mean(perm_scores))
-    perm_std = float(np.std(perm_scores, ddof=1))
-    t = float((balanced_accuracy - perm_mean) / perm_std) if perm_std > 1e-12 else np.nan
-    pval = float((1 + np.sum(perm_scores >= balanced_accuracy)) / (n_perm + 1))
+    perm_auc = np.empty(n_perm, dtype=float)
+    if n_positive and n_negative:
+        for i in range(n_perm):
+            y_perm = rng.permutation(actual_event)
+            perm_scores[i] = balanced_accuracy_score(y_perm, pred_event)
+            perm_auc[i] = roc_auc_score(y_perm, p)
+    else:
+        perm_scores.fill(np.nan)
+        perm_auc.fill(np.nan)
+    perm_mean = float(np.mean(perm_scores)) if np.isfinite(balanced_accuracy) else np.nan
+    perm_std = float(np.std(perm_scores, ddof=1)) if np.isfinite(balanced_accuracy) else np.nan
+    t = (
+        float((balanced_accuracy - perm_mean) / perm_std)
+        if inference_eligible and np.isfinite(perm_std) and perm_std > 1e-12 else np.nan
+    )
+    p_acc_better = (
+        float((1 + np.sum(perm_scores >= balanced_accuracy)) / (n_perm + 1))
+        if inference_eligible else np.nan
+    )
+    p_acc_worse = (
+        float((1 + np.sum(perm_scores <= balanced_accuracy)) / (n_perm + 1))
+        if inference_eligible else np.nan
+    )
 
     # AUC — requires at least one sample from each class
-    from sklearn.metrics import roc_auc_score
-    n_classes = len(np.unique(y.astype(int)))
-    if n_classes >= 2:
+    if n_positive and n_negative:
         auc = float(roc_auc_score(y.astype(int), p))
     else:
         auc = np.nan
 
     # AUC t-stat using DeLong SE (Finding #9)
     # SE is meaningless when AUC itself is NaN or when n is too small.
-    if np.isfinite(auc) and n >= 4:
+    if inference_eligible and np.isfinite(auc):
         se_auc = _delong_se_auc(y.astype(int), p)
         t_auc  = float((auc - 0.5) / se_auc) if se_auc > 0 else np.nan
     else:
         t_auc = np.nan
 
+    p_auc_better = (
+        float((1 + np.sum(perm_auc >= auc)) / (n_perm + 1))
+        if inference_eligible and np.isfinite(auc) else np.nan
+    )
+    p_auc_worse = (
+        float((1 + np.sum(perm_auc <= auc)) / (n_perm + 1))
+        if inference_eligible and np.isfinite(auc) else np.nan
+    )
+
     # Directional significance flags: these encode whether the model is
     # significantly BETTER or WORSE than the null, rather than collapsing both
     # directions into a single ambiguous "significant" indicator.
-    _min_n_for_sig = 10
-    _t_fin = np.isfinite(t)
-    _tauc_fin = np.isfinite(t_auc)
-
-    better_acc_5 = bool(n >= _min_n_for_sig and _t_fin and t > 1.96)
-    better_acc_1 = bool(n >= _min_n_for_sig and _t_fin and t > 2.58)
-    worse_acc_5 = bool(n >= _min_n_for_sig and _t_fin and t < -1.96)
-    worse_acc_1 = bool(n >= _min_n_for_sig and _t_fin and t < -2.58)
-
-    better_auc_5 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc > 1.96)
-    better_auc_1 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc > 2.58)
-    worse_auc_5 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc < -1.96)
-    worse_auc_1 = bool(n >= _min_n_for_sig and _tauc_fin and t_auc < -2.58)
+    better_acc_5 = bool(inference_eligible and p_acc_better <= 0.05)
+    better_acc_1 = bool(inference_eligible and p_acc_better <= 0.01)
+    worse_acc_5 = bool(inference_eligible and p_acc_worse <= 0.05)
+    worse_acc_1 = bool(inference_eligible and p_acc_worse <= 0.01)
+    better_auc_5 = bool(inference_eligible and p_auc_better <= 0.05)
+    better_auc_1 = bool(inference_eligible and p_auc_better <= 0.01)
+    worse_auc_5 = bool(inference_eligible and p_auc_worse <= 0.05)
+    worse_auc_1 = bool(inference_eligible and p_auc_worse <= 0.01)
 
     return {
         "n": n,
@@ -257,12 +298,21 @@ def t_stat_sign_accuracy(y_true: np.ndarray, p_pred: np.ndarray, base_rate: floa
         "accuracy_null": "class-balanced label permutation",
         "permutation_count": n_perm,
         "t_stat_accuracy": t,
-        "p_value_accuracy": pval,
+        "p_value_accuracy": p_acc_better,
+        "p_value_accuracy_better": p_acc_better,
+        "p_value_accuracy_worse": p_acc_worse,
         "auc": auc,
         "t_stat_auc": t_auc,
+        "p_value_auc_better": p_auc_better,
+        "p_value_auc_worse": p_auc_worse,
         "brier": brier_model,
         "brier_null": brier_null,
         "brier_skill_score": float(bss),
+        "n_positive": n_positive,
+        "n_negative": n_negative,
+        "minimum_class_count": int(min_class_n),
+        "inference_eligible": inference_eligible,
+        "inference_status": "eligible" if inference_eligible else "insufficient_class_counts",
         "better_than_null_acc_5pct": better_acc_5,
         "better_than_null_acc_1pct": better_acc_1,
         "worse_than_null_acc_5pct": worse_acc_5,
@@ -478,6 +528,16 @@ def evaluate_stopping_rules(
             "status": "IMMATURE",
             "reasons": [f"Only {n} live observations ({cfg.min_live_n} required)"],
         }
+    if not bool(live_stats.get("inference_eligible", False)):
+        return {
+            "status": "IMMATURE",
+            "reasons": [
+                "Class-count gate not met: "
+                f"positive={live_stats.get('n_positive', 0)}, "
+                f"negative={live_stats.get('n_negative', 0)}, "
+                f"minimum each={live_stats.get('minimum_class_count', 5)}"
+            ],
+        }
 
     # 1. Statistical edge check
     t_auc = live_stats.get("t_stat_auc", np.nan)
@@ -548,6 +608,8 @@ def generate_live_report(cfg: Part9Config) -> Dict:
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "protocol_version": PROTOCOL_VERSION,
+        "total_predictions_all_cohorts": len(predlog),
         "total_predictions": len(predlog),
         "n_live_realized": 0,
         "status": "IMMATURE",
@@ -601,17 +663,42 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     except Exception as _p9_disk_exc:
         print(f"[Part 9] FIX F1/S58: disk re-read failed ({_p9_disk_exc}) — using in-memory predlog.")
 
+    # A methodological change starts a new evidence cohort.  Old rows remain in
+    # the ledger for auditability, but they cannot promote the current model.
+    if "model_protocol_version" not in predlog.columns:
+        predlog["model_protocol_version"] = "legacy-pre-causal-integrity-v2"
+    predlog["model_protocol_version"] = predlog["model_protocol_version"].fillna(
+        "legacy-pre-causal-integrity-v2"
+    ).astype(str)
+    if "evidence_eligible" not in predlog.columns:
+        predlog["evidence_eligible"] = 0
+    if "horizon_legacy" in predlog.columns:
+        predlog = predlog[
+            pd.to_numeric(predlog["horizon_legacy"], errors="coerce").fillna(0).astype(int).eq(0)
+        ].copy()
+    eligible = pd.to_numeric(predlog["evidence_eligible"], errors="coerce").fillna(0).astype(int) == 1
+    current = predlog["model_protocol_version"].eq(PROTOCOL_VERSION)
+    all_realized = predlog[voo_real_col].notna() & predlog[ief_real_col].notna()
+    report.update({
+        "evidence_cohort": PROTOCOL_VERSION,
+        "legacy_predictions": int((~current).sum()),
+        "legacy_realized_rows": int((~current & all_realized).sum()),
+        "current_cohort_predictions": int(current.sum()),
+        "current_cohort_eligible_predictions": int((current & eligible).sum()),
+    })
+    predlog = predlog[current & eligible].copy()
+
     realized = predlog[predlog[voo_real_col].notna() & predlog[ief_real_col].notna()].copy()
     n_live = len(realized)
     report["n_live_realized"] = n_live
 
     if n_live < 2:
         report["message"] = (
-            f"Only {n_live} realized predictions available. "
+            f"Only {n_live} eligible realized predictions are available in the "
+            f"{PROTOCOL_VERSION} cohort. "
             f"Accumulate {cfg.min_live_n} before making statistical inferences. "
             f"At daily rebalancing, this takes roughly {cfg.min_live_n / 21:.1f} months."
         )
-        return report
 
     voo_pred_col = next((c for c in ["px_voo_call_1d", "px_voo_call_7d"] if c in realized.columns), None)
     if voo_pred_col:
@@ -637,8 +724,12 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         else:
             thr_series = pd.Series([-0.015] * len(realized), index=realized.index)
 
-        br_series = pd.to_numeric(realized.get("base_rate", pd.Series([0.20] * len(realized))), errors="coerce").dropna()
-        base_rate = float(br_series.iloc[-1]) if len(br_series) else 0.20
+        br_series = pd.to_numeric(
+            realized.get("base_rate", pd.Series([0.20] * len(realized), index=realized.index)),
+            errors="coerce",
+        ).fillna(0.20)
+        br_values = br_series.to_numpy(dtype=float)
+        base_rate = float(br_values[-1]) if len(br_values) else 0.20
         pred_p_raw = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
         # FIX (Finding 14, Audit 2026-04-21): use the Platt-recalibrated probability
         # p_regime_recal (written by Part 3) when it is available and well-populated.
@@ -663,14 +754,14 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         )
         # FIX (Finding B): per-row threshold applied element-wise
         y_live = (spread_real < thr_series.values).astype(float)
-        m = np.isfinite(pred_p) & np.isfinite(y_live)
+        m = np.isfinite(pred_p) & np.isfinite(y_live) & np.isfinite(br_values)
         if m.sum() >= 2:
-            live_stats = t_stat_sign_accuracy(y_live[m], pred_p[m], base_rate)
+            live_stats = t_stat_sign_accuracy(y_live[m], pred_p[m], br_values[m])
             # Report the median threshold across live rows for transparency
             live_stats["tail_threshold"] = float(np.median(thr_series.values))
             live_stats["base_rate"] = base_rate
             live_stats["probability_source"] = "p_regime_recal" if _using_recal else "p_final_cal"
-            active_rets = -spread_real[m] * np.sign(pred_p[m] - base_rate)
+            active_rets = -spread_real[m] * np.sign(pred_p[m] - br_values[m])
             if len(active_rets) >= 2:
                 live_stats["mean_active_return"] = float(np.mean(active_rets))
                 # FIX (Finding A, Audit 2026-04): the raw spread return used here overstates
@@ -719,7 +810,7 @@ def generate_live_report(cfg: Part9Config) -> Dict:
             if _using_recal:
                 m_raw = np.isfinite(pred_p_raw) & np.isfinite(y_live)
                 if m_raw.sum() >= 2:
-                    base_stats = t_stat_sign_accuracy(y_live[m_raw], pred_p_raw[m_raw], base_rate)
+                    base_stats = t_stat_sign_accuracy(y_live[m_raw], pred_p_raw[m_raw], br_values[m_raw])
                     base_stats["tail_threshold"] = float(np.median(thr_series.values))
                     base_stats["base_rate"] = base_rate
                     base_stats["probability_source"] = "p_final_cal"
@@ -734,7 +825,12 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         if {"p_final_cal", "y_rel_tail_voo_vs_ief"}.issubset(set(tape.columns)):
             tape_real = tape[tape.get("y_avail", 1) == 1].dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
             if len(tape_real) >= 2:
-                base_rate_bt = float(tape_real["y_rel_tail_voo_vs_ief"].mean())
+                if "base_rate" in tape_real.columns:
+                    base_rate_bt = pd.to_numeric(tape_real["base_rate"], errors="coerce").fillna(0.20).values
+                    report["backtest_baseline_contract"] = "per-row causal training-window prevalence"
+                else:
+                    base_rate_bt = float(tape_real["y_rel_tail_voo_vs_ief"].mean())
+                    report["backtest_baseline_contract"] = "legacy full-sample fallback; not promotion eligible"
                 report["classification_stats_backtest"] = t_stat_sign_accuracy(
                     tape_real["y_rel_tail_voo_vs_ief"].values,
                     tape_real["p_final_cal"].values,
@@ -816,8 +912,7 @@ def main() -> int:
     report = generate_live_report(cfg)
 
     out_path = os.path.join(cfg.out_dir, "live_attribution_report.json")
-    with open(out_path, "w") as f:
-        json.dump(report, f, indent=2, default=str)
+    write_json_strict(out_path, report)
 
     print(f"\n✅ PART 9 COMPLETE → {out_path}")
     return 0

@@ -116,6 +116,9 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
+CI uses the smaller bounded `requirements-ci.txt` set so optional dashboard,
+optimizer, database, and gradient-boosting packages are not downloaded for unit tests.
+
 The experimental BNN sleeve is optional:
 
 ```bash
@@ -142,5 +145,18 @@ AUC is below 0.50, or Brier skill is negative versus the causal prevalence forec
 - Raw data freshness is recorded and participates in fail-closed governance.
 - Scheduled runs use idempotent date markers so delayed GitHub jobs still execute once.
 - PyTorch is removed from core dependencies; the BNN sleeve requires explicit opt-in.
+- FRED history uses earliest ALFRED releases and their actual availability dates;
+  revised-history fallbacks are labeled and force research governance to fail closed.
+- A separate `point_in_time_macro.py` adapter rebuilds the macro-dependent feature
+  file before regime fitting, without changing the deferred credential-bearing source.
+- Live evidence is versioned by methodology. Pre-integrity observations remain in the
+  ledger as legacy rows but cannot satisfy the current 60-observation gate.
+- AUC and balanced-accuracy significance flags require at least five observations
+  from each class and use directional permutation p-values.
+- Fail-closed Part 8 output is an explicit `NO_ACTION_STALE_OR_UNCLEARED` artifact
+  with an empty instruction list.
+- `sync_dashboard.py` builds one strict dashboard snapshot after production and
+  backfill; `artifact_integrity.py` publishes SHA-256 provenance and rejects invalid JSON.
 
 See `docs/CAUSAL_RESEARCH_PROTOCOL.md` for the temporal and governance contracts.
+See `docs/ARTIFACT_RETENTION.md` for the non-destructive repository-size policy.

@@ -43,6 +43,7 @@ import platform
 import sys
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -2246,6 +2247,13 @@ def _load_part1_meta(cfg) -> Dict[str, object]:
     return meta
 
 
+def _load_part0_meta(cfg) -> Dict[str, object]:
+    path = Path(cfg.PART1_DIR).resolve().parent / "artifacts_part0" / "part0_meta.json"
+    if not path.is_file():
+        return {"historical_point_in_time_complete": False, "provenance_error": f"missing {path}"}
+    return _load_json(str(path))
+
+
 
 def _resolve_contract_profile(part1_meta: Dict, feature_cols: List[str], cfg) -> Tuple[str, int, int]:
     part1_version = str(part1_meta.get("version", "")).strip()
@@ -2410,6 +2418,7 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
         bool(summary.get("suspicious_perf_flag", False))
         or (not bool(summary.get("historical_evidence_ok", False)))
         or (not bool(summary.get("part1_data_freshness_ok", False)))
+        or (not bool(summary.get("macro_point_in_time_ok", False)))
         or (np.isfinite(summary.get("drift_alarm_rate", np.nan)) and float(summary.get("drift_alarm_rate")) > drift_limit)
         # FIX (2026-04-13): was '> cal_limit', which incorrectly triggered fail_closed
         # when calibration was GOOD (e.g. 98.8% > 85%). The intent is to fail closed
@@ -2922,6 +2931,7 @@ def _deep_clean_for_json(obj):
 def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     _ensure_dir(cfg.PRED_DIR)
     part1_meta = _load_part1_meta(cfg)
+    part0_meta = _load_part0_meta(cfg)
     full = _load_part1_contract(cfg)
     feature_cols, forbidden_features = _select_model_features(full, part1_meta, cfg)
     contract_info = _validate_feature_contract(feature_cols, forbidden_features, part1_meta, cfg)
@@ -3444,6 +3454,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         and historical_brier_skill >= 0.0
     )
     part1_data_freshness_ok = bool(part1_meta.get("data_freshness_ok", False))
+    macro_point_in_time_ok = bool(part0_meta.get("historical_point_in_time_complete", False))
     # FIX (Audit 2026-05-07 — Circular Deadlock):
     # The previous definition included `active_mean > 0.0` as a required condition.
     # This created an unescapable structural deadlock:
@@ -3722,12 +3733,16 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "historical_brier_skill_causal": historical_brier_skill,
         "historical_evidence_ok": historical_evidence_ok,
         "part1_data_freshness_ok": part1_data_freshness_ok,
+        "macro_point_in_time_ok": macro_point_in_time_ok,
+        "fred_vintage_policy": part0_meta.get("fred_vintage_policy"),
+        "fred_vintage_mode_by_series": part0_meta.get("fred_vintage_mode_by_series", {}),
         "execution_alignment": "one_rebalance_row_lag",
         "base_rate_contract": "train_and_validation_rows_strictly_before_prediction",
         "predictive_quality_ok": predictive_quality_ok,
         "final_pass": bool(
             historical_evidence_ok and
             part1_data_freshness_ok and
+            macro_point_in_time_ok and
             # FIX (Finding A, Audit 2026-04-21):
             # The prior gate used cls_final["auc"] — the single-pass holdout AUC
             # computed over the full 2020–2026 period. This is a single unrepeated

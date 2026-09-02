@@ -98,6 +98,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from artifact_integrity import PROTOCOL_VERSION, write_json_strict
 from scipy.optimize import minimize_scalar
 
 warnings.filterwarnings("ignore")
@@ -1137,6 +1139,7 @@ def main() -> int:
     _p2_gov_path = os.path.join(cfg.part2_dir, "part2_g532_summary.json")
     _p2_publish_mode = "UNKNOWN"
     _p2_final_pass = False
+    _p2_sum: Dict = {}
     if os.path.exists(_p2_gov_path):
         try:
             with open(_p2_gov_path, "r", encoding="utf-8") as _p2_f:
@@ -1183,13 +1186,37 @@ def main() -> int:
     live_vix = _load_live_vix(cfg.part0_dir, fallback=18.0)
     print(f"[Part 8] Live VIX: {live_vix:.2f}")
 
-    instructions = scheduler.generate_order_instructions(
-        decision_date=decision_date,
-        allocations={"VOO": w_voo, "IEF": w_ief},
-        portfolio_dollars=1000.0,
-        prev_allocations=prev_weights,
-        vix_level=live_vix,   # FIX (Finding 3): was hardcoded 16.5
-    )
+    if _p8_governance_override:
+        instructions = {
+            "protocol_version": PROTOCOL_VERSION,
+            "decision_date": decision_date,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "status": "NO_ACTION_STALE_OR_UNCLEARED",
+            "reason": (
+                f"Part 2 did not clear governance: publish_mode={_p2_publish_mode}, "
+                f"final_pass={_p2_final_pass}, "
+                f"data_freshness_ok={bool(_p2_sum.get('part1_data_freshness_ok', False))}"
+            ),
+            "instructions": [],
+            "n_trades": 0,
+            "execute_window": None,
+            "source_decision_date": decision_date,
+            "pipeline_run_date": os.environ.get("PRICECALL_RUN_DATE_ET"),
+            "data_freshness_ok": bool(_p2_sum.get("part1_data_freshness_ok", False)),
+        }
+    else:
+        instructions = scheduler.generate_order_instructions(
+            decision_date=decision_date,
+            allocations={"VOO": w_voo, "IEF": w_ief},
+            portfolio_dollars=1000.0,
+            prev_allocations=prev_weights,
+            vix_level=live_vix,
+        )
+        instructions["protocol_version"] = PROTOCOL_VERSION
+        instructions["status"] = "RESEARCH_INSTRUCTIONS_GENERATED"
+        instructions["source_decision_date"] = decision_date
+        instructions["pipeline_run_date"] = os.environ.get("PRICECALL_RUN_DATE_ET")
+        instructions["data_freshness_ok"] = True
 
     tape_path = os.path.join(cfg.part2_dir, "g532_final_consensus_tape.csv")
     annual_drag: Dict = {}
@@ -1245,6 +1272,7 @@ def main() -> int:
 
     meta = {
         "version": cfg.version,
+        "protocol_version": PROTOCOL_VERSION,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "assets_modeled": list(cfg.asset_params.keys()),
         "live_vix_used": live_vix,   # FIX (Finding 3): audit trail
@@ -1260,11 +1288,9 @@ def main() -> int:
         "governance_p2_final_pass": _p2_final_pass,
         "governance_override_applied": bool(_p8_governance_override),
     }
-    with open(os.path.join(cfg.out_dir, "part8_meta.json"), "w") as f:
-        json.dump(meta, f, indent=2, default=str)
-
-    with open(os.path.join(cfg.out_dir, "example_order_instructions.json"), "w") as f:
-        json.dump(instructions, f, indent=2, default=str)
+    write_json_strict(os.path.join(cfg.out_dir, "part8_meta.json"), meta)
+    write_json_strict(os.path.join(cfg.out_dir, "example_order_instructions.json"), instructions)
+    write_json_strict(os.path.join(cfg.out_dir, "execution_instructions.json"), instructions)
 
     print("\n✅ PART 8 COMPLETE")
     print(f"   Wrote: {os.path.join(cfg.out_dir, 'execution_cost_tape.csv')}")

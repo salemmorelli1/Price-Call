@@ -43,6 +43,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from artifact_integrity import PROTOCOL_VERSION, write_json_strict
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
@@ -496,6 +498,8 @@ def build_causal_regime_history(
 
     engine: Optional[RegimeEngine] = None
     last_refit = -10**9
+    fit_train_end: Optional[pd.Timestamp] = None
+    filter_start = 0
     refits = 0
     start = int(cfg.hmm_min_train_rows)
     for pos in range(start, len(features)):
@@ -515,15 +519,18 @@ def build_causal_regime_history(
                 continue
             engine = candidate
             last_refit = pos
+            fit_train_end = pd.Timestamp(train.index[-1])
+            filter_start = train_start
             refits += 1
 
-        # Build the current row using prior/current observations only so ffill
-        # can carry a published macro value without exposing any future row.
-        current = features.iloc[: pos + 1].ffill().iloc[[-1]]
-        pred = engine.predict(current)
+        # Predict the last state from the sequence observed through this date.
+        # For HMMs, the final-row posterior has no future observations available;
+        # passing an isolated row would discard transition-state information.
+        observed_prefix = features.iloc[filter_start: pos + 1].copy()
+        pred = engine.predict(observed_prefix)
         for col in pred.columns:
-            out.loc[out.index[pos], col] = pred.iloc[0][col]
-        out.loc[out.index[pos], "regime_model_train_end"] = features.index[pos - 1]
+            out.loc[out.index[pos], col] = pred.iloc[-1][col]
+        out.loc[out.index[pos], "regime_model_train_end"] = fit_train_end
         out.loc[out.index[pos], "regime_is_oos"] = 1
 
     if engine is None:
@@ -611,6 +618,7 @@ def main() -> int:
 
     meta = {
         "version": cfg.version,
+        "protocol_version": PROTOCOL_VERSION,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "model_type": engine.model_type,
         "n_regimes": cfg.n_regimes,
@@ -633,11 +641,11 @@ def main() -> int:
         "causal_train_window_rows": int(cfg.causal_train_window_rows),
         "causal_refit_count": int(causal_refits),
         "regime_history_contract": "each label trained strictly before its timestamp",
+        "regime_probability_contract": "final-row posterior from observations available through each timestamp",
         "fomc_dates_included": len(KNOWN_FOMC_DATES_2020_2026),
         "source_part0_dir": cfg.part0_dir,
     }
-    with open(os.path.join(cfg.out_dir, "part6_meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2, default=str)
+    write_json_strict(os.path.join(cfg.out_dir, "part6_meta.json"), meta)
 
     print("\nRegime distribution:")
     print(regime_df["regime_label"].value_counts(normalize=True))

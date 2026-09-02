@@ -22,6 +22,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from artifact_integrity import write_json_strict
+
 try:
     import yfinance as yf
 except Exception as exc:  # pragma: no cover
@@ -519,22 +521,25 @@ def main() -> int:
         )
         if _p9_spec is not None and _p9_spec.loader is not None:
             _p9_mod = _ilu.module_from_spec(_p9_spec)
+            # dataclasses and other import-time machinery require the module to
+            # be present in sys.modules while it executes.
+            _sys.modules[_p9_spec.name] = _p9_mod
             _p9_spec.loader.exec_module(_p9_mod)
             _p9_cfg = _p9_mod.Part9Config()
             _p9_report = _p9_mod.generate_live_report(_p9_cfg)
             _part9_report_path.parent.mkdir(parents=True, exist_ok=True)
-            import json as _json_p9
-            with open(_part9_report_path, "w", encoding="utf-8") as _rf:
-                _json_p9.dump(_p9_report, _rf, indent=2, default=str)
+            write_json_strict(_part9_report_path, _p9_report)
             _n_live_new = _p9_report.get("n_live_realized", 0)
             print(
                 f"[backfill] FIX F3/S58: live_attribution_report.json regenerated — "
                 f"n_live_realized={_n_live_new}.  [S58 F3]"
             )
         else:
-            print("[backfill] FIX F3/S58: could not load part9_live_attribution.py — skipping.")
+            raise RuntimeError("could not load part9_live_attribution.py")
     except Exception as _p9_exc:
-        print(f"[backfill] FIX F3/S58: Part 9 regeneration failed ({_p9_exc}) — existing report retained.")
+        raise RuntimeError(
+            f"Part 9 regeneration failed after backfill; refusing a green workflow: {_p9_exc}"
+        ) from _p9_exc
 
     return 0
 
