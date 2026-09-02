@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  static:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -22,31 +22,5 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q .
       - run: ruff check --select E9,F63,F7,F82 tests/
-
-  test:
-    name: test-${{ matrix.control }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - control: base-rate
-            target: tests/test_causal_controls.py::test_causal_base_rate_uses_only_supplied_history
-          - control: execution-lag
-            target: tests/test_causal_controls.py::test_execution_weights_are_lagged_one_row
-          - control: balanced-null
-            target: tests/test_causal_controls.py::test_majority_class_forecast_has_balanced_accuracy_half
-          - control: completed-close
-            target: tests/test_causal_controls.py::test_latest_completed_close_uses_last_available_row
-          - control: regime-causality
-            target: tests/test_regime_causality.py
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements-dev.txt
-      - run: pytest -q "${{ matrix.target }}"
+      # python -m keeps the repository root on sys.path for the flat-module layout.
+      - run: python -m pytest -q tests/
