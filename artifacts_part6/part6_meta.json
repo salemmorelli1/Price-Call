@@ -1,56 +1,64 @@
 {
   "version": "V2_DAILY_CANONICAL",
-  "built_at": "2026-08-26T13:52:13.303265+00:00",
+  "built_at": "2026-09-02T18:16:56.629210+00:00",
   "model_type": "hmm",
   "n_regimes": 4,
   "feature_cols": [
     "vix_z21",
+    "vix_term_ratio",
     "vix_rv_gap",
     "hy_ig_z21",
     "spread_vol10",
     "duration_spread_z21",
     "breadth_rsp_voo_z21",
-    "yield_curve_2s10s"
+    "yield_curve_2s10s",
+    "hy_spread_fred"
   ],
   "regime_map": {
-    "1": "calm",
-    "3": "risk_on",
-    "2": "high_vol",
-    "0": "crisis"
+    "2": "calm",
+    "1": "risk_on",
+    "0": "high_vol",
+    "3": "crisis"
   },
   "transition_matrix": [
     [
-      0.94954464,
-      0.00082469,
-      0.01248193,
-      0.03714874
+      0.94806332,
+      0.03786657,
+      0.01407011,
+      0.0
+    ],
+    [
+      0.05134324,
+      0.91661468,
+      0.01912062,
+      0.01292146
+    ],
+    [
+      0.00555369,
+      0.01104581,
+      0.9834005,
+      0.0
     ],
     [
       0.0,
-      0.94102621,
-      0.03934159,
-      0.0196322
-    ],
-    [
-      0.01492432,
-      0.01524699,
-      0.9665077,
-      0.00332098
-    ],
-    [
-      0.05426422,
-      0.01299417,
-      0.00962474,
-      0.92311686
+      0.02132713,
+      0.02082194,
+      0.95785092
     ]
   ],
   "regime_distribution": {
-    "high_vol": 0.3433373349339736,
-    "crisis": 0.31620648259303724,
-    "risk_on": 0.2021608643457383,
-    "calm": 0.1382953181272509
+    "risk_on": 0.30983213429256595,
+    "high_vol": 0.27146282973621105,
+    "calm": 0.2273381294964029,
+    "crisis": 0.12589928057553956,
+    "unknown": 0.06546762589928058
   },
-  "unknown_rate": 0.0,
+  "unknown_rate": 0.065468,
+  "causal_walk_forward": true,
+  "causal_refit_frequency": 63,
+  "causal_train_window_rows": 1260,
+  "causal_refit_count": 63,
+  "regime_history_contract": "each label trained strictly before its timestamp",
   "fomc_dates_included": 65,
   "source_part0_dir": "/home/runner/work/Price-Call/Price-Call/artifacts_part0"
 }
