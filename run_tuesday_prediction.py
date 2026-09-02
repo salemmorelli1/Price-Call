@@ -277,6 +277,9 @@ def run_direct_pipeline(project_dir: Path) -> int:
             # bnn_sleeve_recommended flag is True. Part 2B always runs first in
             # DIRECT_PIPELINE_ORDER, so its fresh summary is available here.
             if label == "PART2C":
+                if os.environ.get("PRICECALL_ENABLE_BNN", "0") != "1":
+                    print(f"\n[INFO] {label} skipped — set PRICECALL_ENABLE_BNN=1 and install requirements-bnn.txt to enable.")
+                    continue
                 recommended, reason = _part2b_recommends_bnn(project_dir)
                 if not recommended:
                     print(f"\n[INFO] {label} ({script_name}) skipped — Part 2B does not "

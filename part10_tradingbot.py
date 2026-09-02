@@ -513,7 +513,7 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
         cal = report.get("calibration_live", {}) or {}
 
         t_auc = _safe_float(cs.get("t_stat_auc"), np.nan)
-        acc = _safe_float(cs.get("accuracy"), np.nan)
+        acc = _safe_float(cs.get("balanced_accuracy"), np.nan)
         bss = _safe_float(cs.get("brier_skill_score"), np.nan)
         ece = _safe_float(cal.get("ece"), np.nan)
 
@@ -522,7 +522,7 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
         if np.isfinite(t_auc) and t_auc < cfg.min_t_stat:
             return False, f"Live AUC t-stat {t_auc:.2f} < {cfg.min_t_stat:.2f}"
         if np.isfinite(acc) and acc < 0.50:
-            return False, f"Live direction accuracy {acc:.2%} < 50%"
+            return False, f"Live balanced accuracy {acc:.2%} < 50%"
         if np.isfinite(bss) and bss <= 0.0:
             return False, f"Live Brier skill {bss:.4f} <= 0"
         if np.isfinite(ece) and ece > 0.15:
@@ -534,7 +534,7 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
             if np.isfinite(annual_tc_drag_bps) and np.isfinite(annual_edge_bps) and annual_tc_drag_bps >= annual_edge_bps:
                 return False, f"Annual TC drag {annual_tc_drag_bps:.1f} bps >= estimated annual edge {annual_edge_bps:.1f} bps"
 
-        return True, f"Model passes live gate: t_auc={t_auc:.2f}, acc={acc:.2%}, bss={bss:.4f}, ece={ece:.3f}, n={n_live}"
+        return True, f"Model passes live gate: t_auc={t_auc:.2f}, balanced_acc={acc:.2%}, bss={bss:.4f}, ece={ece:.3f}, n={n_live}"
     except Exception as e:
         return False, f"Error reading Part 9 report: {e}"
 
@@ -580,6 +580,15 @@ def compute_target_weight(
     return w_voo, f"{direction} (edge={edge:+.3f} → w_voo={w_voo:.3f})"
 
 
+def _latest_completed_close(series: pd.Series) -> float:
+    values = pd.to_numeric(series, errors="coerce").dropna()
+    if values.empty:
+        return float("nan")
+    # yfinance's end date is exclusive, so the last row is already the latest
+    # completed session. Selecting -2 would skip an additional session.
+    return float(values.iloc[-1])
+
+
 def fetch_prices(tickers: List[str], use_prior_day: bool = True) -> Dict[str, float]:
     prices: Dict[str, float] = {}
     try:
@@ -590,13 +599,9 @@ def fetch_prices(tickers: List[str], use_prior_day: bool = True) -> Dict[str, fl
         for t in tickers:
             if t not in close.columns:
                 continue
-            series = pd.to_numeric(close[t], errors="coerce").dropna()
-            if len(series) == 0:
-                continue
-            if use_prior_day and len(series) >= 2:
-                prices[t] = float(series.iloc[-2])
-            else:
-                prices[t] = float(series.iloc[-1])
+            price = _latest_completed_close(close[t])
+            if np.isfinite(price):
+                prices[t] = price
         print(f"[Bot] Prices fetched: {prices}")
     except Exception as e:
         print(f"[Bot] Warning: price fetch failed ({e})")

@@ -1,34 +1,8 @@
 name: Daily Production Run
 
-# FIX (S60): removed non-functional `timezone` key from schedule trigger.
-#
-# ROOT CAUSE OF CURRENT FAILURE
-# ──────────────────────────────
-# The previous design used:
-#
-#     - cron: "35 9 * * 1-5"
-#       timezone: "America/New_York"
-#
-# GitHub Actions schedule triggers on github.com do NOT support a `timezone`
-# key. The field is silently ignored — the cron fires at 09:35 UTC regardless,
-# which is 5:35 AM ET (EDT) or 4:35 AM ET (EST). The Python time gate
-# evaluates wall-clock ET and finds hour=5, which is outside the 9:00-11:30
-# window. Gate outputs run=false, all downstream steps skip, and the workflow
-# exits green in ~1 minute without writing any artifacts — the same silent-skip
-# failure mode documented in the April 2026 audit.
-# workflow_dispatch runs were unaffected (bypass the gate), masking the bug.
-#
-# SOLUTION
-# ─────────
-# Revert to the proven dual-cron UTC pattern already in use by daily-backfill.yml.
-# Target time: 8:00 AM ET (as requested by Salem for S60).
-#   8:00 AM EDT (UTC-4, ~Mar–Nov) = 12:00 UTC  →  cron: "0 12 * * 1-5"
-#   8:00 AM EST (UTC-5, ~Nov–Mar) = 13:00 UTC  →  cron: "0 13 * * 1-5"
-#
-# The Python time gate is updated to an 8:00–10:30 AM ET window (150 minutes),
-# preserving the same tolerance band as the prior gate design. Both crons fire
-# daily on weekdays; the backfill script is idempotent so double-firing on the
-# DST crossover days is harmless.
+# Two UTC schedules cover Eastern daylight/standard time. Runs are serialized,
+# and a committed Eastern-date marker makes the workflow idempotent. A delayed
+# scheduler job still runs; later duplicates skip only after completion.
 on:
   schedule:
     - cron: "0 12 * * 1-5"   # 8:00 AM EDT (UTC-4, summer)
@@ -93,7 +67,7 @@ jobs:
       # (first-ever run). Uses `|| true` so a missing remote file is not fatal.
       - name: Restore accumulating artifacts from remote
         run: |
-          git fetch origin "${GITHUB_REF_NAME}" --quiet || true
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
           git checkout "origin/${GITHUB_REF_NAME}" -- \
             artifacts_part3/prediction_log.csv \
             2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
@@ -173,52 +147,31 @@ jobs:
 
           echo "OK: gate key '${WRITTEN_KEY}' is consistent throughout the workflow."
 
-      # ── Time gate ─────────────────────────────────────────────────────
-      # FIX (S60): updated cron trigger from 9:35 AM ET to 8:00 AM ET.
-      # Gate window updated from 9:00-11:30 AM ET to 8:00-10:30 AM ET.
-      #
-      # Both crons fire on weekdays; the time gate passes the run that
-      # lands within the window (typically the summer cron in EDT months,
-      # the winter cron in EST months) and suppresses the out-of-window
-      # duplicate. The 150-minute window is wide enough to absorb GitHub
-      # scheduler drift (historically up to 103 minutes).
-      # Manual dispatches (workflow_dispatch) always proceed immediately.
-      - name: Check run window (skip if outside 8:00-10:30 AM ET on weekdays)
+      # ── Idempotency gate ──────────────────────────────────────────────
+      - name: Check whether today's production run already completed
         id: gate
         run: |
           python - <<'PYEOF'
-          import sys, os
+          import os
           from datetime import datetime
-          try:
-              from zoneinfo import ZoneInfo
-          except ImportError:
-              from backports.zoneinfo import ZoneInfo
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
 
           event = os.environ.get("GITHUB_EVENT_NAME", "")
           if event == "workflow_dispatch":
-              print("Manual dispatch — skipping time gate.")
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("run=true\n")
-              sys.exit(0)
+              should_run = True
+              reason = "manual dispatch"
+          else:
+              now = datetime.now(ZoneInfo("America/New_York"))
+              today = now.date().isoformat()
+              marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
+              completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+              should_run = now.weekday() < 5 and completed != today
+              reason = f"weekday={now.weekday()} completed={completed or 'none'} today={today}"
 
-          now = datetime.now(ZoneInfo("America/New_York"))
-          hour, minute, weekday = now.hour, now.minute, now.weekday()
-
-          # 8:00-10:30 AM ET: covers the 8:00 AM nominal trigger with up to
-          # 150 minutes of GitHub scheduler drift. Suppresses the out-of-window
-          # duplicate cron (the one for the opposing DST season).
-          in_window = (weekday < 5) and (
-              (hour == 8) or
-              (hour == 9) or
-              (hour == 10 and minute <= 30)
-          )
-          print(f"NY time: {now.strftime('%H:%M')} weekday={weekday} in_window={in_window}")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"run={'true' if in_window else 'false'}\n")
-
-          if not in_window:
-              print("Outside 8:00-10:30 AM ET window — skipping run.")
+          print(f"run={should_run} ({reason})")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("run=" + ("true" if should_run else "false") + "\n")
           PYEOF
 
       - name: Run pipeline
@@ -257,6 +210,18 @@ jobs:
             echo "Required artifacts are missing — aborting commit."
             exit 1
           fi
+
+      - name: Record successful production date
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PYEOF'
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
+          marker.parent.mkdir(parents=True, exist_ok=True)
+          marker.write_text(datetime.now(ZoneInfo("America/New_York")).date().isoformat() + "\n", encoding="utf-8")
+          PYEOF
 
       # ── Commit and push ───────────────────────────────────────────────
       # Uses --no-rebase merge with -X ours to resolve any artifact
@@ -313,6 +278,6 @@ jobs:
           git pull origin "${GITHUB_REF_NAME}" \
             --no-rebase \
             --strategy-option=ours \
-            --no-edit || true
+            --no-edit
 
           git push origin HEAD:"${GITHUB_REF_NAME}"

@@ -87,6 +87,9 @@ class Part6Config:
     hmm_covariance_type: str = "full"
     hmm_n_iter: int = 500
     hmm_min_train_rows: int = 252
+    causal_refit_frequency: int = 63
+    causal_train_window_rows: int = 1260
+    causal_hmm_n_iter: int = 100
     seed: int = 42
 
     # Primary feature set. Features with > _NAN_COVERAGE_THRESHOLD NaN rate
@@ -334,32 +337,17 @@ class RegimeEngine:
         self.feature_cols = self._select_features(df)
         X_raw = df[self.feature_cols].apply(pd.to_numeric, errors="coerce")
 
-        # FIX (Finding 4, Part6 Audit 2026-04):
-        # The original fit() used .dropna() with no fill, while predict()
-        # already applied .ffill(). This asymmetry meant:
-        #   (a) fit() trained on only 782 rows (whatever subset had all features
-        #       non-NaN), while predict() operated on up to 4073 rows;
-        #   (b) the StandardScaler was fitted on a different row distribution
-        #       than what predict() fed to it at inference time.
-        #
-        # Fix: apply ffill().bfill() in fit() before dropna(), matching
-        # predict(). The bfill propagates the earliest observed value of any
-        # FRED-derived series backward to pre-series dates. For regime
-        # classification features (not return labels) this is an acceptable
-        # pragmatic trade-off: the alternative is training on 3 years of data
-        # and classifying 80.8% of history as "unknown". bfill introduces a
-        # mild look-ahead but one that is stable across the slow-moving macro
-        # series in this feature set (credit spreads, yield curves).
-        X_filled = X_raw.ffill().bfill()
+        # Only information observable at or before each timestamp may be used.
+        # Forward fill is causal; backward fill would import future macro releases.
+        X_filled = X_raw.ffill()
         X = X_filled.dropna()
 
         n_before_fill = int(X_raw.dropna().shape[0])
         n_after_fill = int(X.shape[0])
         if n_after_fill > n_before_fill:
             print(
-                f"[Part 6] ffill+bfill in fit() expanded training set from "
-                f"{n_before_fill} → {n_after_fill} rows "
-                f"(+{n_after_fill - n_before_fill} rows recovered)."
+                f"[Part 6] causal forward-fill expanded the usable training set from "
+                f"{n_before_fill} to {n_after_fill} rows."
             )
 
         if len(X) < self.cfg.hmm_min_train_rows:
@@ -417,17 +405,9 @@ class RegimeEngine:
         out.index.name = "Date"
 
         X = df[self.feature_cols].apply(pd.to_numeric, errors="coerce")
-        # Forward-fill FRED-derived macro features before the notna filter.
-        # FRED series (yield curves, credit spreads) are weekly/monthly reporters
-        # valid to carry forward on non-reporting days. Without ffill, ~80% of
-        # rows get regime_label='unknown' because a short-history series like
-        # hy_spread_fred (782 obs) leaves the feature NaN for all earlier dates,
-        # causing every pre-series row to fail the all-notna check.
-        #
-        # NOTE (Finding 4 fix cross-reference): bfill is now also applied in
-        # fit(), so the scaler and HMM train on the same distribution presented
-        # here at inference time.
-        X = X.ffill().bfill()
+        # Forward fill carries already-published macro observations. Never
+        # backward-fill: that would make future releases visible in the past.
+        X = X.ffill()
         mask = X.notna().all(axis=1)
         Xg = X.loc[mask]
         if Xg.empty:
@@ -497,6 +477,68 @@ class RegimeEngine:
         print(f"[Part 6] Regime engine saved to {path}")
 
 
+def build_causal_regime_history(
+    features: pd.DataFrame,
+    cfg: Part6Config,
+) -> Tuple[pd.DataFrame, "RegimeEngine", int]:
+    """Walk-forward regime labels; every row is predicted from strictly prior rows."""
+    names = ["calm", "risk_on", "high_vol", "crisis"]
+    out = pd.DataFrame(index=features.index)
+    out.index.name = "Date"
+    out["regime_label"] = "unknown"
+    out["regime_id"] = -1
+    for name in names:
+        out[f"regime_prob_{name}"] = np.nan
+    out["regime_persistence"] = np.nan
+    out["transition_prob_crisis"] = np.nan
+    out["regime_model_train_end"] = pd.NaT
+    out["regime_is_oos"] = 0
+
+    engine: Optional[RegimeEngine] = None
+    last_refit = -10**9
+    refits = 0
+    start = int(cfg.hmm_min_train_rows)
+    for pos in range(start, len(features)):
+        should_refit = (
+            engine is None
+            or pos - last_refit >= int(cfg.causal_refit_frequency)
+            or pos == len(features) - 1
+        )
+        if should_refit:
+            train_start = max(0, pos - int(cfg.causal_train_window_rows))
+            train = features.iloc[train_start:pos].copy()
+            fit_cfg = dataclasses.replace(cfg, hmm_n_iter=int(cfg.causal_hmm_n_iter))
+            candidate = RegimeEngine(fit_cfg)
+            try:
+                candidate.fit(train)
+            except RuntimeError:
+                continue
+            engine = candidate
+            last_refit = pos
+            refits += 1
+
+        # Build the current row using prior/current observations only so ffill
+        # can carry a published macro value without exposing any future row.
+        current = features.iloc[: pos + 1].ffill().iloc[[-1]]
+        pred = engine.predict(current)
+        for col in pred.columns:
+            out.loc[out.index[pos], col] = pred.iloc[0][col]
+        out.loc[out.index[pos], "regime_model_train_end"] = features.index[pos - 1]
+        out.loc[out.index[pos], "regime_is_oos"] = 1
+
+    if engine is None:
+        raise RuntimeError("Unable to fit any causal regime window.")
+
+    # Persistence is computed only from labels already emitted in chronological order.
+    labels = out["regime_label"].astype(str)
+    out["regime_persistence"] = [
+        np.nan if labels.iloc[i] == "unknown" or i < 2
+        else float((labels.iloc[max(0, i - 9): i + 1] == labels.iloc[i]).mean())
+        for i in range(len(labels))
+    ]
+    return out, engine, refits
+
+
 def compute_regime_conditional_stats(predictions_df: pd.DataFrame, regime_df: pd.DataFrame, target_col: str = "y_rel_tail_voo_vs_ief", prob_col: str = "p_final_cal") -> Dict[str, Dict]:
     from sklearn.metrics import roc_auc_score
 
@@ -532,9 +574,7 @@ def main() -> int:
     features = _load_part0_features(cfg)
     print(f"[Part 6] Loaded {len(features)} rows × {len(features.columns)} features from Part 0")
 
-    engine = RegimeEngine(cfg)
-    engine.fit(features)
-    regime_df = engine.predict(features)
+    regime_df, engine, causal_refits = build_causal_regime_history(features, cfg)
 
     calendar = build_fomc_calendar(features.index)
     regime_df = regime_df.join(calendar, how="left")
@@ -588,6 +628,11 @@ def main() -> int:
                               for row in engine.transition_matrix.tolist()] if engine.transition_matrix is not None else None,
         "regime_distribution": regime_df["regime_label"].value_counts(normalize=True).to_dict(),
         "unknown_rate": round(unknown_rate, 6),
+        "causal_walk_forward": True,
+        "causal_refit_frequency": int(cfg.causal_refit_frequency),
+        "causal_train_window_rows": int(cfg.causal_train_window_rows),
+        "causal_refit_count": int(causal_refits),
+        "regime_history_contract": "each label trained strictly before its timestamp",
         "fomc_dates_included": len(KNOWN_FOMC_DATES_2020_2026),
         "source_part0_dir": cfg.part0_dir,
     }

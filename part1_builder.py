@@ -163,12 +163,50 @@ def _write_json(path: str, obj: Dict) -> None:
         json.dump(obj, f, indent=2)
 
 
+def _expected_completed_market_date() -> pd.Timestamp:
+    """Return the latest weekday whose US cash session should be complete."""
+    now_et = pd.Timestamp.now(tz="America/New_York")
+    candidate = now_et.normalize() if now_et.hour >= 17 else now_et.normalize() - pd.offsets.BDay(1)
+    return pd.bdate_range(end=candidate.tz_localize(None), periods=1)[0].normalize()
+
+
+def _ticker_business_day_ages(data: pd.DataFrame) -> Dict[str, int]:
+    """Age of each raw series before any forward fill or proxy substitution."""
+    expected = _expected_completed_market_date()
+    ages: Dict[str, int] = {}
+    for ticker in REQ_TICKERS:
+        valid = data.index[pd.to_numeric(data[ticker], errors="coerce").notna()]
+        if len(valid) == 0:
+            ages[ticker] = 9999
+            continue
+        last_valid = pd.Timestamp(valid.max()).tz_localize(None).normalize()
+        ages[ticker] = 0 if last_valid >= expected else int(
+            len(pd.bdate_range(last_valid + pd.offsets.BDay(1), expected))
+        )
+    return ages
+
+
 def build_part1_v20(cfg: Part1Config):
     os.makedirs(cfg.out_dir, exist_ok=True)
     H = int(cfg.horizon)
     print(f"-> Building Artifacts (V20_P1_DAILY) | H={H} | Label: rolling {cfg.rolling_quantile_window}d {cfg.tail_quantile:.0%}-quantile (fallback fixed={cfg.tail_threshold:.2%})")
 
     data = _load_prices(cfg)
+
+    # Freshness is measured on raw observations. Forward filling may preserve a
+    # feature row, but it must never make stale market data look current.
+    ticker_age_business_days = _ticker_business_day_ages(data)
+    freshness_limits = {t: (1 if t in {"VOO", "IEF"} else 5) for t in REQ_TICKERS}
+    data_freshness_ok = all(
+        ticker_age_business_days[t] <= freshness_limits[t] for t in REQ_TICKERS
+    )
+    if not data_freshness_ok:
+        stale = {
+            t: {"age": ticker_age_business_days[t], "limit": freshness_limits[t]}
+            for t in REQ_TICKERS
+            if ticker_age_business_days[t] > freshness_limits[t]
+        }
+        print(f"[Part 1] DATA FRESHNESS FAIL-CLOSED: {stale}")
 
     miss_frac = data.isna().mean().to_dict()
     bad = {k: v for k, v in miss_frac.items() if v > cfg.max_missing_frac}
@@ -600,6 +638,9 @@ def build_part1_v20(cfg: Part1Config):
         "missing_frac": miss_frac,
         "max_equal_close_run": stale_report,
         "stale_dropped_rows": int(drop_mask.sum()),
+        "ticker_age_business_days_raw": ticker_age_business_days,
+        "ticker_freshness_limits_business_days": freshness_limits,
+        "data_freshness_ok": bool(data_freshness_ok),
     }
     _write_json(os.path.join(cfg.out_dir, "part1_diagnostics.json"), diag)
 
@@ -618,6 +659,10 @@ def build_part1_v20(cfg: Part1Config):
         "n_X_live": int(len(X_live)),
         "n_y_reg_revealed": int(len(y_reg_revealed)),
         "n_reg_train": int(len(reg_train)),
+        "ticker_age_business_days_raw": ticker_age_business_days,
+        "ticker_freshness_limits_business_days": freshness_limits,
+        "data_freshness_ok": bool(data_freshness_ok),
+        "freshness_measurement": "raw_observations_before_fill_or_substitution",
     }
     _write_json(os.path.join(cfg.out_dir, "part1_meta.json"), meta)
 
