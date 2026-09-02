@@ -25,7 +25,20 @@ jobs:
       # branches, so fatal-name lint is scoped to the new regression tests.
       - run: ruff check --select E9,F63,F7,F82 tests/
       - name: Test causal base rate
-        run: pytest -q tests/test_causal_controls.py::test_causal_base_rate_uses_only_supplied_history
+        shell: bash
+        run: |
+          set +e
+          pytest -q tests/test_causal_controls.py::test_causal_base_rate_uses_only_supplied_history 2>&1 | tee pytest-causal-base-rate.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Causal base-rate failure"
+              echo '~~~text'
+              tail -n 120 pytest-causal-base-rate.log
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
       - name: Test execution lag
         run: pytest -q tests/test_causal_controls.py::test_execution_weights_are_lagged_one_row
       - name: Test imbalanced classification null
