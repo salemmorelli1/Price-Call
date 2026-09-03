@@ -1,0 +1,302 @@
+name: Daily Production Run
+
+# Two UTC schedules cover Eastern daylight/standard time. Runs are serialized,
+# and a committed Eastern-date marker makes the workflow idempotent. A delayed
+# scheduler job still runs; later duplicates skip only after completion.
+on:
+  schedule:
+    - cron: "0 12 * * 1-5"   # 8:00 AM EDT (UTC-4, summer)
+    - cron: "0 13 * * 1-5"   # 8:00 AM EST (UTC-5, winter)
+  workflow_dispatch:          # always available for manual runs
+
+# ── Concurrency guard ────────────────────────────────────────────────────
+# Prevents the daily-backfill and production pipeline from running
+# simultaneously and creating git conflicts on shared artifact files.
+# cancel-in-progress: false ensures a running pipeline is never killed;
+# a new dispatch waits for the current run to finish instead.
+concurrency:
+  group: pricecall-production
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 90
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      PRICECALL_ROOT: ${{ github.workspace }}
+      PRICECALL_STRICT_DRIVE_ONLY: "0"
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── Restore accumulated artifacts before running ──────────────────
+      # FIX (Finding C, Audit 2026-04-21):
+      # actions/checkout always starts with a clean workspace snapshot from
+      # the commit at checkout time. If prediction_log.csv (or other
+      # accumulating artifacts) were updated by a previous run and committed,
+      # they are present in the workspace; but if the commit step was skipped
+      # (e.g., "no artifact changes to commit") the file on disk reflects
+      # only what was in the last commit, not what the last run wrote.
+      #
+      # The authoritative copy of accumulating artifacts lives on the remote.
+      # Fetch and hard-reset these files from origin before the pipeline runs
+      # so Part 3's _upsert_prediction_log appends to the full existing history
+      # rather than starting over from an empty or stale file.
+      #
+      # Paths covered:
+      #   artifacts_part3/prediction_log.csv  — Part 3 live prediction history
+      #   artifacts_part9/live_attribution_report.json — Part 9 live stats
+      #
+      # Strategy: `git fetch` then `git checkout origin/HEAD -- <path>`.
+      # Falls back silently if the file doesn't exist on the remote yet
+      # (first-ever run). Uses `|| true` so a missing remote file is not fatal.
+      - name: Restore accumulating artifacts from remote
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part3/prediction_log.csv \
+            2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part9/live_attribution_report.json \
+            2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+          # FIX (BUG-4, Audit 2026-05-11 — Quant-Guild Part 23):
+          # execution_cost_tape.csv is a daily-accumulating artifact (Part 8
+          # read-then-append). If the previous run's push was partial or the
+          # checkout is behind remote, Part 8 would start from a stale or
+          # empty tape, losing historical execution cost rows. Explicitly
+          # restoring it from origin (same as prediction_log) guarantees Part 8
+          # always appends to the full committed history.
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part8/execution_cost_tape.csv \
+            2>/dev/null || echo "execution_cost_tape.csv not on remote yet — starting fresh."
+          # Also restore signal_log.csv (Part 10 trading bot accumulates this daily).
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part10_bot/signal_log.csv \
+            2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
+          # FIX (F-5, Quant-Guild Part 32 Audit):
+          # v1_final_production_governance.csv is a daily-accumulating artifact:
+          # Part 3 appends one row per run with dedup-on-Date logic at L1659.
+          # Without restoring from origin first, every run starts with an empty
+          # or missing file and the governance history collapses to 1 row.
+          # This restore is the same pattern as prediction_log.csv (already fixed
+          # in Audit 2026-04-21). The governance CSV was inadvertently omitted.
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part3_v1/v1_final_production_governance.csv \
+            2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
+
+      # ── Gate key consistency guard ─────────────────────────────────────
+      # REQUIRED: the gate step writes exactly one output key (currently
+      # "run"). Every downstream if: condition must reference that same key
+      # via steps.gate.outputs.<key>. A mismatch causes those conditions to
+      # evaluate as empty-string (falsy), silently skipping the pipeline
+      # while the workflow still exits green — the exact failure mode that
+      # caused production to stop updating in April 2026.
+      #
+      # This step greps the workflow file at runtime, extracts the key name
+      # written by the gate, and then verifies all downstream references use
+      # that same key. It fails loudly before the gate runs if they disagree.
+      # On any merge or edit to this file, watch for this step in the run log.
+      - name: Verify gate output key is consistent throughout workflow
+        run: |
+          # Derive the workflow file path dynamically from the GitHub-injected
+          # GITHUB_WORKFLOW_REF variable (format: owner/repo/.github/workflows/<file>@ref).
+          # This means the self-check works correctly regardless of what the file
+          # is named or where it is stored — no hardcoded path to keep in sync.
+          WORKFLOW_FILE="${GITHUB_WORKSPACE}/$(echo "${GITHUB_WORKFLOW_REF}" | sed 's|[^/]*/[^/]*/||; s|@.*||')"
+
+          # Extract the key name written by the gate step.
+          # Looks for:  f.write("run=...") or f.write("run_ok=...")
+          WRITTEN_KEY=$(grep -oP '(?<=f\.write\(")[a-z_]+(?==)' "$WORKFLOW_FILE" | head -1)
+          if [ -z "$WRITTEN_KEY" ]; then
+            echo "ERROR: Could not extract gate output key from $WORKFLOW_FILE"
+            exit 1
+          fi
+          echo "Gate writes output key: '${WRITTEN_KEY}'"
+
+          # Count downstream if: conditions referencing the correct key.
+          CORRECT=$(grep -c "steps\.gate\.outputs\.${WRITTEN_KEY}" "$WORKFLOW_FILE" || true)
+          # Count any if: conditions referencing a DIFFERENT gate output key.
+          WRONG=$(grep -cP "steps\.gate\.outputs\.(?!${WRITTEN_KEY})[a-z_]+" "$WORKFLOW_FILE" || true)
+
+          echo "Downstream conditions using '${WRITTEN_KEY}': ${CORRECT}"
+          echo "Downstream conditions using a different key:  ${WRONG}"
+
+          if [ "$WRONG" -ne 0 ]; then
+            echo ""
+            echo "FATAL: gate output key mismatch — downstream steps will be silently skipped."
+            echo "Fix: make every 'steps.gate.outputs.*' reference use the same key as the"
+            echo "     f.write() call in the gate step ('${WRITTEN_KEY}')."
+            grep -nP "steps\.gate\.outputs\." "$WORKFLOW_FILE"
+            exit 1
+          fi
+
+          echo "OK: gate key '${WRITTEN_KEY}' is consistent throughout the workflow."
+
+      # ── Idempotency gate ──────────────────────────────────────────────
+      - name: Check whether today's production run already completed
+        id: gate
+        run: |
+          python - <<'PYEOF'
+          import os
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          if event == "workflow_dispatch":
+              should_run = True
+              reason = "manual dispatch"
+          else:
+              now = datetime.now(ZoneInfo("America/New_York"))
+              today = now.date().isoformat()
+              marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
+              completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+              after_start = now.hour >= 8
+              should_run = now.weekday() < 5 and after_start and completed != today
+              reason = (
+                  f"weekday={now.weekday()} after_08_et={after_start} "
+                  f"completed={completed or 'none'} today={today}"
+              )
+
+          print(f"run={should_run} ({reason})")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("run=" + ("true" if should_run else "false") + "\n")
+          PYEOF
+
+      - name: Run pipeline
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python run_tuesday_prediction.py --force --direct
+
+      - name: Synchronize dashboard
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python sync_dashboard.py --root .
+
+      # ── Artifact verification ─────────────────────────────────────────
+      - name: Verify required artifacts
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        id: verify
+        run: |
+          missing=0
+          for path in \
+            "artifacts_part2_g532/predictions/part2_g532_summary.json" \
+            "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv" \
+            "artifacts_part3/prediction_log.csv" \
+            "artifacts_part3_v1/v1_final_production_tape.csv" \
+            "artifacts_part6/part6_meta.json" \
+            "artifacts_part7/current_target_weights.json" \
+            "artifacts_part8/part8_meta.json" \
+            "artifacts_part8/execution_instructions.json" \
+            "artifacts_part9/live_attribution_report.json" \
+            "artifacts_dashboard/dashboard_snapshot.json" \
+            "index.html"
+          do
+            if [ -f "$path" ]; then
+              echo "OK: $path"
+            else
+              echo "MISSING: $path"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+
+      - name: Run missing=${{ steps.verify.outputs.missing }}
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ steps.verify.outputs.missing }}" != "0" ]; then
+            echo "Required artifacts are missing — aborting commit."
+            exit 1
+          fi
+
+      - name: Record successful production date
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PYEOF'
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
+          marker.parent.mkdir(parents=True, exist_ok=True)
+          marker.write_text(datetime.now(ZoneInfo("America/New_York")).date().isoformat() + "\n", encoding="utf-8")
+          PYEOF
+
+      - name: Record provenance and validate strict JSON
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python artifact_integrity.py --root . --write-pipeline-status
+
+      # ── Commit and push ───────────────────────────────────────────────
+      # Uses --no-rebase merge with -X ours to resolve any artifact
+      # conflicts in favour of the current run's output. Artifact files
+      # are always authoritative from the most-recent run.
+      - name: Commit and push artifacts
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage all artifact outputs, forcing past .gitignore
+          git add -f \
+            artifacts_part2_g532/predictions/ \
+            artifacts_part2a_alpha/predictions/ \
+            artifacts_part3/ \
+            artifacts_part3_v1/ \
+            artifacts_part6/ \
+            artifacts_part7/ \
+            artifacts_part8/ \
+            artifacts_part9/ \
+            artifacts_part10_bot/ \
+            artifacts_dashboard/ \
+            artifacts_manifest.json \
+            index.html
+          git add -f artifacts_part2b_xgb/ 2>/dev/null || true
+          git add -f artifacts_part2c_bnn/ 2>/dev/null || true
+
+          # Skip commit if nothing changed
+          if git diff --cached --quiet; then
+            echo "No artifact changes to commit."
+            exit 0
+          fi
+
+          # FIX (S60): removed [skip ci] from this commit message.
+          #
+          # ROOT CAUSE OF PAGES NOT AUTO-UPDATING:
+          # "[skip ci]" suppresses ALL push-triggered workflows on github.com, including
+          # pages.yml which triggers on: push: branches: ["main"]. Every scheduled
+          # production run committed with [skip ci] → pages.yml never fired → dashboard
+          # stayed stale until Salem manually triggered "Deploy GitHub Pages".
+          #
+          # Removing [skip ci] here causes pages.yml to fire automatically after each
+          # successful production artifact commit, keeping the dashboard current.
+          #
+          # No loop risk: pages.yml only uploads an artifact and calls deploy-pages.
+          # It does NOT commit or push anything to the repo, so there is no cycle.
+          #
+          # daily-backfill.yml retains [skip ci] intentionally: backfill updates only
+          # realized price fields in prediction_log.csv and does not produce new
+          # dashboard-visible decisions. The morning production commit (this workflow)
+          # is the correct and sufficient trigger for a pages redeploy.  [FIX F1/S60]
+          git commit -m "Update daily production artifacts"
+
+          # Pull remote changes, resolving any JSON/CSV conflicts by
+          # keeping the current run's version (ours).
+          git pull origin "${GITHUB_REF_NAME}" \
+            --no-rebase \
+            --strategy-option=ours \
+            --no-edit
+
+          git push origin HEAD:"${GITHUB_REF_NAME}"

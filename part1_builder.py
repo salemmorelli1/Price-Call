@@ -1,0 +1,700 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @title Part 1 — Feature Builder (fixed live locked-14 contract)
+
+from __future__ import annotations
+import sys as _sys
+import os as _os
+
+# ── Colab / environment detection ─────────────────────────────────────────────
+_IN_COLAB = "google.colab" in _sys.modules
+_DRIVE_ROOT = _os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject")
+
+
+def _colab_init(extra_packages=None):
+    """Mount Google Drive (if in Colab) and pip-install any missing packages."""
+    if _IN_COLAB:
+        if not _os.path.exists("/content/drive/MyDrive"):
+            from google.colab import drive
+            drive.mount("/content/drive")
+        _os.makedirs(_DRIVE_ROOT, exist_ok=True)
+        _os.environ.setdefault("PRICECALL_ROOT", _DRIVE_ROOT)
+        _os.environ.setdefault("PRICECALL_STRICT_DRIVE_ONLY", "1")
+        _os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
+    if extra_packages:
+        import importlib, subprocess
+        for pkg in extra_packages:
+            mod = pkg.split("[")[0].replace("-", "_").split("==")[0]
+            try:
+                importlib.import_module(mod)
+            except ImportError:
+                print(f"[setup] pip install {pkg}")
+                subprocess.run([_sys.executable, "-m", "pip", "install", pkg, "-q"],
+                               capture_output=True)
+
+
+
+import json
+import os
+import warnings
+from dataclasses import dataclass
+from datetime import date
+from typing import Dict, Iterable, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+warnings.filterwarnings("ignore")
+
+
+@dataclass(frozen=True)
+class Part1Config:
+    start: str = "2010-01-01"
+    end: str = date.today().strftime("%Y-%m-%d")
+    horizon: int = 1                    # CHANGE: 7-day → 1-day weekday forecast
+    # FIX (Finding 26, Audit 2026-04-21):
+    # Cold-start fallback threshold was -0.015/sqrt(7) = -0.00567 (H=7 formula scaled
+    # down).  For a daily H=1 model the correct base threshold is -0.015.
+    # This fallback only applies to the first rolling_quantile_min_periods=21 rows
+    # before sufficient history exists for the rolling quantile; its impact is minimal
+    # but should be consistent with the rest of the system.
+    tail_threshold: float = -0.015  # H=1 daily cold-start fallback (was -0.015/sqrt(7))
+
+    # ── Rolling quantile label ─────────────────────────────────────────────
+    # Replace the fixed tail_threshold with a backward-looking rolling quantile.
+    # This makes the label stationary across regimes: in high-vol periods the fixed
+    # threshold produced tail_rate ~28-32%; in low-vol periods ~14-16%.
+    # A rolling 20th-percentile threshold fixes the label rate at 20% within any
+    # 63-day window regardless of volatility regime, giving the classifier a
+    # genuinely consistent target.  Strictly backward-looking via shift(1) so day-t
+    # threshold uses only returns through day t-1 — no look-ahead bias.
+    tail_quantile: float = 0.20           # tail label = bottom quantile of excess return
+    rolling_quantile_window: int = 63     # trailing window in trading days (~3 months)
+    rolling_quantile_min_periods: int = 21  # fall back to fixed threshold below this
+
+    main_tickers: Tuple[str, ...] = ("VOO", "IEF", "JNK", "RSP", "QQQ")
+    vix_ticker: str = "^VIX"
+    vix3m_ticker: str = "^VIX3M"
+
+    part0_dir: str = _DRIVE_ROOT + "/artifacts_part0"
+    out_dir: str = _DRIVE_ROOT + "/artifacts_part1"
+    # FIX (Finding 2, Part6 Audit 2026-04):
+    # Part 6 runs before Part 1 in the canonical execution order. Part 1 now
+    # reads Part 6's regime_history.parquet and writes regime_labels_p6.parquet
+    # into artifacts_part1/ so Part 2 can consume it and propagate the HMM
+    # regime label through to the consensus tape and on to Part 7.
+    part6_dir: str = _DRIVE_ROOT + "/artifacts_part6"
+
+    min_reg_rows: int = 500             # CHANGE: more rows needed for stable daily models
+    max_stale_run: int = 3
+    max_missing_frac: float = 0.02
+    allow_ffill_limit: int = 2
+
+
+REQ_TICKERS = ("VOO", "IEF", "JNK", "RSP", "QQQ", "^VIX", "^VIX3M")
+
+
+def _max_consecutive_equal(x: pd.Series) -> int:
+    v = x.dropna().values
+    if len(v) == 0:
+        return 0
+    run = best = 1
+    for i in range(1, len(v)):
+        run = run + 1 if v[i] == v[i - 1] else 1
+        best = max(best, run)
+    return int(best)
+
+
+def _rolling_z(s: pd.Series, window: int = 21) -> pd.Series:
+    mu = s.rolling(window).mean()
+    sd = s.rolling(window).std(ddof=0).replace(0.0, np.nan)
+    return (s - mu) / sd
+
+
+def _downside_vol(r: pd.Series, window: int = 10) -> pd.Series:
+    downside = np.minimum(pd.to_numeric(r, errors="coerce"), 0.0) ** 2
+    return np.sqrt(pd.Series(downside, index=r.index).rolling(window).mean()) * np.sqrt(252.0)
+
+
+def _ensure_date_index(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "Date" in out.columns:
+        out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.tz_localize(None).dt.normalize()
+        out = out.dropna(subset=["Date"]).set_index("Date")
+    elif isinstance(out.index, pd.DatetimeIndex):
+        out.index = pd.to_datetime(out.index, errors="coerce").tz_localize(None).normalize()
+        out = out[~out.index.isna()]
+    else:
+        raise ValueError("Price matrix must have a Date column or DatetimeIndex.")
+    out = out.sort_index()
+    return out
+
+
+def _load_from_part0(cfg: Part1Config) -> Optional[pd.DataFrame]:
+    path = os.path.join(cfg.part0_dir, "close_prices.parquet")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_parquet(path)
+    df = _ensure_date_index(df)
+    missing = [c for c in REQ_TICKERS if c not in df.columns]
+    if missing:
+        return None
+    return df.loc[:, list(REQ_TICKERS)].copy()
+
+
+def _download_prices(cfg: Part1Config) -> pd.DataFrame:
+    tickers = list(cfg.main_tickers) + [cfg.vix_ticker, cfg.vix3m_ticker]
+    raw = yf.download(tickers, start=cfg.start, end=cfg.end, progress=False, auto_adjust=True)
+    data = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
+    data = _ensure_date_index(data)
+    return data.loc[:, list(REQ_TICKERS)].copy()
+
+
+def _load_prices(cfg: Part1Config) -> pd.DataFrame:
+    data = _load_from_part0(cfg)
+    if data is not None:
+        return data
+    return _download_prices(cfg)
+
+
+def _write_json(path: str, obj: Dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+
+
+def _expected_completed_market_date() -> pd.Timestamp:
+    """Return the latest weekday whose US cash session should be complete."""
+    now_et = pd.Timestamp.now(tz="America/New_York")
+    candidate = now_et.normalize() if now_et.hour >= 17 else now_et.normalize() - pd.offsets.BDay(1)
+    return pd.bdate_range(end=candidate.tz_localize(None), periods=1)[0].normalize()
+
+
+def _ticker_business_day_ages(data: pd.DataFrame) -> Dict[str, int]:
+    """Age of each raw series before any forward fill or proxy substitution."""
+    expected = _expected_completed_market_date()
+    ages: Dict[str, int] = {}
+    for ticker in REQ_TICKERS:
+        valid = data.index[pd.to_numeric(data[ticker], errors="coerce").notna()]
+        if len(valid) == 0:
+            ages[ticker] = 9999
+            continue
+        last_valid = pd.Timestamp(valid.max()).tz_localize(None).normalize()
+        ages[ticker] = 0 if last_valid >= expected else int(
+            len(pd.bdate_range(last_valid + pd.offsets.BDay(1), expected))
+        )
+    return ages
+
+
+def build_part1_v20(cfg: Part1Config):
+    os.makedirs(cfg.out_dir, exist_ok=True)
+    H = int(cfg.horizon)
+    print(f"-> Building Artifacts (V20_P1_DAILY) | H={H} | Label: rolling {cfg.rolling_quantile_window}d {cfg.tail_quantile:.0%}-quantile (fallback fixed={cfg.tail_threshold:.2%})")
+
+    data = _load_prices(cfg)
+
+    # Freshness is measured on raw observations. Forward filling may preserve a
+    # feature row, but it must never make stale market data look current.
+    ticker_age_business_days = _ticker_business_day_ages(data)
+    freshness_limits = {t: (1 if t in {"VOO", "IEF"} else 5) for t in REQ_TICKERS}
+    data_freshness_ok = all(
+        ticker_age_business_days[t] <= freshness_limits[t] for t in REQ_TICKERS
+    )
+    if not data_freshness_ok:
+        stale = {
+            t: {"age": ticker_age_business_days[t], "limit": freshness_limits[t]}
+            for t in REQ_TICKERS
+            if ticker_age_business_days[t] > freshness_limits[t]
+        }
+        print(f"[Part 1] DATA FRESHNESS FAIL-CLOSED: {stale}")
+
+    miss_frac = data.isna().mean().to_dict()
+    bad = {k: v for k, v in miss_frac.items() if v > cfg.max_missing_frac}
+    if bad:
+        print(f"⚠️ Missingness warning (> {cfg.max_missing_frac:.0%}): {bad}")
+
+    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Substitute fallback prices for non-core
+    # tickers that are all-NaN due to transient download failures (e.g., SQLite lock
+    # contention in yfinance's cache layer). RSP had 100% NaN on 2026-06-13 because
+    # OperationalError('database is locked') during yf.download(threads=True).
+    #
+    # Without this fix: data.dropna(subset=REQ_TICKERS) at line 179 drops ALL rows
+    # (since RSP is in REQ_TICKERS and is all-NaN) → X_live is empty → crash at line 303
+    # with AttributeError: 'NaTType' object has no attribute 'normalize'.
+    #
+    # Fallback policy:
+    #   RSP → VOO: breadth = log(VOO/VOO) = 0 (neutral; RSP ≈ equal-weight S&P 500)
+    #   JNK → IEF: credit_spread = log(IEF/IEF) = 0 (neutral; JNK ≈ high-yield proxy)
+    #   QQQ → VOO: tech_relative = log(VOO/VOO) = 0 (neutral; QQQ ≈ growth proxy)
+    #   ^VIX3M → ^VIX: vix_term = VIX/VIX = 1 (neutral term structure)
+    #
+    # Threshold: > 80% NaN is unambiguous download failure. Partial NaN (e.g. 17% for
+    # JNK which launched in 2007) is expected history-start behavior — not substituted.
+    _NON_CORE_FALLBACKS = [
+        ("RSP",    "VOO",        "breadth features → neutral (log=0)"),
+        ("JNK",    "IEF",        "credit_spread features → neutral (log=0)"),
+        ("QQQ",    "VOO",        "tech_relative features → neutral (log=0)"),
+        ("^VIX3M", "^VIX",      "vix_term → 1 (no term structure signal)"),
+    ]
+    for _tk, _sub, _desc in _NON_CORE_FALLBACKS:
+        if _tk in data.columns and _sub in data.columns:
+            _nan_frac = float(data[_tk].isna().mean())
+            if _nan_frac > 0.80:
+                print(
+                    f"[Part 1] WARNING: {_tk} is {_nan_frac:.1%} NaN (likely download failure). "
+                    f"Substituting {_sub} as fallback. Effect: {_desc}."
+                )
+                data[_tk] = data[_sub].copy()
+
+    data = data.ffill(limit=cfg.allow_ffill_limit)
+
+    # FIX (F2, Quant-Guild S61 Audit):
+    #
+    # ROOT CAUSE OF CONTINUED FROZEN asof_date AFTER S61 F1:
+    # The S61 F1 fix (lines 218-289) addressed the case where yfinance returns
+    # FROZEN/IDENTICAL prices for secondary tickers — the staleness drop guard
+    # was restricted to core tickers only, preserving recent rows.
+    #
+    # However, yfinance also alternates to a second failure mode: returning
+    # outright NaN (missing data) for the same secondary tickers (JNK, ^VIX3M).
+    # This is a DIFFERENT path that hits BEFORE the staleness check:
+    #   Line 211: ffill(limit=2) fills only 2 consecutive NaN days.
+    #   Line 212: dropna(subset=REQ_TICKERS) drops ALL rows where any required
+    #             ticker is still NaN after the 2-day fill.
+    # If JNK or ^VIX3M has been NaN for 3+ consecutive days, those rows survive
+    # the 2-day ffill as NaN and are then dropped at line 212. The data ends at
+    # the last day where all REQ_TICKERS were non-NaN, freezing asof_date at
+    # that day regardless of how much time has passed.
+    #
+    # Evidence: after S61 F1 deployed (Aug 5), asof_date advanced exactly one
+    # day (Jul 22 → Jul 23) then froze again. Jul 23 was the last day covered
+    # by the 2-day ffill from Jul 22 (the last valid JNK/VIX3M date). Jul 24+
+    # remained NaN beyond the ffill limit and were dropped at line 212.
+    #
+    # FIX: Apply a second, targeted ffill pass for non-core tickers only,
+    # with a 20-business-day limit. This is applied AFTER the existing 2-day
+    # global ffill and BEFORE the dropna, so:
+    #   - Core tickers (VOO, IEF): still only get 2-day ffill. Any NaN in core
+    #     tickers beyond 2 days correctly signals a serious data failure and
+    #     drops those rows (protecting training data integrity for the signal).
+    #   - Non-core tickers (JNK, ^VIX3M, RSP, QQQ): get up to 20-day ffill.
+    #     A secondary ticker missing for up to 4 weeks produces flat/stale
+    #     feature values for those features, which degrades signal quality but
+    #     does not suppress the live prediction date.
+    #
+    # 20 days (4 weeks) covers all realistic yfinance outage durations for
+    # these secondary tickers without creating unbounded stale-fill risk.
+    # The existing non-core fallback (lines 195-209) handles the extreme case
+    # of >80% NaN (complete download failure) via ticker substitution; this
+    # fix handles the moderate case of partial NaN gaps (days to weeks).
+    #
+    # Combined with S61 F1 (frozen-price case), these two fixes make Part 1
+    # robust to all observed yfinance secondary-ticker failure modes.  [FIX F2/S61]
+    _NON_CORE_EXTENDED_FFILL = [t for t in ["JNK", "^VIX3M", "RSP", "QQQ"] if t in data.columns]
+    _NON_CORE_FFILL_LIMIT = 20  # 4 weeks — covers all realistic yfinance outage durations
+    if _NON_CORE_EXTENDED_FFILL:
+        _pre_fill_nan = {t: int(data[t].isna().sum()) for t in _NON_CORE_EXTENDED_FFILL}
+        data[_NON_CORE_EXTENDED_FFILL] = data[_NON_CORE_EXTENDED_FFILL].ffill(limit=_NON_CORE_FFILL_LIMIT)
+        _post_fill_nan = {t: int(data[t].isna().sum()) for t in _NON_CORE_EXTENDED_FFILL}
+        _filled = {t: _pre_fill_nan[t] - _post_fill_nan[t] for t in _NON_CORE_EXTENDED_FFILL if _pre_fill_nan[t] > _post_fill_nan[t]}
+        if _filled:
+            print(
+                f"[Part 1] Extended ffill (limit={_NON_CORE_FFILL_LIMIT}) filled NaN gaps "
+                f"in non-core tickers: {_filled}. asof_date preserved.  [FIX F2/S61]"
+            )
+
+    data = data.dropna(subset=list(REQ_TICKERS)).copy()
+
+    stale_report = {t: _max_consecutive_equal(data[t]) for t in REQ_TICKERS}
+    stale_tickers = {t: r for t, r in stale_report.items() if r > cfg.max_stale_run}
+    drop_mask = pd.Series(False, index=data.index)
+
+    # FIX (F1, Quant-Guild S61 Audit):
+    #
+    # ROOT CAUSE OF FROZEN asof_date:
+    # The prior staleness drop applied to ALL tickers in REQ_TICKERS, including
+    # non-core secondary tickers (JNK, ^VIX3M, RSP, QQQ). When yfinance returns
+    # stale/repeated prices for a secondary ticker — as JNK and ^VIX3M did from
+    # 2026-07-23 onward — the rolling drop_mask fires for every row in the stale
+    # run. With 9 consecutive stale days (Jul 23–Aug 4), all 9 rows are dropped
+    # from `data`. The last remaining row becomes Jul 22, which is then written
+    # as asof_date. Every downstream part (Part 2, Part 3, prediction_log) reads
+    # that frozen date and the system appears permanently stale.
+    #
+    # The staleness guard was designed to exclude isolated mid-history data-vendor
+    # outages from TRAINING. It was never intended to suppress the LIVE prediction
+    # date when a secondary ticker has a current data gap — the core tickers VOO
+    # and IEF remain fresh and are the only tickers whose staleness makes the
+    # training data genuinely unreliable.
+    #
+    # TWO-PART FIX:
+    #
+    # 1. Restrict row-drops to CORE tickers only (VOO, IEF).
+    #    Non-core tickers (JNK, ^VIX3M, RSP, QQQ) report staleness as a WARNING
+    #    but do NOT drop rows. Their stale values are forward-filled at line 211
+    #    already; the resulting features are less informative but not wrong.
+    #    A secondary ticker going stale should degrade signal quality, not kill
+    #    the entire live prediction capability.
+    #
+    # 2. Protect the most recent STALE_LIVE_PROTECTION_DAYS business days from
+    #    any drop, regardless of ticker. The live prediction date must always
+    #    be today or the most recent business day — never frozen weeks in the past.
+    #    The protection window (20 days, 4 weeks) is wide enough to cover any
+    #    realistic data-vendor gap while still allowing legitimate mid-history
+    #    stale-data exclusion for training rows.
+    #
+    # Safety properties:
+    #   - Core-ticker stale rows in the middle of history are still dropped (same
+    #     as before), protecting training data quality for VOO/IEF.
+    #   - Non-core stale rows in the middle of history are now kept (changed),
+    #     but their forward-filled values have been in place since the ffill at
+    #     line 211, so the feature values are unchanged — only the row-drop
+    #     decision is different.
+    #   - Recent rows (last 20 bdays) are never dropped regardless of ticker,
+    #     ensuring asof_date always reflects the most recent available data.
+    #   - The printed staleness warning still fires for all tickers exceeding
+    #     max_stale_run so operator visibility is unchanged.  [FIX F1/S61]
+    _CORE_TICKERS = {"VOO", "IEF"}   # only core staleness should drop rows
+    _STALE_LIVE_PROTECTION_DAYS = 20  # never drop the most recent N business days
+
+    if stale_tickers:
+        print(f"⚠️ Staleness warning: {stale_tickers}")
+        core_stale = {t for t in stale_tickers if t in _CORE_TICKERS}
+        noncore_stale = {t: r for t, r in stale_tickers.items() if t not in _CORE_TICKERS}
+        if noncore_stale:
+            print(
+                f"[Part 1] Non-core staleness ({noncore_stale}) — rows kept; "
+                f"secondary tickers forward-filled. asof_date will not be affected.  [FIX F1/S61]"
+            )
+        for t in core_stale:  # only drop for core tickers
+            r0 = (np.log(data[t]).diff() == 0.0)
+            drop_mask |= (r0.rolling(cfg.max_stale_run + 1).sum() >= cfg.max_stale_run + 1)
+        # Never drop the most recent STALE_LIVE_PROTECTION_DAYS rows regardless of ticker
+        if len(data) > _STALE_LIVE_PROTECTION_DAYS:
+            protect_cutoff = data.index[-_STALE_LIVE_PROTECTION_DAYS]
+            n_protected = int((drop_mask & (data.index >= protect_cutoff)).sum())
+            if n_protected > 0:
+                print(
+                    f"[Part 1] Staleness guard: protecting {n_protected} recent row(s) "
+                    f"(on/after {protect_cutoff.date()}) from drop to preserve live "
+                    f"prediction date.  [FIX F1/S61]"
+                )
+            drop_mask.loc[data.index >= protect_cutoff] = False
+        data = data.loc[~drop_mask].copy()
+
+    logp = np.log(data)
+    voo_r1 = logp["VOO"].diff()
+    ief_r1 = logp["IEF"].diff()
+    jnk_r1 = logp["JNK"].diff()
+    rsp_r1 = logp["RSP"].diff()
+    qqq_r1 = logp["QQQ"].diff()
+    vix_r1 = logp[cfg.vix_ticker].diff()
+    vix3m_r1 = logp[cfg.vix3m_ticker].diff()
+
+    spread_r1 = voo_r1 - ief_r1
+    credit_spread = np.log(data["JNK"] / data["IEF"])
+    credit_spread_r1 = credit_spread.diff()
+    breadth = np.log(data["RSP"] / data["VOO"])
+    tech_relative = np.log(data["QQQ"] / data["VOO"])
+    vix_term = data[cfg.vix_ticker] / (data[cfg.vix3m_ticker] + 1e-9)
+
+    vix_z21 = _rolling_z(data[cfg.vix_ticker], 21)
+    credit_spread_z21 = _rolling_z(credit_spread, 21)
+    breadth_z21 = _rolling_z(breadth, 21)
+    tech_relative_z21 = _rolling_z(tech_relative, 21)
+
+    # Auxiliary regime inputs kept outside the 14-feature contract but written
+    # for Part 2 compatibility and Part 2A downstream use.
+    vix_term_z21 = _rolling_z(vix_term, 21)
+    spread_ret21 = spread_r1.rolling(21).sum()
+    voo_downside_vol10 = _downside_vol(voo_r1, 10)
+
+    excess_vol10 = spread_r1.rolling(10).std() * np.sqrt(252.0)
+    excess_vol10_z21 = _rolling_z(excess_vol10, 21)
+    voo_downside_vol10_z21 = _rolling_z(voo_downside_vol10, 21)
+
+    stress_score_raw = (
+        0.30 * vix_z21
+        + 0.18 * vix_term_z21
+        + 0.18 * credit_spread_z21
+        + 0.16 * excess_vol10_z21
+        + 0.10 * voo_downside_vol10_z21
+        - 0.04 * breadth_z21
+        - 0.04 * tech_relative_z21
+    )
+    stress_score_change5 = stress_score_raw.diff(5)
+
+    # Fixed live locked-14 feature schema
+    X = pd.DataFrame(index=data.index)
+    X["voo_vol10"] = voo_r1.rolling(10).std() * np.sqrt(252.0)
+    X["excess_vol10"] = excess_vol10
+    X["vix_mom5"] = data[cfg.vix_ticker].diff(5)
+    X["alpha_credit_spread"] = credit_spread
+    X["alpha_credit_accel"] = credit_spread.diff().diff()
+    X["alpha_vix_term"] = vix_term
+    X["alpha_breadth"] = breadth
+    X["alpha_tech_relative"] = tech_relative
+    X["stress_score_raw"] = stress_score_raw
+    X["stress_score_change5"] = stress_score_change5
+    X["vix_z21"] = vix_z21
+    X["credit_spread_z21"] = credit_spread_z21
+    X["breadth_z21"] = breadth_z21
+    X["tech_relative_z21"] = tech_relative_z21
+
+    X_live = X.dropna().copy()
+    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Explicit guard for empty X_live.
+    # Without the non-core fallback substitution above, a single all-NaN ticker in
+    # REQ_TICKERS causes X.dropna() to produce 0 rows, and X_live.index.max() returns
+    # NaT. pd.Timestamp(NaT).normalize() then raises AttributeError with no useful
+    # diagnostic. This guard surfaces the actual per-feature NaN rates so the operator
+    # can diagnose which ticker(s) caused the failure.
+    if len(X_live) == 0:
+        _nan_rates = X.isna().mean().sort_values(ascending=False)
+        raise RuntimeError(
+            f"[Part 1] FATAL: X_live is empty after dropna() — all {len(X)} rows have "
+            f"at least one NaN feature. This usually means a ticker download failed.\n"
+            f"Per-feature NaN rates (top 5):\n{_nan_rates.head(5).to_string()}\n"
+            f"Check Part 0 output for download errors (e.g. SQLite lock on yfinance cache)."
+        )
+    # NOTE: 14-feature contract is unchanged — same features, different horizon
+    if len(X_live.columns) != 14:
+        raise RuntimeError(f"Part 1 locked contract expects 14 features, found {len(X_live.columns)}.")
+
+    X_live.to_parquet(os.path.join(cfg.out_dir, "X_features.parquet"))
+
+    # FIX (Finding 2, Part6 Audit 2026-04):
+    # Write regime_labels_p6.parquet so Part 2 can use Part 6's HMM regime
+    # labels as the canonical regime source instead of its own internal GMM.
+    #
+    # Design:
+    #   - Reads artifacts_part6/regime_history.parquet (written by Part 6).
+    #   - Left-joins on the X_live date index so coverage exactly matches the
+    #     Part 1 feature set. Rows where Part 6 has "unknown" remain "unknown"
+    #     and Part 2 falls back to its internal GMM for those dates.
+    #   - Writes a thin file: Date + regime_label + regime_id +
+    #     regime_persistence + transition_prob_crisis.
+    #   - Skips gracefully (with a warning) if regime_history.parquet is absent,
+    #     so the pipeline can still run on the first cold-start before Part 6 has
+    #     ever executed. Part 2 treats a missing file as all-unknown and uses its
+    #     own GMM throughout.
+    _p6_regime_path = os.path.join(cfg.part6_dir, "regime_history.parquet")
+    _p6_regime_cols = ["regime_label", "regime_id", "regime_persistence", "transition_prob_crisis"]
+    if os.path.exists(_p6_regime_path):
+        try:
+            _reg_hist = pd.read_parquet(_p6_regime_path)
+            _reg_hist.index = pd.to_datetime(_reg_hist.index, errors="coerce")
+            _reg_hist = _reg_hist[~_reg_hist.index.isna()].sort_index()
+            # Keep only columns that exist in the parquet (future-proof)
+            _keep = [c for c in _p6_regime_cols if c in _reg_hist.columns]
+            _reg_out = X_live[[]].join(_reg_hist[_keep], how="left")
+            # Fill any dates not covered by Part 6 with "unknown" / -1 / NaN
+            if "regime_label" in _reg_out.columns:
+                _reg_out["regime_label"] = _reg_out["regime_label"].fillna("unknown")
+            if "regime_id" in _reg_out.columns:
+                _reg_out["regime_id"] = pd.to_numeric(_reg_out["regime_id"], errors="coerce").fillna(-1).astype(int)
+            _reg_out.index.name = "Date"
+            _reg_out.reset_index().to_parquet(os.path.join(cfg.out_dir, "regime_labels_p6.parquet"), index=False)
+            _n_known = int((_reg_out.get("regime_label", pd.Series(["unknown"] * len(_reg_out))) != "unknown").sum())
+            _n_total = len(_reg_out)
+            print(f"[Part 1] Wrote regime_labels_p6.parquet: {_n_known}/{_n_total} dates have a non-unknown Part 6 HMM regime label.")
+        except Exception as _p6_exc:
+            print(f"[Part 1] WARNING: Could not merge Part 6 regime labels: {_p6_exc}")
+            print("[Part 1] regime_labels_p6.parquet not written; Part 2 will use its internal GMM.")
+    else:
+        print(
+            f"[Part 1] NOTE: {_p6_regime_path} not found. "
+            "Part 6 may not have run yet. Part 2 will use its internal GMM as fallback. "
+            "Re-run Part 1 after Part 6 to propagate HMM regime labels."
+        )
+
+    last_feature_date = pd.Timestamp(X_live.index.max()).normalize()
+    with open(os.path.join(cfg.out_dir, "asof_date.txt"), "w", encoding="utf-8") as f:
+        f.write(last_feature_date.strftime("%Y-%m-%d"))
+    print(f"AS-OF DATE WRITTEN: {last_feature_date.strftime('%Y-%m-%d')}")
+
+    px_voo = data["VOO"].astype(float)
+    px_ief = data["IEF"].astype(float)
+
+    fwd_voo = np.log(px_voo).shift(-H) - np.log(px_voo)
+    fwd_ief = np.log(px_ief).shift(-H) - np.log(px_ief)
+    excess_ret = fwd_voo - fwd_ief
+
+    # ── Label: rolling quantile threshold (stationary across regimes) ────────
+    # Compute the trailing rolling_quantile_window-day quantile of excess_ret,
+    # shifted by 1 day so the threshold for day t uses only days t-window to t-1.
+    # Days with insufficient history (< rolling_quantile_min_periods) fall back to
+    # the fixed tail_threshold so the label is always populated.
+    rolling_thr = (
+        excess_ret
+        .rolling(cfg.rolling_quantile_window, min_periods=cfg.rolling_quantile_min_periods)
+        .quantile(cfg.tail_quantile)
+        .shift(1)                      # strictly backward-looking: no day-t info
+    )
+    # Cold-start fill: use fixed threshold where rolling is NaN
+    dynamic_threshold = rolling_thr.where(rolling_thr.notna(), cfg.tail_threshold)
+
+    y_rel_tail = (excess_ret < dynamic_threshold).astype(float)
+    y_rel_tail[excess_ret.isna()] = np.nan
+
+    y_labels = pd.DataFrame(
+        {
+            "fwd_voo": fwd_voo,
+            "fwd_ief": fwd_ief,
+            "excess_ret": excess_ret,
+            "y_voo": y_rel_tail,
+            "y_rel_tail_voo_vs_ief": y_rel_tail,
+            "tail_threshold_dynamic": dynamic_threshold,  # written for transparency; not used by downstream
+        },
+        index=data.index,
+    )
+
+    y_revealed = y_labels.dropna(subset=["y_rel_tail_voo_vs_ief"]).copy()
+    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief", "tail_threshold_dynamic"]].to_parquet(
+        os.path.join(cfg.out_dir, "y_labels_revealed.parquet")
+    )
+    y_revealed[["y_rel_tail_voo_vs_ief", "excess_ret", "fwd_voo", "fwd_ief", "tail_threshold_dynamic"]].to_parquet(
+        os.path.join(cfg.out_dir, "y_labels_revealed_aligned.parquet")
+    )
+    y_labels.to_parquet(os.path.join(cfg.out_dir, "y_labels_full.parquet"))
+
+    px_voo_fwd = px_voo * np.exp(fwd_voo)
+    px_ief_fwd = px_ief * np.exp(fwd_ief)
+
+    y_reg = pd.DataFrame(
+        {
+            "px_voo_t": px_voo,
+            "px_ief_t": px_ief,
+            "fwd_voo": fwd_voo,
+            "fwd_ief": fwd_ief,
+            "fwd_spread": excess_ret,
+            "px_voo_fwd": px_voo_fwd,
+            "px_ief_fwd": px_ief_fwd,
+        },
+        index=data.index,
+    )
+
+    y_reg_revealed = y_reg.dropna(subset=["fwd_voo", "fwd_ief", "px_voo_fwd", "px_ief_fwd"]).copy()
+    if len(data) >= (H + 1) and len(y_reg_revealed):
+        max_ok_date = data.index[-(H + 1)]
+        if y_reg_revealed.index.max() > max_ok_date:
+            raise RuntimeError(f"LEAKAGE GUARD: y_reg_revealed extends past {max_ok_date.date()}")
+
+    y_reg_revealed.to_parquet(os.path.join(cfg.out_dir, "y_reg_revealed.parquet"))
+    y_reg.to_parquet(os.path.join(cfg.out_dir, "y_reg_full.parquet"))
+
+    reg_train = X_live.join(y_reg_revealed, how="inner")
+    if len(reg_train) < cfg.min_reg_rows:
+        raise RuntimeError(f"Too few regression training rows: {len(reg_train)}")
+    if reg_train[X_live.columns].isna().any().any():
+        raise RuntimeError("NaNs in regression training features.")
+    reg_train.to_parquet(os.path.join(cfg.out_dir, "regression_train.parquet"))
+
+    pd.DataFrame({"px_voo_t": px_voo, "px_ief_t": px_ief}, index=data.index).loc[X_live.index].to_parquet(
+        os.path.join(cfg.out_dir, "price_calls_live_snapshot.parquet")
+    )
+    data[["VOO"]].rename(columns={"VOO": "px"}).loc[X_live.index].to_parquet(
+        os.path.join(cfg.out_dir, "target_prices_snapshot.parquet")
+    )
+
+    # Optional compatibility artifacts consumed by Part 2 and Part 2A
+    factor_returns = pd.DataFrame(
+        {
+            "voo_r1": voo_r1,
+            "ief_r1": ief_r1,
+            "spread_r1": spread_r1,
+            "jnk_r1": jnk_r1,
+            "rsp_r1": rsp_r1,
+            "qqq_r1": qqq_r1,
+            "vix_r1": vix_r1,
+            "vix3m_r1": vix3m_r1,
+            "credit_spread_r1": credit_spread_r1,
+            "vix_term_z21": vix_term_z21,
+            "spread_ret21": spread_ret21,
+            "voo_downside_vol10": voo_downside_vol10,
+        },
+        index=data.index,
+    ).dropna(how="all")
+    factor_returns.to_parquet(os.path.join(cfg.out_dir, "factor_returns.parquet"))
+
+    benchmark_returns = pd.DataFrame(
+        {
+            "bench_voo": voo_r1,
+            "bench_ief": ief_r1,
+            "bench_60_40": 0.60 * voo_r1 + 0.40 * ief_r1,
+            "bench_excess_voo_minus_ief": spread_r1,
+        },
+        index=data.index,
+    ).dropna(how="all")
+    benchmark_returns.to_parquet(os.path.join(cfg.out_dir, "benchmark_returns.parquet"))
+
+    diag = {
+        "date_min_data": str(data.index.min().date()),
+        "date_max_data": str(data.index.max().date()),
+        "n_data": int(len(data)),
+        "n_X_live": int(len(X_live)),
+        "n_y_reg_revealed": int(len(y_reg_revealed)),
+        "n_reg_train": int(len(reg_train)),
+        "n_rows_lost_join": int(len(X_live) - len(reg_train)),
+        "missing_frac": miss_frac,
+        "max_equal_close_run": stale_report,
+        "stale_dropped_rows": int(drop_mask.sum()),
+        "ticker_age_business_days_raw": ticker_age_business_days,
+        "ticker_freshness_limits_business_days": freshness_limits,
+        "data_freshness_ok": bool(data_freshness_ok),
+    }
+    _write_json(os.path.join(cfg.out_dir, "part1_diagnostics.json"), diag)
+
+    meta = {
+        "part": "part1",
+        "version": "V20_P1_DAILY",
+        "asof_date": last_feature_date.strftime("%Y-%m-%d"),
+        "horizon": H,
+        "tail_threshold": float(cfg.tail_threshold),
+        "tail_label_name": "y_rel_tail_voo_vs_ief",
+        "tail_label_mode": "rolling_quantile",      # was "fixed_threshold"
+        "tail_quantile": float(cfg.tail_quantile),
+        "rolling_quantile_window": int(cfg.rolling_quantile_window),
+        "feature_cols": list(X_live.columns),
+        "reg_target_cols": list(y_reg_revealed.columns),
+        "n_X_live": int(len(X_live)),
+        "n_y_reg_revealed": int(len(y_reg_revealed)),
+        "n_reg_train": int(len(reg_train)),
+        "ticker_age_business_days_raw": ticker_age_business_days,
+        "ticker_freshness_limits_business_days": freshness_limits,
+        "data_freshness_ok": bool(data_freshness_ok),
+        "freshness_measurement": "raw_observations_before_fill_or_substitution",
+    }
+    _write_json(os.path.join(cfg.out_dir, "part1_meta.json"), meta)
+
+    tail_rate = float(y_revealed["y_rel_tail_voo_vs_ief"].mean()) if len(y_revealed) else float("nan")
+    print(f"✅ V20_P1_DAILY COMPLETE | Tail base rate (revealed): {tail_rate:.2%}")
+    print("Wrote: X_features.parquet, y_labels_revealed.parquet, y_labels_full.parquet,")
+    print("       y_reg_revealed.parquet, y_reg_full.parquet, regression_train.parquet,")
+    print("       price_calls_live_snapshot.parquet, target_prices_snapshot.parquet,")
+    print("       factor_returns.parquet, benchmark_returns.parquet,")
+    print("       asof_date.txt, part1_meta.json, part1_diagnostics.json")
+
+    return {
+        "out_dir": cfg.out_dir,
+        "asof_date": last_feature_date.strftime("%Y-%m-%d"),
+        "n_X_live": int(len(X_live)),
+        "n_y_reg_revealed": int(len(y_reg_revealed)),
+        "n_reg_train": int(len(reg_train)),
+        "tail_rate": tail_rate,
+        "feature_count": int(len(X_live.columns)),
+    }
+
+
+def main():
+    cfg = Part1Config()
+    summary = build_part1_v20(cfg)
+    print("\nPart 1 summary:", summary)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+

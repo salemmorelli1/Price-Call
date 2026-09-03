@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Voo Price Call Lab</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: transparent !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --main-surface-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --red: light-dark(rgb(186 38 35), rgb(250 66 62));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-visualize-standalone] {
+  background-color: var(--background) !important;
+}
+
+/* Generic mobile code-block hosts provide light/dark mode but no series palette.
+   AppBlock hosts set all six variables themselves. */
+:root:not([data-app-block-surface]) {
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(#f3883b, #f59a56);
+  --viz-series-3: light-dark(#5dc977, #74d58b);
+  --viz-series-4: light-dark(#eb77b1, #f08fc0);
+  --viz-series-5: light-dark(#9b79ec, #aa91ef);
+  --viz-series-6: light-dark(#3ab9b1, #5acbc2);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+:root:not([data-app-block-surface]) > body {
+  padding: 12px;
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget > :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The bundled tooltip runtime owns [data-tooltip]. AppBlock's CSS-only
+   pseudo-tooltip can widen dense grids even while hidden. */
+main [data-tooltip]::after {
+  content: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--interactive-label-primary-default, var(--primary-foreground));
+  background: var(--interactive-bg-primary-default, var(--foreground));
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(
+    in srgb,
+    var(--interactive-label-primary-default, var(--primary-foreground)) 50%,
+    transparent
+  );
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+</style>
+</head>
+<body>
+<div id="price-call-lab" data-theme="dark">
+  <style>
+    #price-call-lab{--bg:#050b12;--panel:#0b1622;--panel2:#0e1c2a;--line:#20374a;--text:#edf7ff;--muted:#92a9bc;--cyan:#55d6e8;--amber:#ffb84d;--violet:#9d7cff;--green:#49d6a0;--red:#ff6b6b;--shadow:0 24px 70px rgba(0,0,0,.34);min-height:100vh;background:radial-gradient(circle at 84% 4%,rgba(85,214,232,.10),transparent 26rem),radial-gradient(circle at 10% 30%,rgba(157,124,255,.09),transparent 26rem),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+    #price-call-lab *{box-sizing:border-box} #price-call-lab a{color:inherit;text-decoration:none} #price-call-lab button,#price-call-lab select{font:inherit}
+    #price-call-lab .shell{width:min(1440px,calc(100% - 32px));margin:auto;padding:18px 0 42px}
+    #price-call-lab .topbar{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 4px 16px;gap:16px}
+    #price-call-lab .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em} #price-call-lab .mark{width:28px;height:28px;border:1px solid var(--cyan);border-radius:50%;position:relative;box-shadow:0 0 24px rgba(85,214,232,.3)}
+    #price-call-lab .mark:after{content:"";position:absolute;left:7px;top:-3px;width:11px;height:31px;border:2px solid var(--amber);border-width:0 2px;transform:rotate(-26deg);border-radius:50%}
+    #price-call-lab .top-actions{display:flex;flex-wrap:wrap;gap:8px}.btn{border:1px solid var(--line);background:#0a131d;color:var(--text);padding:10px 15px;border-radius:999px;font-weight:800;cursor:pointer;transition:.18s ease}.btn:hover,.btn:focus-visible{transform:translateY(-1px);border-color:var(--cyan);outline:none}.btn.primary{background:var(--amber);border-color:var(--amber);color:#181108}
+    #price-call-lab .hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:44px;align-items:center;padding:74px 4px 52px}
+    #price-call-lab .eyebrow{color:var(--cyan);font-size:.76rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;margin:0 0 16px}
+    #price-call-lab h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(3.4rem,7.4vw,7rem);line-height:.84;letter-spacing:-.065em;margin:0;max-width:820px} #price-call-lab h1 em{display:block;color:var(--amber);font-weight:500}
+    #price-call-lab .lede{max-width:720px;color:#bfd0dd;font-size:1.05rem;margin:28px 0 22px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}.chip{border:1px solid var(--line);background:rgba(11,22,34,.76);border-radius:999px;padding:6px 10px;color:#c8dae7;font-size:.78rem;font-weight:750}.chip i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px}.chip.warn i{background:var(--amber)}
+    #price-call-lab .hero-card{position:relative;min-height:370px;border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(14,28,42,.9),rgba(5,11,18,.98));box-shadow:var(--shadow);overflow:hidden;padding:24px}
+    #price-call-lab .orbital{position:absolute;inset:38px 48px 40px;border:1px dashed rgba(85,214,232,.24);border-radius:50%;animation:spin 28s linear infinite}#price-call-lab .orbital:before,#price-call-lab .orbital:after{content:"";position:absolute;border-radius:50%}.orbital:before{width:150px;height:150px;left:50%;top:50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 36% 33%,#25384b 0 3%,#071019 25%,#010306 68%);box-shadow:0 0 0 14px rgba(157,124,255,.08),0 0 50px rgba(157,124,255,.35)}.orbital:after{width:18px;height:18px;background:var(--amber);left:8%;top:42%;box-shadow:0 0 22px rgba(255,184,77,.85)}@keyframes spin{to{transform:rotate(360deg)}}
+    #price-call-lab .forecast-ticket{position:absolute;left:24px;bottom:24px;border-left:2px solid var(--amber);padding:10px 13px;background:rgba(3,8,14,.82);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem}.forecast-ticket b{font-size:1rem;color:#fff}.maturity-ring{position:absolute;right:24px;top:24px;width:94px;height:94px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--cyan) 0 41.7%,#173044 41.7%);box-shadow:0 0 30px rgba(85,214,232,.12)}.maturity-ring:after{content:"";position:absolute;inset:8px;border-radius:50%;background:#08121c}.maturity-ring span{z-index:1;text-align:center;font-weight:900;font-size:.72rem}.maturity-ring strong{display:block;font-size:1.15rem}
+    #price-call-lab .tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;border:1px solid var(--line);background:#07111a;border-radius:16px;padding:6px;position:sticky;top:8px;z-index:30;box-shadow:0 12px 30px rgba(0,0,0,.24)}.tab{border:0;background:transparent;color:#9db2c4;padding:12px 10px;border-radius:11px;font-weight:850;cursor:pointer}.tab[aria-selected="true"]{background:#edf7ff;color:#07111a}.tab:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+    #price-call-lab .panel{display:none;padding-top:20px}#price-call-lab .panel.active{display:block}.statusline{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:14px;background:rgba(9,19,29,.82);padding:11px 14px;margin-bottom:14px;color:#a9bdcc;font-size:.82rem}.live-dot{color:var(--green);font-weight:850}.live-dot:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);margin-right:7px}
+    #price-call-lab .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:14px}.metric{border:1px solid var(--line);background:linear-gradient(145deg,#0c1926,#08121c);padding:16px;border-radius:16px;min-height:114px}.metric label{display:block;color:#7f98ac;font-size:.67rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:2rem;margin:8px 0 2px;letter-spacing:-.04em}.metric small{color:#8fa7b9}
+    #price-call-lab .grid2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:14px}.card{border:1px solid var(--line);background:linear-gradient(145deg,rgba(14,28,42,.96),rgba(7,16,25,.96));border-radius:18px;padding:18px;box-shadow:0 16px 46px rgba(0,0,0,.12)}.card h2,.card h3{margin:0}.kicker{color:var(--cyan);font-size:.7rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.display{font-family:Georgia,"Times New Roman",serif;font-size:clamp(2rem,4vw,4.4rem);line-height:.98;letter-spacing:-.045em;margin:8px 0 12px}.muted{color:var(--muted)}
+    #price-call-lab .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:#07111a}.seg button{border:0;color:#9fb5c6;background:transparent;border-radius:999px;padding:7px 11px;font-size:.78rem;font-weight:800;cursor:pointer}.seg button.active{background:#dff8ff;color:#061019}.control-label{font-size:.72rem;color:#7891a5;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-right:2px}
+    #price-call-lab .plot{height:520px;min-width:0}.plot.small{height:360px}.chart-note{font-size:.78rem;color:#819aac;margin-top:8px}.stat-table{width:100%;border-collapse:collapse;margin-top:10px}.stat-table th,.stat-table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right}.stat-table th:first-child,.stat-table td:first-child{text-align:left}.stat-table th{color:#8098aa;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em}.stat-table td{font-variant-numeric:tabular-nums;font-weight:730}
+    #price-call-lab .callout{border-left:3px solid var(--amber);background:rgba(255,184,77,.08);padding:14px 16px;border-radius:0 12px 12px 0;color:#dbe9f2}.callout strong{color:var(--amber)}.progress{height:10px;background:#152a3b;border-radius:999px;overflow:hidden;margin:12px 0}.progress span{display:block;height:100%;width:41.7%;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:inherit}.progress.bot-progress{height:16px;border:1px solid #29465d}.progress.bot-progress span{background:linear-gradient(90deg,var(--cyan),var(--green))}
+    #price-call-lab .bot-layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(310px,.75fr);gap:14px}.bot-status{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}.bot-status div{border:1px solid var(--line);background:#07111a;border-radius:12px;padding:11px}.bot-status span{display:block;color:#7f98ac;font-size:.66rem;font-weight:900;letter-spacing:.11em;text-transform:uppercase}.bot-status strong{display:block;margin-top:4px}.bot-stage{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px}.bot-stage div{position:relative;border:1px solid var(--line);background:#07111a;border-radius:13px;padding:12px;min-height:104px}.bot-stage div:after{content:"";position:absolute;right:-9px;top:29px;width:9px;border-top:1px solid var(--line)}.bot-stage div:last-child:after{display:none}.bot-stage b{display:block;color:var(--cyan);font-family:ui-monospace,monospace}.bot-stage .pending b{color:var(--amber)}.bot-stage .locked{opacity:.58}.artifact-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.artifact-links a{border:1px solid var(--line);border-radius:999px;padding:8px 11px;color:#c7dbe8;font-size:.76rem;font-weight:800}.artifact-links a:hover,.artifact-links a:focus-visible{border-color:var(--cyan);outline:none}
+    #price-call-lab .triple{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.stage-list{list-style:none;margin:14px 0 0;padding:0}.stage-list li{display:flex;gap:12px;align-items:flex-start;border-top:1px solid var(--line);padding:12px 0}.stage-list b{color:var(--cyan);font-family:ui-monospace,monospace}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#060d14;border:1px solid var(--line);border-radius:12px;padding:13px;color:#c9ddec;overflow:auto;font-size:.8rem}.report-card{display:grid;grid-template-columns:1.2fr .8fr;gap:28px;align-items:center;min-height:460px}.report-cover{border:1px solid #cdd8df;background:#f8f7f3;color:#111827;border-radius:8px;padding:50px 42px;min-height:520px;box-shadow:0 24px 80px rgba(0,0,0,.34);font-family:Georgia,"Times New Roman",serif}.report-cover small{display:block;text-align:center}.report-cover h2{font-family:Georgia,"Times New Roman",serif;text-align:center;font-size:2.2rem;margin:110px 0 30px}.report-cover p{text-align:center;color:#364152}.report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
+    #price-call-lab footer{display:flex;justify-content:space-between;gap:18px;border-top:1px solid var(--line);margin-top:30px;padding:18px 4px;color:#6f8799;font-size:.75rem}
+    @media(max-width:1100px){#price-call-lab .tabs{overflow-x:auto;grid-template-columns:repeat(7,minmax(150px,1fr))}}
+    @media(max-width:980px){#price-call-lab .hero,#price-call-lab .grid2,#price-call-lab .report-card,#price-call-lab .bot-layout{grid-template-columns:1fr}#price-call-lab .hero{padding-top:44px}#price-call-lab .hero-card{min-height:330px}#price-call-lab .metrics{grid-template-columns:repeat(3,1fr)}#price-call-lab .triple{grid-template-columns:1fr}#price-call-lab .bot-stage{grid-template-columns:1fr}#price-call-lab .bot-stage div:after{display:none}}
+    @media(max-width:620px){#price-call-lab .shell{width:min(100% - 18px,1440px)}#price-call-lab .topbar{align-items:flex-start}#price-call-lab .brand span:last-child{display:none}#price-call-lab .metrics{grid-template-columns:repeat(2,1fr)}#price-call-lab h1{font-size:3.8rem}#price-call-lab .hero-card{min-height:290px}.maturity-ring{width:76px;height:76px}.plot{height:430px}.report-cover{padding:30px 22px}.report-cover h2{margin-top:70px;font-size:1.7rem}footer{flex-direction:column}}
+    @media(prefers-reduced-motion:reduce){#price-call-lab .orbital{animation:none}.btn{transition:none}}
+  </style>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="#price-call-home" aria-label="Price-Call home"><span class="mark" aria-hidden="true"></span><span>Price-Call · VOO Forecasting Laboratory</span></a>
+      <div class="top-actions"><a class="btn primary" href="report/Price_Call_VOO_Forecasting_APA_Report.pdf" target="_blank" rel="noopener">Read the Report</a><a class="btn" href="https://github.com/salemmorelli1/Price-Call" target="_blank" rel="noopener">GitHub ↗</a></div>
+    </header>
+    <main id="price-call-home">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">Auditable one-day ETF research · Project laboratory</p>
+          <h1 id="hero-title">Forecast the <em>next close.</em></h1>
+          <p class="lede">An interactive evidence laboratory for the Price-Call repository: VOO and IEF price paths, tail-risk probabilities, regime controls, portfolio gates, execution assumptions, and live attribution—kept mathematically distinct.</p>
+          <div class="chips"><span class="chip"><i></i>27 persisted calls</span><span class="chip"><i></i>26 realized pairs</span><span class="chip warn"><i></i>Paper-only research</span></div>
+          <div class="top-actions"><button class="btn primary" id="open-explorer" type="button">Open forecast explorer</button><button class="btn" id="open-governance" type="button">Inspect governance</button></div>
+        </div>
+        <div class="hero-card" aria-label="Animated maturity visualization">
+          <div class="orbital" aria-hidden="true"></div>
+          <div class="maturity-ring"><span><strong>25 / 60</strong>live evidence</span></div>
+          <div class="forecast-ticket"><b>Latest committed call</b><br>VOO $702.125 · IEF $93.082<br>Target 2026-08-26 · NORMAL<br>Alpha SHADOW</div>
+        </div>
+      </section>
+      <nav class="tabs" role="tablist" aria-label="Price-Call laboratory sections">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="panel-evidence" id="tab-evidence">Evidence lab</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-explorer" id="tab-explorer">Forecast explorer</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-tail" id="tab-tail">Tail & calibration</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-governance" id="tab-governance">Governance</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-bot" id="tab-bot">Bot progress</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-pipeline" id="tab-pipeline">Pipeline</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-report" id="tab-report">Report</button>
+      </nav>
+      <section class="panel active" id="panel-evidence" role="tabpanel" aria-labelledby="tab-evidence">
+        <div class="statusline"><span>Committed artifact snapshot · August 25, 2026</span><span class="live-dot">Evidence-first interpretation</span></div>
+        <div class="metrics" id="headline-metrics"></div>
+        <div class="grid2">
+          <article class="card"><span class="kicker">All persisted calls</span><h2 class="display">Predicted and realized, together.</h2><div id="overview-chart" class="plot" role="img" aria-label="All VOO and IEF predicted and realized prices"></div><p class="chart-note">Every available prediction is shown. The unresolved August 26 call appears only in the predicted traces.</p></article>
+          <aside class="card"><span class="kicker">Interpretive boundary</span><h2 class="display">Close tracking is not proof of edge.</h2><p class="muted">VOO level correlation is strong, but one-day prices are persistent. The correct test is incremental loss versus same-date persistence, plus directional and tail-event diagnostics.</p><div class="callout"><strong>Current result:</strong> price-level tracking is promising for continued study; directional and tail-classification superiority are not established.</div><h3 style="margin-top:22px">Current governance state</h3><table class="stat-table"><tbody><tr><td>Core tape</td><td>NORMAL</td></tr><tr><td>Alpha sleeve</td><td>SHADOW</td></tr><tr><td>Regime</td><td>calm</td></tr><tr><td>Weights</td><td>VOO .60 / IEF .40</td></tr><tr><td>Live health</td><td>IMMATURE</td></tr></tbody></table></aside>
+        </div>
+      </section>
+      <section class="panel" id="panel-explorer" role="tabpanel" aria-labelledby="tab-explorer">
+        <div class="statusline"><span>Full-history actual-versus-predicted explorer</span><span id="visible-window-label">All realized observations</span></div>
+        <article class="card">
+          <div class="controls"><span class="control-label">Asset</span><div class="seg" data-control="asset"><button class="active" data-value="VOO">VOO</button><button data-value="IEF">IEF</button><button data-value="BOTH">Both</button></div><span class="control-label">Scale</span><div class="seg" data-control="scale"><button class="active" data-value="price">Dollar</button><button data-value="index">Indexed</button><button data-value="error">Error</button></div><span class="control-label">Range</span><div class="seg" data-control="range"><button class="active" data-value="all">All</button><button data-value="30">30D</button><button data-value="60">60D</button></div></div>
+          <div id="explorer-chart" class="plot" role="img" aria-label="Interactive full-history forecast explorer"></div>
+        </article>
+        <div class="metrics" id="window-metrics" style="margin-top:14px"></div>
+        <div class="grid2"><article class="card"><span class="kicker">Signed miss</span><h3>Predicted minus realized</h3><div id="error-chart" class="plot small" role="img" aria-label="Signed forecast errors over time"></div></article><article class="card"><span class="kicker">Fit geometry</span><h3>Realized versus predicted</h3><div id="scatter-chart" class="plot small" role="img" aria-label="Predicted and realized price scatter"></div></article></div>
+      </section>
+      <section class="panel" id="panel-tail" role="tabpanel" aria-labelledby="tab-tail">
+        <div class="metrics"><div class="metric"><label>Backtest AUC</label><strong>0.482</strong><small>Below 0.5 reference</small></div><div class="metric"><label>Rolling-median AUC</label><strong>0.549</strong><small>Current gate statistic</small></div><div class="metric"><label>Live AUC</label><strong>0.167</strong><small>n = 25 snapshot</small></div><div class="metric"><label>Backtest Brier</label><strong>0.164</strong><small>Probability loss</small></div><div class="metric"><label>Live Brier</label><strong>0.071</strong><small>Null = 0.066</small></div><div class="metric"><label>Live Brier skill</label><strong>−0.079</strong><small>No superiority</small></div></div>
+        <div class="grid2"><article class="card"><span class="kicker">Tail telemetry</span><h2 class="display">Probability is calibrated evidence—not a price call.</h2><div id="tail-chart" class="plot" role="img" aria-label="Tail-event probability history and base rate"></div></article><aside class="card"><span class="kicker">Sample maturity</span><h2 class="display">IMMATURE</h2><p>Part 9 requires at least 60 live observations before significance gates can authorize promotion. The current snapshot contains 25.</p><div class="progress"><span></span></div><p class="muted">41.7% of the minimum evidence count collected.</p><div class="callout"><strong>Do not collapse the metrics.</strong> AUC measures ranking; Brier score measures probability error; ECE measures calibration; none proves economic value by itself.</div></aside></div>
+      </section>
+      <section class="panel" id="panel-governance" role="tabpanel" aria-labelledby="tab-governance">
+        <div class="triple"><article class="card"><span class="kicker">Core publication</span><h2 class="display">NORMAL</h2><p class="muted">The canonical forecast tape may be persisted because current hard-fail checks clear.</p></article><article class="card"><span class="kicker">Auxiliary alpha</span><h2 class="display">SHADOW</h2><p class="muted">The alpha sleeve is recorded but cannot affect live fused output or paper allocation.</p></article><article class="card"><span class="kicker">Trading status</span><h2 class="display">DRY RUN</h2><p class="muted">Part 10 requires live n ≥ 60 and prespecified significance before any promotion.</p></article></div>
+        <div class="grid2" style="margin-top:14px"><article class="card"><span class="kicker">State machine</span><h2 class="display">Evidence changes permissions.</h2><ul class="stage-list"><li><b>01</b><div><strong>SHADOW</strong><br><span class="muted">Log estimates; no portfolio effect.</span></div></li><li><b>02</b><div><strong>ELIGIBLE</strong><br><span class="muted">Data and drift gates clear.</span></div></li><li><b>03</b><div><strong>LIVE_TRIAL</strong><br><span class="muted">Bounded experimental influence.</span></div></li><li><b>04</b><div><strong>LIVE_FUSED</strong><br><span class="muted">Promotion only after live evidence.</span></div></li></ul></article><aside class="card"><span class="kicker">Latest portfolio state</span><h2 class="display">60 / 40</h2><p>VOO / IEF target weights remain at the neutral prior. The latest regime is calm, view confidence is zero, and dead-band hold is active.</p><div class="callout"><strong>Separation of concerns:</strong> NORMAL core publication does not imply live alpha, turnover, or statistical superiority.</div></aside></div>
+      </section>
+      <section class="panel" id="panel-bot" role="tabpanel" aria-labelledby="tab-bot">
+        <div class="statusline"><span>Paper-bot ledger · through August 25, 2026</span><span class="live-dot">DRY RUN · GATED</span></div>
+        <div class="metrics">
+          <div class="metric"><label>Starting capital</label><strong>$1,000</strong><small>paper portfolio</small></div>
+          <div class="metric"><label>Current NAV</label><strong>$1,000</strong><small>unchanged while gated</small></div>
+          <div class="metric"><label>Signals logged</label><strong>44</strong><small>June 21–August 25</small></div>
+          <div class="metric"><label>Live evidence</label><strong>25 / 60</strong><small>41.7% of gate</small></div>
+          <div class="metric"><label>Paper trades</label><strong>0</strong><small>execution correctly blocked</small></div>
+          <div class="metric"><label>Drawdown</label><strong>0.0%</strong><small>cash-only state</small></div>
+        </div>
+        <div class="bot-layout">
+          <article class="card"><span class="kicker">Signal accumulation</span><h2 class="display">The bot is learning before it acts.</h2><div id="bot-progress-chart" class="plot" role="img" aria-label="Paper bot tail probability, base rate, target VOO weight, and accumulated live evidence over time"></div><p class="chart-note">The upper traces show the modeled tail probability and contemporaneous base rate. The lower trace shows the paper target weight; the evidence count is displayed in the hover label.</p></article>
+          <aside class="card"><span class="kicker">Promotion gate</span><h2 class="display">25 of 60 observations.</h2><p class="muted">The safety gate requires at least 60 live realized observations before statistical promotion can be considered. At the current snapshot, 35 more are required.</p><div class="progress bot-progress" aria-label="41.7 percent of evidence gate complete"><span></span></div><div class="bot-status"><div><span>Initialized</span><strong>Yes</strong></div><div><span>Mode</span><strong>DRY RUN</strong></div><div><span>Publication</span><strong>NORMAL</strong></div><div><span>Accuracy gate</span><strong>PENDING</strong></div><div><span>Cash</span><strong>$1,000</strong></div><div><span>Risk floor</span><strong>$900</strong></div></div><div class="callout" style="margin-top:16px"><strong>Expected behavior:</strong> zero trades and flat NAV indicate that the evidence gate is working. This is not evidence of failure—or of profitability.</div></aside>
+        </div>
+        <article class="card" style="margin-top:14px"><span class="kicker">Controlled progression</span><h2 class="display">From observation to attribution.</h2><div class="bot-stage"><div><b>01 · COMPLETE</b><strong>Observe</strong><br><span class="muted">44 signals recorded.</span></div><div class="pending"><b>02 · 41.7%</b><strong>Validate</strong><br><span class="muted">25 of 60 realized.</span></div><div class="pending"><b>03 · PENDING</b><strong>Gate</strong><br><span class="muted">Accuracy test not mature.</span></div><div class="locked"><b>04 · LOCKED</b><strong>Paper execution</strong><br><span class="muted">No orders authorized.</span></div><div class="locked"><b>05 · WAITING</b><strong>Attribution</strong><br><span class="muted">Begins after paper trades.</span></div></div></article>
+        <div class="grid2" style="margin-top:14px"><article class="card"><span class="kicker">Latest signal · August 25</span><h3>Research decision record</h3><table class="stat-table"><tbody><tr><td>Tail probability</td><td>25.38%</td></tr><tr><td>Live base rate</td><td>20.66%</td></tr><tr><td>Probability edge</td><td>−4.72 pp</td></tr><tr><td>Paper target</td><td>VOO 60% / IEF 40%</td></tr><tr><td>Raw validation AUC</td><td>0.5388</td></tr><tr><td>Execution result</td><td>No trade · gate closed</td></tr></tbody></table></article><aside class="card"><span class="kicker">Auditable artifacts</span><h3>Inspect the source-of-truth ledgers</h3><p class="muted">These committed files drive the progress summary. The page reports their current snapshot and does not place orders.</p><div class="artifact-links"><a href="artifacts_part10_bot/signal_log.csv">Signal log CSV</a><a href="artifacts_part10_bot/portfolio_state.json">Portfolio state JSON</a><a href="artifacts_part10_bot/performance_report.json">Performance report JSON</a></div></aside></div>
+      </section>
+      <section class="panel" id="panel-pipeline" role="tabpanel" aria-labelledby="tab-pipeline">
+        <article class="card"><span class="kicker">Canonical execution order</span><h2 class="display">One claim. Eleven controlled modules.</h2><div class="triple"><ol class="stage-list"><li><b>00</b><div><strong>Data</strong><br><span class="muted">Market, volatility, credit, breadth, macro.</span></div></li><li><b>06</b><div><strong>Regimes</strong><br><span class="muted">Four-state HMM.</span></div></li><li><b>01</b><div><strong>Features</strong><br><span class="muted">Locked 14-variable contract.</span></div></li><li><b>02</b><div><strong>Core</strong><br><span class="muted">Rolling price and probability forecasts.</span></div></li></ol><ol class="stage-list"><li><b>2B</b><div><strong>XGBoost sleeve</strong><br><span class="muted">Ten calibrated members.</span></div></li><li><b>2C</b><div><strong>BNN sleeve</strong><br><span class="muted">MC dropout uncertainty.</span></div></li><li><b>2A</b><div><strong>Alpha state</strong><br><span class="muted">Evidence-to-permission mapping.</span></div></li><li><b>07</b><div><strong>Portfolio</strong><br><span class="muted">BL, shrinkage, CVaR.</span></div></li></ol><ol class="stage-list"><li><b>08</b><div><strong>Execution</strong><br><span class="muted">Impact and annual drag.</span></div></li><li><b>03</b><div><strong>Governed tape</strong><br><span class="muted">Fail-closed publication.</span></div></li><li><b>09</b><div><strong>Attribution</strong><br><span class="muted">Live AUC, Brier, drift, tests.</span></div></li><li><b>10</b><div><strong>Paper bot</strong><br><span class="muted">Signal ledger and risk floor.</span></div></li></ol></div></article>
+        <div class="grid2" style="margin-top:14px"><article class="card"><span class="kicker">Reproduce</span><h3>Launch the Tuesday research pipeline</h3><div class="code">python run_tuesday_prediction.py</div><p class="muted">The production workflow restores accumulating artifacts, runs the canonical module order, validates, and commits refreshed outputs.</p></article><aside class="card"><span class="kicker">Security note</span><h3>Keep credentials out of source</h3><p class="muted">Rotate any credential ever committed to code and pass FRED access only through encrypted repository secrets.</p></aside></div>
+      </section>
+      <section class="panel" id="panel-report" role="tabpanel" aria-labelledby="tab-report">
+        <div class="report-card"><div class="report-cover"><small>PRICE-CALL VOO FORECASTING LABORATORY</small><h2>A Governed One-Day VOO Price-Call Laboratory</h2><p>Forecasting Architecture, Live Evidence, and Statistical Control</p><p style="margin-top:60px">Salem Morelli<br>Independent Statistics Research Project<br>August 25, 2026</p></div><div><span class="kicker">25-page APA-style research report</span><h2 class="display">Read the complete statistical audit.</h2><p class="muted">The report formalizes the forecasting object, reconstructs the full architecture, evaluates every realized predicted/actual pair, separates level tracking from directional and tail skill, and documents governance, limitations, references, figures, tables, and reproducible Python code.</p><div class="report-actions"><a class="btn primary" href="report/Price_Call_VOO_Forecasting_APA_Report.pdf" target="_blank" rel="noopener">Open PDF report</a><a class="btn" href="report/reproduce_report_figures.py">View figure code</a></div><div class="callout" style="margin-top:20px"><strong>Principal finding:</strong> engineering maturity currently exceeds live statistical maturity. Continue synchronized, paper-only collection under fixed rules.</div></div></div>
+      </section>
+    </main>
+    <footer><span>Price-Call · Salem Morelli · Research use only</span><span>VOO/IEF forecasting · regime modeling · governed attribution</span></footer>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+  <script>
+    (()=>{
+      const rows=[{"target_date":"2026-06-18","px_voo_call_1d":681.2636758086383,"px_voo_realized":686.1119384765625,"px_ief_call_1d":94.04562429521394,"px_ief_realized":93.7279281616211,"p_final_cal":0.1828139311518352,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-06-22","px_voo_call_1d":688.4079160652061,"px_voo_realized":684.1077880859375,"px_ief_call_1d":94.38220100938452,"px_ief_realized":93.3703384399414,"p_final_cal":0.1786119174046764,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-06-23","px_voo_call_1d":688.4890506367556,"px_voo_realized":674.3761596679688,"px_ief_call_1d":94.38539852572995,"px_ief_realized":93.48954010009766,"p_final_cal":0.1783385482621284,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-06-24","px_voo_call_1d":685.7486232152158,"px_voo_realized":673.72802734375,"px_ief_call_1d":94.05951227735012,"px_ief_realized":94.09545135498048,"p_final_cal":0.1875446705778198,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-06-29","px_voo_call_1d":676.4795347012463,"px_voo_realized":681.010009765625,"px_ief_call_1d":94.91053716667602,"px_ief_realized":94.4232406616211,"p_final_cal":0.1817552654403247,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-02","px_voo_call_1d":685.131363852638,"px_voo_realized":684.8400268554688,"px_ief_call_1d":94.10362858037082,"px_ief_realized":93.79800415039062,"p_final_cal":0.1933008498589178,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-06","px_voo_call_1d":684.6634096801457,"px_voo_realized":690.6199951171875,"px_ief_call_1d":94.1073288066082,"px_ief_realized":93.85779571533205,"p_final_cal":0.1956900455531043,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-08","px_voo_call_1d":687.5777102587775,"px_voo_realized":685.260009765625,"px_ief_call_1d":93.7739996358734,"px_ief_realized":93.1900863647461,"p_final_cal":0.2056231342064974,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-14","px_voo_call_1d":694.015473432121,"px_voo_realized":691.0999755859375,"px_ief_call_1d":93.72138762678684,"px_ief_realized":93.22994995117188,"p_final_cal":0.2099332168422468,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-15","px_voo_call_1d":688.4766423125005,"px_voo_realized":693.7999877929688,"px_ief_call_1d":93.28245470400904,"px_ief_realized":93.45915985107422,"p_final_cal":0.2493310368799024,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-07-16","px_voo_call_1d":693.9080248197002,"px_voo_realized":690.1400146484375,"px_ief_call_1d":93.75512541618652,"px_ief_realized":93.3993682861328,"p_final_cal":0.2170815469620156,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-21","px_voo_call_1d":683.2102235680015,"px_voo_realized":687.8699951171875,"px_ief_call_1d":93.85541903460803,"px_ief_realized":92.9907684326172,"p_final_cal":0.2142477116315234,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-22","px_voo_call_1d":682.2194017385492,"px_voo_realized":687.030029296875,"px_ief_call_1d":93.5555221816086,"px_ief_realized":92.78148651123048,"p_final_cal":0.2284011573948236,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-07-23","px_voo_call_1d":686.6459562384771,"px_voo_realized":678.6099853515625,"px_ief_call_1d":92.8470022455096,"px_ief_realized":92.53234100341795,"p_final_cal":0.2900167828450462,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-07-24","px_voo_call_1d":678.5712920673244,"px_voo_realized":679.1400146484375,"px_ief_call_1d":92.48211446045656,"px_ief_realized":92.71172332763672,"p_final_cal":0.2354466342935209,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-11","px_voo_call_1d":710.977686194178,"px_voo_realized":708.4199829101562,"px_ief_call_1d":93.25581438908672,"px_ief_realized":92.87000274658205,"p_final_cal":0.2150560684338096,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-12","px_voo_call_1d":710.7330579571385,"px_voo_realized":710.1699829101562,"px_ief_call_1d":92.85844222650525,"px_ief_realized":92.95999908447266,"p_final_cal":0.2114071371651639,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-13","px_voo_call_1d":709.0168502479078,"px_voo_realized":714.9500122070312,"px_ief_call_1d":92.9475214804658,"px_ief_realized":93.3000030517578,"p_final_cal":0.2122819026775025,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-14","px_voo_call_1d":710.4395092147072,"px_voo_realized":713.6099853515625,"px_ief_call_1d":93.04758177704,"px_ief_realized":93.04000091552734,"p_final_cal":0.2264770960742878,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-17","px_voo_call_1d":715.4740633451601,"px_voo_realized":710.27001953125,"px_ief_call_1d":93.388162163079,"px_ief_realized":92.83999633789062,"p_final_cal":0.2149250583875588,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-18","px_voo_call_1d":713.8120177236196,"px_voo_realized":705.4000244140625,"px_ief_call_1d":93.12166942314424,"px_ief_realized":92.93000030517578,"p_final_cal":0.2339593314133808,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-19","px_voo_call_1d":714.0968230401455,"px_voo_realized":706.9099731445312,"px_ief_call_1d":93.08102561675749,"px_ief_realized":93.37999725341795,"p_final_cal":0.2050122811548823,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-20","px_voo_call_1d":705.8361104380167,"px_voo_realized":701.010009765625,"px_ief_call_1d":92.96833980605658,"px_ief_realized":93,"p_final_cal":0.2281524466559961,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-21","px_voo_call_1d":701.6175424114211,"px_voo_realized":703.7100219726562,"px_ief_call_1d":93.07308790916412,"px_ief_realized":92.81999969482422,"p_final_cal":0.232509379279039,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-24","px_voo_call_1d":701.1816232545896,"px_voo_realized":701.8300170898438,"px_ief_call_1d":93.0357520247096,"px_ief_realized":93.01000213623048,"p_final_cal":0.2197556318748218,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":0},{"target_date":"2026-08-25","px_voo_call_1d":703.78757037086,"px_voo_realized":704.02001953125,"px_ief_call_1d":92.8698012235951,"px_ief_realized":93.51000213623048,"p_final_cal":0.2252885018172462,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":1},{"target_date":"2026-08-26","px_voo_call_1d":702.1248753695664,"px_voo_realized":null,"px_ief_call_1d":93.08204081852388,"px_ief_realized":null,"p_final_cal":0.2337508343244746,"publish_mode":"NORMAL","latest_alpha_state":"SHADOW","hit_direction":null}];
+      const botRows=[{"date":"2026-06-21","p_tail":0.182814,"base_rate":0.206668,"target_voo":0.6,"auc":0.5843,"evidence":0},{"date":"2026-06-22","p_tail":0.178339,"base_rate":0.206516,"target_voo":0.6,"auc":0.5,"evidence":1},{"date":"2026-06-23","p_tail":0.187545,"base_rate":0.206466,"target_voo":0.6,"auc":0.5868,"evidence":3},{"date":"2026-06-26","p_tail":0.181755,"base_rate":0.206854,"target_voo":0.6,"auc":0.5,"evidence":4},{"date":"2026-07-01","p_tail":0.184688,"base_rate":0.206897,"target_voo":0.6,"auc":0.5,"evidence":5},{"date":"2026-07-02","p_tail":0.19569,"base_rate":0.206897,"target_voo":0.6,"auc":0.5848,"evidence":5},{"date":"2026-07-03","p_tail":0.195705,"base_rate":0.206897,"target_voo":0.6,"auc":0.5848,"evidence":6},{"date":"2026-07-05","p_tail":0.19569,"base_rate":0.206795,"target_voo":0.6,"auc":0.5824,"evidence":6},{"date":"2026-07-07","p_tail":0.207439,"base_rate":0.206694,"target_voo":0.6,"auc":0.5,"evidence":7},{"date":"2026-07-08","p_tail":0.201782,"base_rate":0.206694,"target_voo":0.6,"auc":0.5825,"evidence":7},{"date":"2026-07-09","p_tail":0.201688,"base_rate":0.206694,"target_voo":0.6,"auc":0.583,"evidence":8},{"date":"2026-07-10","p_tail":0.205623,"base_rate":0.206694,"target_voo":0.6,"auc":0.5848,"evidence":8},{"date":"2026-07-13","p_tail":0.209933,"base_rate":0.206493,"target_voo":0.6,"auc":0.5,"evidence":8},{"date":"2026-07-14","p_tail":0.249331,"base_rate":0.206686,"target_voo":0.6,"auc":0.5,"evidence":8},{"date":"2026-07-15","p_tail":0.213167,"base_rate":0.206636,"target_voo":0.6,"auc":0.5488,"evidence":9},{"date":"2026-07-16","p_tail":0.217103,"base_rate":0.206636,"target_voo":0.6,"auc":0.571,"evidence":10},{"date":"2026-07-17","p_tail":0.216289,"base_rate":0.206636,"target_voo":0.6,"auc":0.551,"evidence":11},{"date":"2026-07-20","p_tail":0.214248,"base_rate":0.206972,"target_voo":0.6,"auc":0.5,"evidence":11},{"date":"2026-07-21","p_tail":0.228401,"base_rate":0.206922,"target_voo":0.6,"auc":0.5,"evidence":11},{"date":"2026-07-22","p_tail":0.237908,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":12},{"date":"2026-07-23","p_tail":0.288218,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":13},{"date":"2026-07-24","p_tail":0.288551,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-07-27","p_tail":0.251622,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-07-28","p_tail":0.25139,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-07-29","p_tail":0.288542,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-07-30","p_tail":0.288854,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-07-31","p_tail":0.288825,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-08-03","p_tail":0.288502,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-08-04","p_tail":0.290017,"base_rate":0.206871,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-08-05","p_tail":0.235455,"base_rate":0.207065,"target_voo":0.6,"auc":0.5,"evidence":14},{"date":"2026-08-06","p_tail":0.235446,"base_rate":0.207065,"target_voo":0.6,"auc":0.5,"evidence":15},{"date":"2026-08-07","p_tail":0.225316,"base_rate":0.207065,"target_voo":0.6,"auc":0.5,"evidence":15},{"date":"2026-08-10","p_tail":0.218092,"base_rate":0.206704,"target_voo":0.35,"auc":0.6151,"evidence":15},{"date":"2026-08-11","p_tail":0.214747,"base_rate":0.206654,"target_voo":0.6,"auc":0.5,"evidence":15},{"date":"2026-08-12","p_tail":0.216846,"base_rate":0.206604,"target_voo":0.6,"auc":0.5459,"evidence":16},{"date":"2026-08-13","p_tail":0.224341,"base_rate":0.206553,"target_voo":0.6,"auc":0.5449,"evidence":17},{"date":"2026-08-14","p_tail":0.215009,"base_rate":0.206503,"target_voo":0.6,"auc":0.5,"evidence":18},{"date":"2026-08-17","p_tail":0.227838,"base_rate":0.206453,"target_voo":0.6,"auc":0.5,"evidence":19},{"date":"2026-08-18","p_tail":0.221244,"base_rate":0.206403,"target_voo":0.6,"auc":0.5476,"evidence":20},{"date":"2026-08-19","p_tail":0.237472,"base_rate":0.206596,"target_voo":0.6,"auc":0.5,"evidence":21},{"date":"2026-08-20","p_tail":0.204338,"base_rate":0.206545,"target_voo":0.6,"auc":0.5,"evidence":22},{"date":"2026-08-21","p_tail":0.219756,"base_rate":0.206495,"target_voo":0.42,"auc":0.6105,"evidence":23},{"date":"2026-08-24","p_tail":0.256223,"base_rate":0.206445,"target_voo":0.6,"auc":0.5,"evidence":24},{"date":"2026-08-25","p_tail":0.253831,"base_rate":0.206638,"target_voo":0.6,"auc":0.5388,"evidence":25}];
+      const root=document.getElementById('price-call-lab');
+      const colors={bg:'#0b1622',grid:'#20374a',text:'#a9bdcc',VOO:'#ffb84d',VOOR:'#55d6e8',IEF:'#9d7cff',IEFR:'#49d6a0',green:'#49d6a0',error:'#ff6b6b'};
+      const baseLayout={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{family:'Inter,system-ui,sans-serif',color:colors.text},margin:{l:58,r:18,t:30,b:52},hovermode:'x unified',legend:{orientation:'h',y:1.11,x:0},xaxis:{gridcolor:colors.grid,zerolinecolor:colors.grid},yaxis:{gridcolor:colors.grid,zerolinecolor:colors.grid},uirevision:'stable'};
+      const config={displaylogo:false,responsive:true,scrollZoom:false,modeBarButtonsToRemove:['lasso2d','select2d']};
+      const realized=()=>rows.filter(r=>Number.isFinite(r.px_voo_realized)&&Number.isFinite(r.px_ief_realized));
+      const metric=(data,predKey,actualKey)=>{const d=data.filter(r=>Number.isFinite(r[predKey])&&Number.isFinite(r[actualKey]));const e=d.map(r=>r[predKey]-r[actualKey]);const abs=e.map(Math.abs);const mean=a=>a.reduce((s,v)=>s+v,0)/(a.length||1);const ap=d.map((r,i)=>Math.abs(e[i]/r[actualKey])*100);const x=d.map(r=>r[predKey]),y=d.map(r=>r[actualKey]);const mx=mean(x),my=mean(y);const cov=mean(x.map((v,i)=>(v-mx)*(y[i]-my)));const sx=Math.sqrt(mean(x.map(v=>(v-mx)**2))),sy=Math.sqrt(mean(y.map(v=>(v-my)**2)));return{n:d.length,mae:mean(abs),rmse:Math.sqrt(mean(e.map(v=>v*v))),bias:mean(e),mape:mean(ap),corr:sx&&sy?cov/(sx*sy):NaN};};
+      const fmt=(v,d=3)=>Number.isFinite(v)?v.toFixed(d):'—';
+      function metricCards(target,m,asset){document.getElementById(target).innerHTML=[['Realized n',m.n,'observations'],['MAE','$'+fmt(m.mae),'mean absolute error'],['RMSE','$'+fmt(m.rmse),'root mean squared error'],['Bias','$'+fmt(m.bias),'predicted − realized'],['MAPE',fmt(m.mape)+'%','scale-adjusted error'],['Correlation',fmt(m.corr),asset+' level tracking']].map(x=>`<div class="metric"><label>${x[0]}</label><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join('');}
+      const dates=rows.map(r=>r.target_date);
+      function drawOverview(){const traces=[{x:dates,y:rows.map(r=>r.px_voo_call_1d),name:'VOO predicted',line:{color:colors.VOO,width:3}},{x:dates,y:rows.map(r=>r.px_voo_realized),name:'VOO realized',line:{color:colors.VOOR,width:3,dash:'dot'}},{x:dates,y:rows.map(r=>r.px_ief_call_1d),name:'IEF predicted',yaxis:'y2',line:{color:colors.IEF,width:2}},{x:dates,y:rows.map(r=>r.px_ief_realized),name:'IEF realized',yaxis:'y2',line:{color:colors.IEFR,width:2,dash:'dot'}}];const layout={...baseLayout,yaxis:{...baseLayout.yaxis,title:'VOO close ($)'},yaxis2:{title:'IEF close ($)',overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)'},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.11}}};Plotly.newPlot('overview-chart',traces,layout,config)}
+      let state={asset:'VOO',scale:'price',range:'all'};
+      function currentRows(){if(state.range==='all')return rows;const max=new Date(rows.at(-1).target_date);const min=new Date(max);min.setDate(min.getDate()-Number(state.range));return rows.filter(r=>new Date(r.target_date)>=min)}
+      function seriesFor(asset,data){const k=asset.toLowerCase();let p=data.map(r=>r[`px_${k}_call_1d`]),a=data.map(r=>r[`px_${k}_realized`]);if(state.scale==='index'){const p0=p.find(Number.isFinite),a0=a.find(Number.isFinite);p=p.map(v=>Number.isFinite(v)?100*v/p0:null);a=a.map(v=>Number.isFinite(v)?100*v/a0:null)}if(state.scale==='error'){p=data.map(r=>Number.isFinite(r[`px_${k}_realized`])?r[`px_${k}_call_1d`]-r[`px_${k}_realized`]:null);a=[]}return{p,a}}
+      function drawExplorer(){const data=currentRows(),x=data.map(r=>r.target_date),assets=state.asset==='BOTH'?['VOO','IEF']:[state.asset],traces=[];assets.forEach(asset=>{const s=seriesFor(asset,data),isV=asset==='VOO';traces.push({x,y:s.p,name:state.scale==='error'?`${asset} error`:`${asset} predicted`,line:{color:isV?colors.VOO:colors.IEF,width:3},yaxis:state.asset==='BOTH'&&!isV?'y2':'y'});if(state.scale!=='error')traces.push({x,y:s.a,name:`${asset} realized`,line:{color:isV?colors.VOOR:colors.IEFR,width:3,dash:'dot'},yaxis:state.asset==='BOTH'&&!isV?'y2':'y'})});const ylabel=state.scale==='price'?(state.asset==='BOTH'?'VOO close ($)':`${state.asset} close ($)`):state.scale==='index'?'Indexed value (first = 100)':'Signed error ($)';const layout={...baseLayout,yaxis:{...baseLayout.yaxis,title:ylabel},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.1}}};if(state.asset==='BOTH')layout.yaxis2={title:'IEF close ($)',overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)'};Plotly.react('explorer-chart',traces,layout,config);const asset=state.asset==='IEF'?'IEF':'VOO',k=asset.toLowerCase(),m=metric(data,`px_${k}_call_1d`,`px_${k}_realized`);metricCards('window-metrics',m,asset);document.getElementById('visible-window-label').textContent=`${m.n} realized ${asset} observations visible`;drawDiagnostics(data,asset)}
+      function drawDiagnostics(data,asset){const k=asset.toLowerCase(),d=data.filter(r=>Number.isFinite(r[`px_${k}_realized`]));const x=d.map(r=>r.target_date),err=d.map(r=>r[`px_${k}_call_1d`]-r[`px_${k}_realized`]);Plotly.react('error-chart',[{x,y:err,type:'bar',name:'Signed error',marker:{color:err.map(v=>v>=0?colors.VOO:colors.error)}}],{...baseLayout,margin:{l:52,r:12,t:20,b:45},showlegend:false,yaxis:{...baseLayout.yaxis,title:'Error ($)',zeroline:true,zerolinecolor:'#d5e7f2'}},config);const actual=d.map(r=>r[`px_${k}_realized`]),pred=d.map(r=>r[`px_${k}_call_1d`]),lo=Math.min(...actual,...pred),hi=Math.max(...actual,...pred);Plotly.react('scatter-chart',[{x:actual,y:pred,mode:'markers',name:'Calls',marker:{color:asset==='VOO'?colors.VOO:colors.IEF,size:9,line:{color:'#08121c',width:1}}},{x:[lo,hi],y:[lo,hi],mode:'lines',name:'Perfect fit',line:{color:colors.text,dash:'dot'}}],{...baseLayout,margin:{l:52,r:12,t:20,b:50},hovermode:'closest',xaxis:{...baseLayout.xaxis,title:'Realized ($)'},yaxis:{...baseLayout.yaxis,title:'Predicted ($)'}},config)}
+      function drawTail(){Plotly.newPlot('tail-chart',[{x:dates,y:rows.map(r=>r.p_final_cal),name:'Tail probability',line:{color:colors.IEF,width:3},mode:'lines+markers'},{x:dates,y:rows.map(()=>0.207),name:'Live base rate',line:{color:colors.VOOR,width:2,dash:'dash'}}],{...baseLayout,yaxis:{...baseLayout.yaxis,title:'Probability',range:[0,.35],tickformat:'.0%'},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.1}}},config)}
+      function drawBotProgress(){const x=botRows.map(r=>r.date),evidence=botRows.map(r=>r.evidence);const traces=[{x,y:botRows.map(r=>r.p_tail),customdata:evidence,name:'Tail probability',mode:'lines+markers',line:{color:colors.IEF,width:3},marker:{size:6},hovertemplate:'%{x}<br>Tail probability %{y:.2%}<br>Live evidence %{customdata}/60<extra></extra>'},{x,y:botRows.map(r=>r.base_rate),customdata:evidence,name:'Base rate',mode:'lines',line:{color:colors.VOOR,width:2,dash:'dash'},hovertemplate:'%{x}<br>Base rate %{y:.2%}<br>Live evidence %{customdata}/60<extra></extra>'},{x,y:botRows.map(r=>r.target_voo),customdata:evidence,name:'Paper VOO target',mode:'lines',line:{color:colors.VOO,width:2,shape:'hv'},fill:'tozeroy',fillcolor:'rgba(255,184,77,.08)',yaxis:'y2',hovertemplate:'%{x}<br>VOO target %{y:.0%}<br>Live evidence %{customdata}/60<extra></extra>'}];const layout={...baseLayout,yaxis:{...baseLayout.yaxis,title:'Probability',range:[.15,.32],tickformat:'.0%'},yaxis2:{title:'Paper target weight',overlaying:'y',side:'right',range:[0,1],tickformat:'.0%',gridcolor:'rgba(0,0,0,0)'},xaxis:{...baseLayout.xaxis,rangeslider:{visible:true,bgcolor:'#0a131d',bordercolor:colors.grid,thickness:.1}},annotations:[{x:x.at(-1),y:botRows.at(-1).p_tail,xref:'x',yref:'y',text:'25 / 60 live',showarrow:true,arrowcolor:colors.green,font:{color:colors.green},bgcolor:'#07111a',bordercolor:colors.green,borderpad:5}]};Plotly.newPlot('bot-progress-chart',traces,layout,config)}
+      function activate(id){root.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',String(t.id===`tab-${id}`)));root.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${id}`));setTimeout(()=>window.dispatchEvent(new Event('resize')),20)}
+      root.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>activate(tab.id.replace('tab-',''))));document.getElementById('open-explorer').addEventListener('click',()=>{activate('explorer');document.querySelector('.tabs').scrollIntoView({behavior:'smooth',block:'start'})});document.getElementById('open-governance').addEventListener('click',()=>{activate('governance');document.querySelector('.tabs').scrollIntoView({behavior:'smooth',block:'start'})});
+      root.querySelectorAll('.seg').forEach(seg=>seg.addEventListener('click',e=>{if(!e.target.matches('button'))return;seg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));e.target.classList.add('active');state[seg.dataset.control]=e.target.dataset.value;drawExplorer()}));
+      const voo=metric(realized(),'px_voo_call_1d','px_voo_realized');document.getElementById('headline-metrics').innerHTML=[['VOO MAE','$'+fmt(voo.mae),'26 realized calls'],['VOO RMSE','$'+fmt(voo.rmse),'absolute scale'],['VOO MAPE',fmt(voo.mape)+'%','level error'],['VOO correlation',fmt(voo.corr),'level tracking'],['Direction hit','42.3%','below 50%'],['Live maturity','25 / 60','IMMATURE']].map(x=>`<div class="metric"><label>${x[0]}</label><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join('');
+      drawOverview();drawExplorer();drawTail();drawBotProgress();
+    })();
+  </script>
+</div>
+
+<script id="codex-visualization-floating-ui-core" src="https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js"></script>
+<script id="codex-visualization-floating-ui-dom" src="https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js"></script>
+<script id="codex-visualization-lucide" async src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+<script id="codex-visualization-tooltip">/* oxlint-disable typescript/no-unsafe-argument, typescript/no-unsafe-call, typescript/no-unsafe-return */
+// Runs inside the visualization sandbox, not the host webview.
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =>
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest("[data-tooltip]")
+      : null;
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    document.removeEventListener("pointerover", handlePointerOpen);
+    document.removeEventListener("pointerout", handleLeave);
+    document.removeEventListener("focusin", handleFocusIn);
+    document.removeEventListener("focusout", handleLeave);
+    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("contextmenu", handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener("pointerover", handlePointerOpen);
+  document.addEventListener("pointerout", handleLeave);
+  document.addEventListener("focusin", handleFocusIn);
+  document.addEventListener("focusout", handleLeave);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("contextmenu", handleContextMenu);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+<script id="codex-visualization-lucide-initialization">(() => {
+  const initialize = () => {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById("codex-visualization-lucide")
+    ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
+</body>
+</html>

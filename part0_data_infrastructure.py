@@ -102,7 +102,7 @@ class Part0Config:
         "UMCSENT": "consumer_sentiment",
         "USREC": "recession_flag",
     })
-    fred_api_key: str = ""
+    fred_api_key: str = "09c48c7ed1bb6d3e9811c8e85bd5c48d"
 
     allow_ffill_limit: int = 2
     max_pre_clean_warn_frac: float = 0.10
