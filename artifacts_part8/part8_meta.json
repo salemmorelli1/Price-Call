@@ -1,113 +1,40 @@
 {
-  "version": "V2_DAILY_CANONICAL",
-  "built_at": "2026-09-02T18:34:20.875714+00:00",
+  "annual_drag_summary": {
+    "error": "No trades with sufficient turnover"
+  },
   "assets_modeled": [
     "VOO",
     "IEF",
     "GLD",
     "TLT"
   ],
-  "live_vix_used": 16.34000015258789,
-  "latest_order_instructions": {
-    "decision_date": "2026-08-26 00:00:00",
-    "generated_at": "2026-09-02T18:34:20.807434+00:00",
-    "portfolio_dollars": 1000.0,
-    "vix_level": 16.34000015258789,
-    "stress_label": "NORMAL",
-    "total_estimated_cost_dollars": 0.03,
-    "total_estimated_cost_bps": 0.272,
-    "instructions": [
-      {
-        "ticker": "VOO",
-        "direction": "buy",
-        "trade_dollars": 250.0,
-        "trade_shares_approx": 0.36,
-        "weight_delta": 0.25,
-        "target_weight": 0.6,
-        "prev_weight": 0.35,
-        "pre_trade_cost": {
-          "ticker": "VOO",
-          "trade_dollars": 250.0000002827738,
-          "pct_adv": 5.7187488050039263e-08,
-          "direction": "buy",
-          "spread_bps": 0.3,
-          "impact_bps": 0.0037169056283059398,
-          "commission_bps": 0.0,
-          "sec_fee_bps": 0.0,
-          "total_bps": 0.30371690562830594,
-          "total_dollars": 0.007592922649295967,
-          "execution_strategy": "immediate_market",
-          "execution_horizon_min": 1,
-          "timing_risk_bps": 1.1243478161912754,
-          "optimal_window": "10:00\u201314:30",
-          "stressed_market": false
-        },
-        "execution_schedule": [
-          {
-            "time_offset_min": 0,
-            "shares_to_trade": 0.35700004258837637,
-            "pct_of_total": 1.0,
-            "cumulative_pct": 1.0
-          }
-        ],
-        "execute_between": "10:00\u201314:30",
-        "urgency": "NORMAL",
-        "stress_level": "NORMAL"
-      },
-      {
-        "ticker": "IEF",
-        "direction": "sell",
-        "trade_dollars": -250.0,
-        "trade_shares_approx": 2.71,
-        "weight_delta": -0.25,
-        "target_weight": 0.4,
-        "prev_weight": 0.65,
-        "pre_trade_cost": {
-          "ticker": "IEF",
-          "trade_dollars": -250.0000002827738,
-          "pct_adv": 3.0008743278228505e-07,
-          "direction": "sell",
-          "spread_bps": 0.5,
-          "impact_bps": 0.007492740903938033,
-          "commission_bps": 0.0,
-          "sec_fee_bps": 0.278,
-          "total_bps": 0.7854927409039381,
-          "total_dollars": 0.019637318544810132,
-          "execution_strategy": "immediate_market",
-          "execution_horizon_min": 1,
-          "timing_risk_bps": 0.7695591354680258,
-          "optimal_window": "10:00\u201314:30",
-          "stressed_market": false
-        },
-        "execution_schedule": [
-          {
-            "time_offset_min": 0,
-            "shares_to_trade": -2.71,
-            "pct_of_total": 1.0,
-            "cumulative_pct": 1.0
-          }
-        ],
-        "execute_between": "10:00\u201314:30",
-        "urgency": "NORMAL",
-        "stress_level": "NORMAL"
-      }
-    ],
-    "n_trades": 2,
-    "execute_window": "10:00\u201314:30 on 2026-08-26 00:00:00"
-  },
-  "impact_coefficients": {
-    "VOO": 0.35,
-    "IEF": 0.45,
-    "GLD": 0.4,
-    "TLT": 0.4
-  },
-  "annual_drag_summary": {
-    "error": "No trades with sufficient turnover"
-  },
-  "min_rebalance_threshold": 0.005,
-  "max_annual_tc_drag_bps": 50.0,
+  "built_at": "2026-09-03T18:07:18.443618+00:00",
   "governance_check_source": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/part2_g532_summary.json",
-  "governance_p2_publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "governance_override_applied": true,
   "governance_p2_final_pass": false,
-  "governance_override_applied": true
+  "governance_p2_publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "impact_coefficients": {
+    "GLD": 0.4,
+    "IEF": 0.45,
+    "TLT": 0.4,
+    "VOO": 0.35
+  },
+  "latest_order_instructions": {
+    "data_freshness_ok": false,
+    "decision_date": "2026-08-20 00:00:00",
+    "execute_window": null,
+    "generated_at": "2026-09-03T18:07:18.370254+00:00",
+    "instructions": [],
+    "n_trades": 0,
+    "pipeline_run_date": null,
+    "protocol_version": "causal-integrity-v3",
+    "reason": "Part 2 did not clear governance: publish_mode=FAIL_CLOSED_NEUTRAL, final_pass=False, data_freshness_ok=False",
+    "source_decision_date": "2026-08-20 00:00:00",
+    "status": "NO_ACTION_STALE_OR_UNCLEARED"
+  },
+  "live_vix_used": 15.199999809265137,
+  "max_annual_tc_drag_bps": 50.0,
+  "min_rebalance_threshold": 0.005,
+  "protocol_version": "causal-integrity-v3",
+  "version": "V2_DAILY_CANONICAL"
 }

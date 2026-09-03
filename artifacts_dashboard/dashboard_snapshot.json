@@ -1,0 +1,39 @@
+{
+  "alpha_state": "FLAT_VETOED",
+  "bot_mode": "DRY_RUN",
+  "data_freshness_ok": false,
+  "decision_date": "2026-08-20T00:00:00",
+  "deployment_mode": "DEFENSE_ONLY",
+  "evidence": {
+    "cohort": "causal-integrity-v3",
+    "eligible_realized": 0,
+    "inference_eligible": false,
+    "legacy_realized_excluded": 28,
+    "minimum": 60,
+    "n_negative": 0,
+    "n_positive": 0,
+    "progress_pct": 0.0
+  },
+  "final_pass": false,
+  "live_health": "IMMATURE",
+  "live_health_reasons": [
+    "Only 0 live observations (60 required)"
+  ],
+  "metrics": {
+    "backtest_auc": 0.5027040446881142,
+    "backtest_brier": 0.16184883503091793,
+    "backtest_brier_skill": -0.0007844735869366737,
+    "balanced_accuracy": null,
+    "live_auc": null,
+    "live_brier": null,
+    "live_brier_null": null,
+    "live_brier_skill": null
+  },
+  "protocol_version": "causal-integrity-v3",
+  "publish_mode": "FAIL_CLOSED_NEUTRAL",
+  "regime": "calm",
+  "weights": {
+    "ief": 0.4,
+    "voo": 0.6
+  }
+}

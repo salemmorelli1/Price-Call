@@ -1,0 +1,59 @@
+{
+  "part": "part1",
+  "version": "V20_P1_DAILY",
+  "asof_date": "2026-08-20",
+  "horizon": 1,
+  "tail_threshold": -0.015,
+  "tail_label_name": "y_rel_tail_voo_vs_ief",
+  "tail_label_mode": "rolling_quantile",
+  "tail_quantile": 0.2,
+  "rolling_quantile_window": 63,
+  "feature_cols": [
+    "voo_vol10",
+    "excess_vol10",
+    "vix_mom5",
+    "alpha_credit_spread",
+    "alpha_credit_accel",
+    "alpha_vix_term",
+    "alpha_breadth",
+    "alpha_tech_relative",
+    "stress_score_raw",
+    "stress_score_change5",
+    "vix_z21",
+    "credit_spread_z21",
+    "breadth_z21",
+    "tech_relative_z21"
+  ],
+  "reg_target_cols": [
+    "px_voo_t",
+    "px_ief_t",
+    "fwd_voo",
+    "fwd_ief",
+    "fwd_spread",
+    "px_voo_fwd",
+    "px_ief_fwd"
+  ],
+  "n_X_live": 4126,
+  "n_y_reg_revealed": 4160,
+  "n_reg_train": 4125,
+  "ticker_age_business_days_raw": {
+    "VOO": 0,
+    "IEF": 0,
+    "JNK": 0,
+    "RSP": 0,
+    "QQQ": 0,
+    "^VIX": 0,
+    "^VIX3M": 31
+  },
+  "ticker_freshness_limits_business_days": {
+    "VOO": 1,
+    "IEF": 1,
+    "JNK": 5,
+    "RSP": 5,
+    "QQQ": 5,
+    "^VIX": 5,
+    "^VIX3M": 5
+  },
+  "data_freshness_ok": false,
+  "freshness_measurement": "raw_observations_before_fill_or_substitution"
+}
