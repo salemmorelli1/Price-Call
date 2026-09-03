@@ -543,7 +543,7 @@ def build_part1_v20(cfg: Part1Config):
             "excess_ret": excess_ret,
             "y_voo": y_rel_tail,
             "y_rel_tail_voo_vs_ief": y_rel_tail,
-            "tail_threshold_dynamic": dynamic_threshold,  # written for transparency; not used by downstream
+            "tail_threshold_dynamic": dynamic_threshold,  # authoritative row-level target definition downstream
         },
         index=data.index,
     )
@@ -693,7 +693,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 

@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from artifact_integrity import write_json_strict
+from artifact_integrity import current_evidence_mask, write_json_strict
 
 try:
     import yfinance as yf
@@ -421,10 +421,9 @@ def main() -> int:
     )
     realized_count = int(realized_mask.sum())
 
-    live_realized_count = realized_count
-    if "horizon_legacy" in df.columns:
-        legacy_mask = pd.to_numeric(df["horizon_legacy"], errors="coerce").fillna(0).astype(int) == 1
-        live_realized_count = int((realized_mask & ~legacy_mask).sum())
+    eligible_mask = current_evidence_mask(df)
+    live_realized_count = int(current_evidence_mask(df, require_realized=True).sum())
+    current_eligible_predictions = int(eligible_mask.sum())
 
     print("\n=== BACKFILL SUMMARY ===")
     print(f"Prediction log: {PREDLOG_PATH}")
@@ -432,7 +431,7 @@ def main() -> int:
     print(f"Matured rows identified: {matured_rows}")
     print(f"Rows newly updated: {updated_rows}")
     print(f"Rows with realized prices now present: {realized_count}")
-    print(f"Rows with realized prices now present (non-legacy H=1 live rows): {live_realized_count}")
+    print(f"Rows with eligible realized prices in the current protocol: {live_realized_count}")
 
     # FIX (F1, Quant-Guild Part 54 Audit): Patch part3_summary.json after the
     # predlog is written with realized prices.
@@ -453,8 +452,8 @@ def main() -> int:
     # After this block runs, part3_summary.json will reflect the true live
     # realized count regardless of the race between the Tuesday pipeline and
     # the daily backfill. The patch is:
-    #   - Monotone: only increases live_realized_dates, never decreases
-    #   - Idempotent: no-op if the summary already shows the correct count
+    #   - Exact: may increase or decrease after a protocol/eligibility change
+    #   - Idempotent: no-op if the summary already shows the exact eligible count
     #   - Exception-safe: any failure falls through silently
     #   - Scope-limited: ONLY live_realized_dates, prediction_log_realized_rows,
     #     prediction_log_realized_pct are patched; no other fields are touched
@@ -463,14 +462,14 @@ def main() -> int:
     # fires and Part 3 writes live_realized_dates=0, the backfill corrects it
     # within the same CI job (before the commit step commits the summary). [FIX F1/S54]
     _summary_path = PROJECT_DIR / "artifacts_part3_v1" / "part3_summary.json"
-    if _summary_path.exists() and live_realized_count > 0:
+    if _summary_path.exists():
         try:
             import json as _json_bf
             with open(_summary_path, "r", encoding="utf-8") as _sf:
                 _summary = _json_bf.load(_sf)
             _current_live = int(_summary.get("live_realized_dates", 0) or 0)
-            if live_realized_count > _current_live:
-                _total_predlog_rows = max(len(df), 1)
+            if live_realized_count != _current_live:
+                _total_predlog_rows = max(current_eligible_predictions, 1)
                 _summary["live_realized_dates"] = live_realized_count
                 _summary["prediction_log_realized_rows"] = live_realized_count
                 _summary["prediction_log_realized_pct"] = round(
@@ -480,17 +479,15 @@ def main() -> int:
                     _json_bf.dump(_summary, _sf, indent=2)
                 print(
                     f"[backfill] FIX F1/S54: part3_summary.json patched — "
-                    f"live_realized_dates {_current_live} → {live_realized_count}"
+                    f"eligible live_realized_dates {_current_live} → {live_realized_count}"
                 )
             else:
                 print(
                     f"[backfill] FIX F1/S54: part3_summary.json already shows "
-                    f"live_realized_dates={_current_live} >= {live_realized_count} — no patch needed."
+                    f"eligible live_realized_dates={_current_live} — no patch needed."
                 )
         except Exception as _summary_patch_exc:
             print(f"[backfill] WARNING (F1/S54): could not patch part3_summary.json: {_summary_patch_exc}")
-    elif live_realized_count == 0:
-        print("[backfill] FIX F1/S54: live_realized_count=0 — no summary patch needed.")
     else:
         print(f"[backfill] FIX F1/S54: part3_summary.json not found at {_summary_path} — skipping patch.")
 
@@ -546,6 +543,4 @@ def main() -> int:
 if __name__ == "__main__":
     main()
     
-
-
 

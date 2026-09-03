@@ -29,8 +29,8 @@
 #   not a fixed -0.015.  Each prediction_log row already carries the correct
 #   per-row dynamic threshold in the 'tail_threshold' column written by Part 3.
 #   The previous code extracted only the last value (iloc[-1]) and applied it
-#   uniformly.  Fix: apply thr_series element-wise; fall back to -0.015 only for
-#   pre-schema rows that lack the column.
+#   uniformly. Fix: current-protocol evidence requires the exact stored threshold
+#   and applies it element-wise; pre-schema rows are excluded from this cohort.
 # =============================================================================
 from __future__ import annotations
 
@@ -48,7 +48,12 @@ import pandas as pd
 from scipy import stats
 from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_score
 
-from artifact_integrity import PROTOCOL_VERSION, write_json_strict
+from artifact_integrity import (
+    LEGACY_PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
+    current_evidence_mask,
+    write_json_strict,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -666,9 +671,9 @@ def generate_live_report(cfg: Part9Config) -> Dict:
     # A methodological change starts a new evidence cohort.  Old rows remain in
     # the ledger for auditability, but they cannot promote the current model.
     if "model_protocol_version" not in predlog.columns:
-        predlog["model_protocol_version"] = "legacy-pre-causal-integrity-v2"
+        predlog["model_protocol_version"] = LEGACY_PROTOCOL_VERSION
     predlog["model_protocol_version"] = predlog["model_protocol_version"].fillna(
-        "legacy-pre-causal-integrity-v2"
+        LEGACY_PROTOCOL_VERSION
     ).astype(str)
     if "evidence_eligible" not in predlog.columns:
         predlog["evidence_eligible"] = 0
@@ -676,17 +681,17 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         predlog = predlog[
             pd.to_numeric(predlog["horizon_legacy"], errors="coerce").fillna(0).astype(int).eq(0)
         ].copy()
-    eligible = pd.to_numeric(predlog["evidence_eligible"], errors="coerce").fillna(0).astype(int) == 1
     current = predlog["model_protocol_version"].eq(PROTOCOL_VERSION)
     all_realized = predlog[voo_real_col].notna() & predlog[ief_real_col].notna()
+    eligible_current = current_evidence_mask(predlog)
     report.update({
         "evidence_cohort": PROTOCOL_VERSION,
         "legacy_predictions": int((~current).sum()),
         "legacy_realized_rows": int((~current & all_realized).sum()),
         "current_cohort_predictions": int(current.sum()),
-        "current_cohort_eligible_predictions": int((current & eligible).sum()),
+        "current_cohort_eligible_predictions": int(eligible_current.sum()),
     })
-    predlog = predlog[current & eligible].copy()
+    predlog = predlog[eligible_current].copy()
 
     realized = predlog[predlog[voo_real_col].notna() & predlog[ief_real_col].notna()].copy()
     n_live = len(realized)
@@ -717,12 +722,12 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         # The previous code extracted tail_series.iloc[-1] (the most-recent value only)
         # and applied that single scalar to ALL live rows.  For early rows in the log
         # the rolling quantile will have been different, producing inconsistent y_live
-        # labels.  Fix: apply tail_threshold per-row from the column; fall back to
-        # -0.015 only for pre-schema rows that lack the column.
-        if "tail_threshold" in realized.columns:
-            thr_series = pd.to_numeric(realized["tail_threshold"], errors="coerce").fillna(-0.015)
-        else:
-            thr_series = pd.Series([-0.015] * len(realized), index=realized.index)
+        # labels. Current-protocol evidence requires the exact per-row value.
+        if "tail_threshold" not in realized.columns:
+            raise RuntimeError("Current-protocol evidence is missing the row-level tail_threshold field.")
+        thr_series = pd.to_numeric(realized["tail_threshold"], errors="coerce")
+        if thr_series.isna().any():
+            raise RuntimeError("Current-protocol evidence contains a non-numeric tail_threshold value.")
 
         br_series = pd.to_numeric(
             realized.get("base_rate", pd.Series([0.20] * len(realized), index=realized.index)),

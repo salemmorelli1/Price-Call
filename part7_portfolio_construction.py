@@ -46,6 +46,8 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import norm
 
+from artifact_integrity import PROTOCOL_VERSION
+
 warnings.filterwarnings("ignore")
 
 try:
@@ -1469,6 +1471,8 @@ def main() -> int:
     latest["raw_val_auc_global_median"] = _json_safe(
         float(_p2_summary.get("raw_val_auc_median", latest.get("raw_val_auc", np.nan)) or np.nan)
     )
+    latest["model_protocol_version"] = PROTOCOL_VERSION
+    latest["model_code_sha"] = os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA")
     latest["deployment_mode"] = "NORMAL"  # Part 3 will overwrite if FAIL_CLOSED_NEUTRAL
     with open(os.path.join(cfg.out_dir, "current_target_weights.json"), "w", encoding="utf-8") as f:
         json.dump(latest, f, indent=2)

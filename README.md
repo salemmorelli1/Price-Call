@@ -132,13 +132,16 @@ This repository is a **paper-only statistical research system**, not an investme
 recommendation or an autonomous trading system. Historical artifacts created before
 the causal-hardening release must be regenerated before they are used for research
 claims. The pipeline now fails closed when raw source data is stale, full-period
-AUC is below 0.50, or Brier skill is negative versus the causal prevalence forecast.
+AUC lacks prespecified evidence above 0.50, or Brier skill is not meaningfully positive
+versus the rowwise causal prevalence forecast.
 
 ## Causal hardening — 2026-09
 
 - Regime history is walk-forward and trained strictly before each labeled date.
 - Macro values may be forward-filled after publication, but are never backward-filled.
 - Historical event prevalence is estimated only from each row's prior train/validation window.
+- Event labels, distributional probabilities, prediction logs, and live attribution share
+  the exact row-level backward-looking tail threshold.
 - Strategy returns use a one-rebalance-row execution lag.
 - Platt scaling must improve Brier loss on a newer chronological holdout.
 - Live direction monitoring uses balanced accuracy and a prevalence-preserving permutation null.
@@ -151,12 +154,16 @@ AUC is below 0.50, or Brier skill is negative versus the causal prevalence forec
   file before regime fitting, without changing the deferred credential-bearing source.
 - Live evidence is versioned by methodology. Pre-integrity observations remain in the
   ledger as legacy rows but cannot satisfy the current 60-observation gate.
+- `causal-integrity-v3` requires AUC direction, DeLong uncertainty, and positive Brier
+  skill before historical evidence can clear.
 - AUC and balanced-accuracy significance flags require at least five observations
   from each class and use directional permutation p-values.
 - Fail-closed Part 8 output is an explicit `NO_ACTION_STALE_OR_UNCLEARED` artifact
   with an empty instruction list.
 - `sync_dashboard.py` builds one strict dashboard snapshot after production and
   backfill; `artifact_integrity.py` publishes SHA-256 provenance and rejects invalid JSON.
+- Production and backfill abort rather than merge artifacts from different source commits,
+  then explicitly dispatch a Pages build containing every local dashboard dependency.
 
 See `docs/CAUSAL_RESEARCH_PROTOCOL.md` for the temporal and governance contracts.
 See `docs/ARTIFACT_RETENTION.md` for the non-destructive repository-size policy.

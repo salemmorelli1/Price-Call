@@ -330,7 +330,8 @@ class TradeLog:
 
 class SignalLog:
     COLUMNS = [
-        "date", "p_tail", "base_rate", "edge", "target_w_voo", "action_reason", "target_source",
+        "date", "run_date", "source_decision_date", "model_protocol_version", "model_code_sha",
+        "p_tail", "base_rate", "edge", "target_w_voo", "action_reason", "target_source",
         "dry_run", "accuracy_gate_passed", "accuracy_gate_reason", "publish_mode", "final_pass",
         "raw_val_auc", "px_voo", "px_ief", "nav",
     ]
@@ -341,6 +342,13 @@ class SignalLog:
         if not os.path.exists(path):
             with open(path, "w", newline="") as f:
                 csv.DictWriter(f, fieldnames=self.COLUMNS).writeheader()
+        else:
+            existing = pd.read_csv(path)
+            if list(existing.columns) != self.COLUMNS:
+                for column in self.COLUMNS:
+                    if column not in existing.columns:
+                        existing[column] = None
+                existing[self.COLUMNS].to_csv(path, index=False)
 
     def _last_date(self) -> Optional[str]:
         """Return the date string of the most-recent signal log entry, or None."""
@@ -366,7 +374,7 @@ class SignalLog:
         # Guard: if the last logged entry already has today's date, skip this append.
         # Re-runs are still visible in pipeline logs (stdout); only the log file is
         # protected from duplication.
-        new_date = str(record.get("date", ""))
+        new_date = str(record.get("source_decision_date") or record.get("date", ""))
         last_date = self._last_date()
         if last_date is not None and new_date and new_date == last_date:
             print(
@@ -413,6 +421,9 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
         "px_voo_call_1d": np.nan,
         "px_ief_call_1d": np.nan,
         "raw_val_auc": np.nan,
+        "source_decision_date": None,
+        "model_protocol_version": None,
+        "model_code_sha": None,
         "source": "default",
     }
 
@@ -440,6 +451,9 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
                     "publish_mode": str(ctw.get("publish_mode", "UNKNOWN")),
                     "final_pass":   bool(ctw.get("final_pass", False)),
                     "raw_val_auc":  _safe_float(ctw.get("raw_val_auc"), np.nan),
+                    "source_decision_date": ctw.get("Date") or ctw.get("decision_date"),
+                    "model_protocol_version": ctw.get("model_protocol_version"),
+                    "model_code_sha": ctw.get("model_code_sha"),
                     "source": "part7_current_target_weights",
                 })
                 print(
@@ -463,6 +477,9 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
                 "publish_mode":  str(row.get("publish_mode", "UNKNOWN")),
                 "final_pass":    bool(row.get("final_pass", False)),
                 "raw_val_auc":   _safe_float(row.get("raw_val_auc"), np.nan),
+                "source_decision_date": row.get("Date", row.get("decision_date")),
+                "model_protocol_version": row.get("model_protocol_version"),
+                "model_code_sha": row.get("model_code_sha"),
                 "px_voo_t":      _safe_float(row.get("px_voo_t"), np.nan),
                 "px_ief_t":      _safe_float(row.get("px_ief_t"), np.nan),
                 "px_voo_call_1d": _safe_float(row.get("px_voo_call_1d", row.get("px_voo_call_7d")), np.nan),
@@ -793,7 +810,11 @@ def run_daily(cfg: BotConfig = CFG) -> int:
 
     post_nav = portfolio.nav(px_voo, px_ief)
     signal_log.append({
-        "date": today,
+        "date": str(signal.get("source_decision_date") or today),
+        "run_date": today,
+        "source_decision_date": str(signal.get("source_decision_date") or today),
+        "model_protocol_version": signal.get("model_protocol_version"),
+        "model_code_sha": signal.get("model_code_sha"),
         "p_tail": round(p_tail, 6),
         "base_rate": round(base_rate, 6),
         "edge": round(edge, 6),
@@ -850,7 +871,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
 
 
 
