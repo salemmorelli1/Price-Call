@@ -41,7 +41,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from artifact_integrity import LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION
+from artifact_integrity import (
+    LEGACY_PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
+    current_evidence_mask,
+)
 
 # ── Optional: regime-conditional Platt scaling (scipy + sklearn) ──────────
 try:
@@ -756,6 +760,8 @@ def _build_governance_df(
     # `publish_mode` and `final_pass` local variables so all artifacts stay consistent.
     row = {
         "Date": decision_date,
+        "model_protocol_version": PROTOCOL_VERSION,
+        "evidence_cohort": PROTOCOL_VERSION,
         "publish_mode": (_normalize_publish_mode(publish_mode_override) if publish_mode_override is not None else _normalize_publish_mode(_json_value(part2_summary, ["publish_mode", "mode"], "UNKNOWN"))),
         "final_pass": (int(final_pass_override) if final_pass_override is not None else _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)),
         "quality_ok": alpha_status["quality_ok"],
@@ -779,21 +785,7 @@ def _build_governance_df(
 
 
 def _count_realized_predlog_rows(predlog_df: pd.DataFrame) -> int:
-    if predlog_df.empty:
-        return 0
-    vcol = _first_col(predlog_df, ["px_voo_realized", "voo_realized"])
-    icol = _first_col(predlog_df, ["px_ief_realized", "ief_realized"])
-    if vcol is None or icol is None:
-        return 0
-    realized = predlog_df[vcol].notna() & predlog_df[icol].notna()
-    if "model_protocol_version" not in predlog_df.columns:
-        return 0
-    current = predlog_df["model_protocol_version"].fillna(LEGACY_PROTOCOL_VERSION).astype(str).eq(PROTOCOL_VERSION)
-    eligible = pd.to_numeric(
-        predlog_df.get("evidence_eligible", pd.Series(0, index=predlog_df.index)),
-        errors="coerce",
-    ).fillna(0).astype(int).eq(1)
-    return int((realized & current & eligible).sum())
+    return int(current_evidence_mask(predlog_df, require_realized=True).sum())
 
 
 def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, target_date: pd.Timestamp,
@@ -825,7 +817,8 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             "alpha_eligibility_source", "alpha_summary_json_source",
             "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction",
             "model_protocol_version", "model_code_sha", "pipeline_run_id",
-            "evidence_cohort", "evidence_eligible", "data_freshness_ok"
+            "evidence_cohort", "evidence_eligible", "data_freshness_ok",
+            "target_definition_id"
         ])
 
     # Preserve old observations as an explicit legacy cohort.  They remain in
@@ -844,6 +837,11 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         part2_summary.get("part1_data_freshness_ok", False)
         and part2_summary.get("macro_point_in_time_ok", False)
     )
+    target_definition_id = str(part2_summary.get("tail_event_definition", ""))
+    target_definition_ok = target_definition_id == "rowwise_trailing_63_observation_20th_percentile_shifted_1"
+    threshold_value = _safe_float(_row_value(defense_row, ["tail_threshold_dynamic"], None))
+    if threshold_value is None or not np.isfinite(threshold_value):
+        raise RuntimeError("Current Part 2 row is missing its causal tail_threshold_dynamic value.")
 
     row = {
         "decision_date": pd.Timestamp(decision_date).normalize(),
@@ -882,43 +880,9 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         # is true ~99% of the time), producing a base rate of ~1.0 instead of ~0.20 and
         # making every AUC, Brier, and ECE metric meaningless.
         #
-        # Corrected priority:
-        #   1. tail_threshold_dynamic — future-proofing if Part 2 ever writes a per-row
-        #      dynamic threshold column explicitly named "tail_threshold_dynamic"
-        #   2. part2_summary["tail_event_threshold"] — the authoritative H=1 daily
-        #      threshold = -0.015, validated against Part 1's rolling-quantile labels
-        #
-        # "signal_q_threshold" is REMOVED from the lookup chain.
-        #
-        # FIX (Audit 2026-05-07 — F2 + F4):
-        # Three-tier lookup with hardcoded last resort.
-        #
-        # F4: the prior `or`-based pattern is incorrect Python.  `x or y` treats
-        #     x as truthy/falsy: if x == 0.0 (valid but falsy), the chain silently
-        #     discards it and returns y.  Explicit `if x is not None` is required.
-        #
-        # F2: the prior chain had no hardcoded last resort.  If part2_g532_summary.json
-        #     is ever missing the "tail_event_threshold" key (schema migration, cold start,
-        #     truncated write), _safe_float(None) returns None and prediction_log gets a
-        #     null tail_threshold, silently breaking all Part 9 y_live reconstructions.
-        #     A hardcoded fallback of -0.015 (authoritative H=1 daily threshold) closes
-        #     this gap regardless of upstream schema changes.
-        #
-        # Priority chain (highest → lowest):
-        #   1. tail_threshold_dynamic  — per-row dynamic threshold if Part 2 ever writes it
-        #   2. part2_summary["tail_event_threshold"]  — -0.015 from the current summary JSON
-        #   3. -0.015 hardcoded  — last resort; matches H=1 base daily threshold
-        **{
-            "tail_threshold": _safe_float(
-                _row_value(defense_row, ["tail_threshold_dynamic"], None)
-                if _row_value(defense_row, ["tail_threshold_dynamic"], None) is not None
-                else (
-                    _json_value(part2_summary, ["tail_event_threshold"], None)
-                    if _json_value(part2_summary, ["tail_event_threshold"], None) is not None
-                    else -0.015  # hardcoded H=1 last resort
-                )
-            )
-        },
+        # causal-integrity-v3 forbids summary-level or hard-coded substitution.
+        # This exact row-level value travelled with the Part 1 label through Part 2.
+        "tail_threshold": float(threshold_value),
         # publish_mode: raw governance value, consistent with part3_summary.json.
         # deployment_mode: user-facing operational label (DEFENSE_ONLY when fail-closed).
         # Separating these eliminates the prior cross-file field-name collision.
@@ -938,11 +902,12 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "alpha_eligibility_source": str(alpha_sources["eligibility"]),
         "alpha_summary_json_source": str(alpha_sources["summary_json"]),
         "model_protocol_version": PROTOCOL_VERSION,
-        "model_code_sha": os.environ.get("GITHUB_SHA") or os.environ.get("PRICECALL_CODE_SHA"),
+        "model_code_sha": os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA"),
         "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
         "evidence_cohort": PROTOCOL_VERSION,
-        "evidence_eligible": int(data_freshness_ok),
+        "evidence_eligible": int(data_freshness_ok and target_definition_ok),
         "data_freshness_ok": int(data_freshness_ok),
+        "target_definition_id": target_definition_id,
     }
 
     # FIX (F2, Quant-Guild Part 53 Audit): Convert all Timestamp values in the row
@@ -2247,12 +2212,17 @@ def main(cfg: Part3Config = CFG) -> None:
         try:
             _existing_gov = pd.read_csv(gov_out)
             _existing_gov["Date"] = pd.to_datetime(_existing_gov["Date"], errors="coerce")
+            if "model_protocol_version" not in _existing_gov.columns:
+                _existing_gov["model_protocol_version"] = LEGACY_PROTOCOL_VERSION
+            _existing_gov["model_protocol_version"] = _existing_gov[
+                "model_protocol_version"
+            ].fillna(LEGACY_PROTOCOL_VERSION).astype(str)
             gov_df_combined = pd.concat([_existing_gov, gov_df], ignore_index=True)
             gov_df_combined["Date"] = pd.to_datetime(gov_df_combined["Date"], errors="coerce")
             gov_df_combined = (
                 gov_df_combined
-                .sort_values("Date")
-                .drop_duplicates(subset=["Date"], keep="last")
+                .sort_values(["Date", "model_protocol_version"])
+                .drop_duplicates(subset=["Date", "model_protocol_version"], keep="last")
                 .reset_index(drop=True)
             )
             gov_df_combined.to_csv(gov_out, index=False)
@@ -2392,7 +2362,7 @@ def main(cfg: Part3Config = CFG) -> None:
         "part": "PART3_V1",
         "protocol_version": PROTOCOL_VERSION,
         "evidence_cohort": PROTOCOL_VERSION,
-        "source_code_sha": os.environ.get("GITHUB_SHA") or os.environ.get("PRICECALL_CODE_SHA"),
+        "source_code_sha": os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA"),
         "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
         "root": str(root),
         "defense_source": str(part2_tape),
@@ -2787,6 +2757,3 @@ def main(cfg: Part3Config = CFG) -> None:
 
 if __name__ == "__main__":
     main(CFG)
-
-
-

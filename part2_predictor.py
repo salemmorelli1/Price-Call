@@ -64,6 +64,8 @@ from sklearn.mixture import GaussianMixture
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from artifact_integrity import PROTOCOL_VERSION
+
 warnings.filterwarnings("ignore")
 
 SCRIPT_VERSION = "GEN5_PART2_G532_DAILY_CANONICAL_V2"  # V2: Part 16 audit — per-regime AUC monitoring added
@@ -153,6 +155,8 @@ class Part2Gen53Config:
     # and by the summary JSON / prediction_log tail_threshold field consumed by Part 9
     # for live label reconstruction. Both must match a daily definition.
     TAIL_EVENT_THRESHOLD: float = -0.015  # H=1 daily threshold (was -0.015/sqrt(7))
+    HISTORICAL_AUC_P_MAX: float = 0.10
+    HISTORICAL_BRIER_SKILL_MIN: float = 0.005
     OVERLAY_TRUST_MIN: float = 0.60
     OVERLAY_WIDTH_TRIGGER: float = 0.075
     OVERLAY_PENALTY_TRIGGER: float = 0.38
@@ -1372,7 +1376,16 @@ def _predict_reg(bundle, x_cur: pd.DataFrame):
 
 
 # FIX: was Part2Gen5Config (undefined), corrected to Part2Gen53Config
-def _fit_dist_bundle(x_train: pd.DataFrame, y_train: pd.Series, x_val: pd.DataFrame, y_val: pd.Series, val_regimes: pd.Series, current_regime: str, cfg: Part2Gen53Config):
+def _fit_dist_bundle(
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+    x_val: pd.DataFrame,
+    y_val: pd.Series,
+    val_regimes: pd.Series,
+    current_regime: str,
+    cfg: Part2Gen53Config,
+    val_tail_thresholds: Optional[pd.Series] = None,
+):
     imp = _fit_imputer(x_train)
     xt = imp.transform(x_train)
     xv = imp.transform(x_val)
@@ -1413,7 +1426,11 @@ def _fit_dist_bundle(x_train: pd.DataFrame, y_train: pd.Series, x_val: pd.DataFr
     conf_coverage = float(np.mean((yva >= q05_conf) & (yva <= q95_conf))) if len(yva) else np.nan
     median_rmse = _rmse(yva, q50)
 
-    tail_threshold = cfg.TAIL_EVENT_THRESHOLD
+    if val_tail_thresholds is None:
+        raise RuntimeError("Validation rows are missing tail_threshold_dynamic.")
+    tail_threshold = pd.to_numeric(val_tail_thresholds, errors="coerce").to_numpy(dtype=float)
+    if len(tail_threshold) != len(yva) or not np.isfinite(tail_threshold).all():
+        raise RuntimeError("Validation rows contain an invalid tail_threshold_dynamic value.")
     sigma = np.maximum((q95_conf - q05_conf) / (2.0 * 1.6448536269514722), cfg.DIST_MIN_SIGMA)
     p_tail_val = np.clip(norm.cdf((tail_threshold - q50) / sigma), 1e-6, 1.0 - 1e-6)
 
@@ -1857,6 +1874,33 @@ def _causal_base_rate(train_df: pd.DataFrame, val_df: Optional[pd.DataFrame] = N
     return float(np.clip(rate, 1e-6, 1.0 - 1e-6))
 
 
+def _tail_threshold_for_row(row: pd.Series) -> float:
+    """Resolve the backward-looking event threshold attached to one decision row."""
+    value = pd.to_numeric(
+        pd.Series([row.get("tail_threshold_dynamic", np.nan)]), errors="coerce"
+    ).iloc[0]
+    if not np.isfinite(value):
+        raise RuntimeError("Prediction row is missing its causal tail_threshold_dynamic value.")
+    return float(value)
+
+
+def _historical_evidence_gate(
+    auc: float,
+    auc_p_one_sided: float,
+    brier_skill: float,
+    cfg: Part2Gen53Config,
+) -> bool:
+    """Require direction, uncertainty, and meaningful proper-score improvement."""
+    return bool(
+        np.isfinite(auc)
+        and auc > 0.50
+        and np.isfinite(auc_p_one_sided)
+        and auc_p_one_sided <= float(cfg.HISTORICAL_AUC_P_MAX)
+        and np.isfinite(brier_skill)
+        and brier_skill >= float(cfg.HISTORICAL_BRIER_SKILL_MIN)
+    )
+
+
 # FIX: was Part2Gen5Config (undefined), corrected to Part2Gen53Config
 def _build_fit_bundle(train_df: pd.DataFrame, val_df: pd.DataFrame, current_row: pd.DataFrame, feature_cols: List[str], cfg: Part2Gen53Config):
     reg_bundle, reg_val, current_regime = _regime_for_current(train_df, val_df, current_row[[c for c in cfg.REGIME_FEATURES if c in current_row.columns]].copy(), cfg)
@@ -1867,7 +1911,16 @@ def _build_fit_bundle(train_df: pd.DataFrame, val_df: pd.DataFrame, current_row:
     prob_bundle = _fit_prob_ensemble(train_df[feature_cols], y_tail_train, val_df[feature_cols], y_tail_val, reg_val, current_regime, cfg)
     reg_voo = _fit_reg_ensemble(train_df[feature_cols], train_df["fwd_voo"], val_df[feature_cols], val_df["fwd_voo"], reg_val, current_regime, cfg)
     reg_ief = _fit_reg_ensemble(train_df[feature_cols], train_df["fwd_ief"], val_df[feature_cols], val_df["fwd_ief"], reg_val, current_regime, cfg)
-    dist_bundle = _fit_dist_bundle(train_df[feature_cols], train_df["excess_ret"], val_df[feature_cols], val_df["excess_ret"], reg_val, current_regime, cfg)
+    dist_bundle = _fit_dist_bundle(
+        train_df[feature_cols],
+        train_df["excess_ret"],
+        val_df[feature_cols],
+        val_df["excess_ret"],
+        reg_val,
+        current_regime,
+        cfg,
+        val_df.get("tail_threshold_dynamic"),
+    )
     return {
         "prob": prob_bundle,
         "voo": reg_voo,
@@ -2346,7 +2399,7 @@ def _validate_output_schema(out: pd.DataFrame) -> None:
         "active_weight_raw", "active_weight_capped", "deploy_downside", "deploy_upside",
         "drift_alarm", "high_risk_state", "strategy_ret_net", "active_ret_net",
         "benchmark_ret", "turnover", "cost_model", "raw_val_auc", "calibration_gate_on",
-        "expert_agreement", "is_live",
+        "expert_agreement", "tail_threshold_dynamic", "is_live",
     ]
     missing = [c for c in required_cols if c not in out.columns]
     if missing:
@@ -2953,7 +3006,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     # A full-tape prevalence estimate leaks future labels into historical rows.
     # Each row receives the base rate stored in its causal fit bundle instead.
     base_rate = 0.20
-    tail_threshold = float(part1_meta.get("tail_threshold", cfg.TAIL_EVENT_THRESHOLD))
+    tail_threshold_fallback = float(part1_meta.get("tail_threshold", cfg.TAIL_EVENT_THRESHOLD))
+    tail_threshold = tail_threshold_fallback
 
     rows = []
     fit_bundle = None
@@ -2997,6 +3051,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         if _p6_label not in ("unknown", "nan", "", "None"):
             current_regime = _p6_label
         prob_pred = _predict_prob(fit_bundle["prob"], current_row[feature_cols], base_rate, cfg)
+        tail_threshold = _tail_threshold_for_row(current_row.iloc[0])
         dist_pred = _predict_dist(fit_bundle["dist"], current_row[feature_cols], tail_threshold, cfg)
         p_final_g5, p_final_g5_source, fusion_fallback_flag, dist_overlay = _apply_risk_overlay_g53(
             prob_pred["p_final_cal"], dist_pred, fit_bundle["dist"], base_rate, tail_threshold, cfg
@@ -3111,6 +3166,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             "excess_ret": _safe_num(current_row.iloc[0].get("excess_ret", np.nan)),
             "y_voo": _safe_num(current_row.iloc[0].get("y_voo", np.nan)),
             "y_rel_tail_voo_vs_ief": _safe_num(current_row.iloc[0].get("y_rel_tail_voo_vs_ief", np.nan)),
+            "tail_threshold_dynamic": float(tail_threshold),
             "y_avail": y_avail,
             "CalibDate": pd.Timestamp(train_df.iloc[-1]["Date"]).strftime("%Y-%m-%d") if train_df is not None else None,
             "sign": float(np.sign(p_final_g5 - base_rate)),
@@ -3267,7 +3323,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         stress_q_threshold = _rolling_quantile(prior_stress, cfg.DEF_TRIGGER_LOOKBACK, cfg.DEF_TRIGGER_MIN_HISTORY, cfg.DEF_TRIGGER_STRESS_Q)
         gov = _governance_mapping(
             float(out.loc[i, "p_final_cal"]),
-            base_rate,
+            float(out.loc[i, "base_rate"]),
             int(out.loc[i, "drift_alarm"]),
             float(out.loc[i, "raw_val_auc"]) if np.isfinite(out.loc[i, "raw_val_auc"]) else np.nan,
             float(out.loc[i, "expert_agreement"]) if np.isfinite(out.loc[i, "expert_agreement"]) else np.nan,
@@ -3447,11 +3503,16 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         if np.isfinite(_model_brier) and np.isfinite(_null_brier) and _null_brier > 0
         else np.nan
     )
-    historical_evidence_ok = bool(
-        np.isfinite(cls_final.get("auc", np.nan))
-        and float(cls_final["auc"]) >= 0.50
-        and np.isfinite(historical_brier_skill)
-        and historical_brier_skill >= 0.0
+    historical_auc_test = _delong_auc_ztest(
+        realized["y_rel_tail_voo_vs_ief"].astype(int).values if len(realized) else np.array([]),
+        realized["p_final_g5"].astype(float).values if len(realized) else np.array([]),
+    )
+    historical_auc_p = float(historical_auc_test.get("p_one_sided", np.nan))
+    historical_evidence_ok = _historical_evidence_gate(
+        float(cls_final.get("auc", np.nan)),
+        historical_auc_p,
+        historical_brier_skill,
+        cfg,
     )
     part1_data_freshness_ok = bool(part1_meta.get("data_freshness_ok", False))
     macro_point_in_time_ok = bool(part0_meta.get("historical_point_in_time_complete", False))
@@ -3515,7 +3576,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
     #   Path B (AUC-backup):  rolling_AUC >= 0.535 AND ECE < 0.03   (new)
     # Path B fires only when Path A fails, providing a principled safety valve
     # rather than lowering the enter threshold unconditionally.
-    _quality_enter = bool(
+    _quality_enter = bool(historical_evidence_ok and (
         # Path A: lift-primary (original criterion)
         (np.isfinite(cls_base_lift) and cls_base_lift > 1.03 and
          np.isfinite(cls_base_ece) and cls_base_ece < 0.03)
@@ -3538,9 +3599,9 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         # Threshold unchanged at 0.535. ECE guard unchanged at < 0.03.
         (np.isfinite(trailing_4fold_auc) and trailing_4fold_auc >= 0.535 and
          np.isfinite(cls_base_ece) and cls_base_ece < 0.03)
-    )
+    ))
     _quality_stay = bool(
-        _prior_quality_ok_for_stay and
+        historical_evidence_ok and _prior_quality_ok_for_stay and
         np.isfinite(cls_base_lift) and cls_base_lift > 1.01 and
         np.isfinite(cls_base_ece) and cls_base_ece < 0.05
     )
@@ -3569,6 +3630,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
 
     summary = {
         "part": "part2",
+        "model_protocol_version": PROTOCOL_VERSION,
         "version": "GEN5_PART2_GEN532_SOFT_CAUTION_OVERLAY",
         "schema_version": cfg.OUTPUT_SCHEMA_VERSION,
         "horizon": cfg.H,
@@ -3680,10 +3742,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
             ) if len(_hv) >= 20 else {"auc": float("nan"), "z": float("nan"),
                                       "p_one_sided": float("nan"), "auc_warning": True}
         )(),
-        "delong_overall_auc": _delong_auc_ztest(
-            realized["y_rel_tail_voo_vs_ief"].values if "y_rel_tail_voo_vs_ief" in realized.columns else np.array([]),
-            realized["p_tail_base"].values if "p_tail_base" in realized.columns else np.array([]),
-        ),
+        "delong_overall_auc": historical_auc_test,
         "deploy_regime_auc_warning": (
             # True if high_vol AUC is NOT significant at p<0.10 (soft monitoring only)
             _delong_auc_ztest(
@@ -3701,6 +3760,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         ),
         "stress_panel": stress_panel,
         "tail_event_threshold": tail_threshold,
+        "tail_event_threshold_fallback": tail_threshold_fallback,
+        "tail_event_definition": "rowwise_trailing_63_observation_20th_percentile_shifted_1",
         "part1_version_consumed": str(part1_meta.get("version")),
         "environment": _environment_metadata(os.path.abspath(__file__) if "__file__" in globals() else "part2_gen5.py"),
         "build_variant": "PHASE3_2_BASE_PLUS_SOFT_CAUTION_OVERLAY",
@@ -3731,6 +3792,8 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "effective_fail_closed_cal_gate": float(fail_closed_cal_gate_eff),
         "historical_null_brier_causal": _null_brier,
         "historical_brier_skill_causal": historical_brier_skill,
+        "historical_auc_p_max": float(cfg.HISTORICAL_AUC_P_MAX),
+        "historical_brier_skill_min": float(cfg.HISTORICAL_BRIER_SKILL_MIN),
         "historical_evidence_ok": historical_evidence_ok,
         "part1_data_freshness_ok": part1_data_freshness_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
@@ -3933,4 +3996,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-

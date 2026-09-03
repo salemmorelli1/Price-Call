@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     timeout-minutes: 30
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -29,11 +30,17 @@ jobs:
       PRICECALL_STRICT_DRIVE_ONLY: "0"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - name: Synchronize source before backfill
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
+          git pull --ff-only origin "${GITHUB_REF_NAME}"
+          echo "PRICECALL_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -153,10 +160,9 @@ jobs:
           # backfill_realized.py patches the file → this step stages and commits it →
           # next pipeline restore step fetches the corrected version from origin.
           #
-          # Safety properties (unchanged from S54 F1 fix design):
-          #   - Idempotent: if the summary was already correct (monotone guard in
-          #     backfill_realized.py prevents decreasing live_realized_dates), the file
-          #     will be identical to origin and git diff --cached will show no change.
+          # Safety properties:
+          #   - Idempotent: if the eligible current-protocol count is already exact,
+          #     the file is identical to origin and git diff shows no change.
           #   - Failure-safe: if artifacts_part3_v1/part3_summary.json does not exist
           #     on the runner (e.g., Part 3 never ran this cycle), git add -f on a
           #     missing path emits a warning and continues due to the || true guard.
@@ -177,14 +183,20 @@ jobs:
             exit 0
           fi
 
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
+          if [ "$(git rev-parse "origin/${GITHUB_REF_NAME}")" != "${PRICECALL_CODE_SHA}" ]; then
+            echo "Remote branch changed during backfill; refusing to merge mixed-run artifacts."
+            exit 1
+          fi
+
           git commit -m "Backfill realized prices and refresh dashboard"
-
-          git pull origin "${GITHUB_REF_NAME}" \
-            --no-rebase \
-            --strategy-option=ours \
-            --no-edit
-
           git push origin HEAD:"${GITHUB_REF_NAME}"
+
+      - name: Deploy the committed dashboard
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
 
       - name: Report backfill gate status
         if: always()

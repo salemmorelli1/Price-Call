@@ -48,8 +48,9 @@ that merely looks current while relying on an older decision.
 Raw accuracy is descriptive only. Because tail events are imbalanced, inference uses
 balanced accuracy, Matthews correlation, AUC, Brier skill, calibration error, and a
 deterministic label-permutation null that preserves event prevalence. Historical
-evidence is not considered positive unless full-period AUC is at least 0.50 and
-Brier skill is non-negative versus the causal prevalence forecast.
+evidence is not considered positive unless full-period AUC exceeds 0.50, its
+one-sided DeLong p-value is at most 0.10, and Brier skill is at least 0.005 versus
+the rowwise causal prevalence forecast.
 
 Every score uses the causal base-rate value attached to that observation. AUC and
 balanced-accuracy inference requires at least five positive and five negative outcomes.
@@ -58,10 +59,15 @@ directional significance flag remains false.
 
 ## Evidence cohort contract
 
-`causal-integrity-v2` is a new live-evidence cohort. Earlier prediction-log rows are
-retained as `legacy-pre-causal-integrity-v2` for reproducibility, with
-`evidence_eligible=0`. Promotion counts only current-protocol rows that were produced
-with fresh, point-in-time inputs. Code SHA and workflow run ID are stored on each new row.
+`causal-integrity-v3` is the live-evidence cohort for the corrected target definition.
+Earlier prediction-log rows are retained for reproducibility with `evidence_eligible=0`.
+Promotion counts only current-protocol rows produced with fresh, point-in-time inputs
+and an exact row-level tail threshold. Code SHA and workflow run ID are stored on each row.
+
+The event label, distributional overlay, prediction log, and live attribution all use
+the same backward-looking 63-observation 20th-percentile threshold shifted by one row.
+The fixed `-0.015` value is only a cold-start fallback inside Part 1 and is never silently
+substituted for a missing threshold in current-protocol evidence.
 
 ## Operational contract
 
@@ -71,8 +77,11 @@ after the date marker has been committed. Pull or merge failures are fatal and m
 not be hidden with `|| true`.
 
 Backfill may run only on weekdays at or after 16:20 Eastern. Manual dispatch does not
-bypass this settlement gate. Failure to regenerate Part 9 is fatal. Both production
-and backfill refresh the dashboard snapshot and SHA-256 artifact manifest before commit.
+bypass this settlement gate. Failure to regenerate Part 9 is fatal. Both workflows
+synchronize before computation, abort if the branch changes during computation, build
+the SHA-256 manifest after all outputs, push without conflict-merging, and explicitly
+dispatch the verified Pages deployment. Pages has no independent push trigger, so a code
+merge cannot publish an old or incomplete artifact snapshot before production succeeds.
 
 ## Dependency contract
 

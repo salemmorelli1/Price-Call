@@ -10,6 +10,23 @@ def test_causal_base_rate_uses_only_supplied_history():
     assert np.isclose(_causal_base_rate(train, val), 2 / 6)
 
 
+def test_row_level_tail_threshold_is_propagated():
+    from part2_predictor import _tail_threshold_for_row
+
+    assert np.isclose(_tail_threshold_for_row(pd.Series({"tail_threshold_dynamic": -0.0123})), -0.0123)
+    with np.testing.assert_raises_regex(RuntimeError, "tail_threshold_dynamic"):
+        _tail_threshold_for_row(pd.Series({}))
+
+
+def test_historical_evidence_requires_significance_and_material_brier_skill():
+    from part2_predictor import Part2Gen53Config, _historical_evidence_gate
+
+    cfg = Part2Gen53Config()
+    assert _historical_evidence_gate(0.56, 0.04, 0.02, cfg)
+    assert not _historical_evidence_gate(0.56, 0.20, 0.02, cfg)
+    assert not _historical_evidence_gate(0.56, 0.04, 0.001, cfg)
+
+
 def test_execution_weights_are_lagged_one_row():
     from part2_predictor import _lag_execution_weights
 
@@ -79,6 +96,19 @@ def test_current_evidence_counter_excludes_legacy_rows():
         "evidence_eligible": [1, 0, 1],
     })
     assert _count_realized_predlog_rows(frame) == 1
+
+
+def test_shared_evidence_mask_excludes_prior_protocol_and_ineligible_rows():
+    from artifact_integrity import PROTOCOL_VERSION, current_evidence_mask
+
+    frame = pd.DataFrame({
+        "model_protocol_version": ["causal-integrity-v2", PROTOCOL_VERSION, PROTOCOL_VERSION],
+        "evidence_eligible": [1, 0, 1],
+        "px_voo_realized": [100.0, 101.0, 102.0],
+        "px_ief_realized": [90.0, 91.0, 92.0],
+    })
+    assert current_evidence_mask(frame).tolist() == [False, False, True]
+    assert current_evidence_mask(frame, require_realized=True).sum() == 1
 
 
 def test_non_vintage_macro_history_forces_fail_closed():

@@ -48,6 +48,12 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "artifacts_part10_bot/portfolio_state.json",
     ])
 
+    part3_regime = str(part3.get("current_regime", "")).strip()
+    part7_regime = str(part7.get("regime_label", "")).strip()
+    if part3_regime and part7_regime and part3_regime != part7_regime:
+        raise ValueError(
+            f"dashboard source mismatch: Part 3 regime={part3_regime}, Part 7 regime={part7_regime}"
+        )
     live = part9.get("classification_stats_live", {}) or {}
     backtest = part9.get("classification_stats_backtest", {}) or {}
     n_live = int(part9.get("n_live_realized", 0) or 0)

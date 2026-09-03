@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     timeout-minutes: 90
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -30,11 +31,17 @@ jobs:
       PRICECALL_STRICT_DRIVE_ONLY: "0"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - name: Synchronize source before computation
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
+          git pull --ff-only origin "${GITHUB_REF_NAME}"
+          echo "PRICECALL_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -195,6 +202,9 @@ jobs:
           missing=0
           for path in \
             "artifacts_part2_g532/predictions/part2_g532_summary.json" \
+            "artifacts_part0/part0_meta.json" \
+            "artifacts_part1/part1_meta.json" \
+            "artifacts_part1/part1_diagnostics.json" \
             "artifacts_part2a_alpha/predictions/part2a21_alpha_positions.csv" \
             "artifacts_part3/prediction_log.csv" \
             "artifacts_part3_v1/v1_final_production_tape.csv" \
@@ -240,9 +250,8 @@ jobs:
         run: python artifact_integrity.py --root . --write-pipeline-status
 
       # ── Commit and push ───────────────────────────────────────────────
-      # Uses --no-rebase merge with -X ours to resolve any artifact
-      # conflicts in favour of the current run's output. Artifact files
-      # are always authoritative from the most-recent run.
+      # The source commit is rechecked before committing. A concurrent branch
+      # change aborts this run instead of conflict-merging mixed-run artifacts.
       - name: Commit and push artifacts
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
         run: |
@@ -251,6 +260,9 @@ jobs:
 
           # Stage all artifact outputs, forcing past .gitignore
           git add -f \
+            artifacts_part0/part0_meta.json \
+            artifacts_part1/part1_meta.json \
+            artifacts_part1/part1_diagnostics.json \
             artifacts_part2_g532/predictions/ \
             artifacts_part2a_alpha/predictions/ \
             artifacts_part3/ \
@@ -272,31 +284,17 @@ jobs:
             exit 0
           fi
 
-          # FIX (S60): removed [skip ci] from this commit message.
-          #
-          # ROOT CAUSE OF PAGES NOT AUTO-UPDATING:
-          # "[skip ci]" suppresses ALL push-triggered workflows on github.com, including
-          # pages.yml which triggers on: push: branches: ["main"]. Every scheduled
-          # production run committed with [skip ci] → pages.yml never fired → dashboard
-          # stayed stale until Salem manually triggered "Deploy GitHub Pages".
-          #
-          # Removing [skip ci] here causes pages.yml to fire automatically after each
-          # successful production artifact commit, keeping the dashboard current.
-          #
-          # No loop risk: pages.yml only uploads an artifact and calls deploy-pages.
-          # It does NOT commit or push anything to the repo, so there is no cycle.
-          #
-          # daily-backfill.yml retains [skip ci] intentionally: backfill updates only
-          # realized price fields in prediction_log.csv and does not produce new
-          # dashboard-visible decisions. The morning production commit (this workflow)
-          # is the correct and sufficient trigger for a pages redeploy.  [FIX F1/S60]
+          git fetch origin "${GITHUB_REF_NAME}" --quiet
+          if [ "$(git rev-parse "origin/${GITHUB_REF_NAME}")" != "${PRICECALL_CODE_SHA}" ]; then
+            echo "Remote branch changed during computation; refusing to merge mixed-run artifacts."
+            exit 1
+          fi
+
           git commit -m "Update daily production artifacts"
-
-          # Pull remote changes, resolving any JSON/CSV conflicts by
-          # keeping the current run's version (ours).
-          git pull origin "${GITHUB_REF_NAME}" \
-            --no-rebase \
-            --strategy-option=ours \
-            --no-edit
-
           git push origin HEAD:"${GITHUB_REF_NAME}"
+
+      - name: Deploy the committed dashboard
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"

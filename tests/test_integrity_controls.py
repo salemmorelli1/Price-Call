@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from artifact_integrity import PROTOCOL_VERSION, read_json_strict, write_json_strict
+from artifact_integrity import (
+    PROTOCOL_VERSION,
+    REQUIRED_PUBLISHED_FILES,
+    build_run_manifest,
+    read_json_strict,
+    verify_run_manifest,
+    write_json_strict,
+)
 
 
 def test_strict_json_converts_nonfinite_values_to_null(tmp_path):
@@ -32,6 +39,8 @@ def test_workflows_publish_dashboard_and_manifest():
         assert "sync_dashboard.py" in text
         assert "artifact_integrity.py" in text
         assert "artifacts_manifest.json" in text
+        assert "gh workflow run pages.yml" in text
+        assert "--strategy-option=ours" not in text
 
 
 def test_production_gate_has_no_upper_time_window():
@@ -100,3 +109,57 @@ def test_dashboard_html_sync_refuses_empty_prediction_ledger(tmp_path):
     )
     with pytest.raises(ValueError, match="prediction_log"):
         sync_html(tmp_path)
+
+
+def test_pages_bundle_contains_every_local_reference(tmp_path):
+    from prepare_pages import prepare_site
+
+    (tmp_path / "artifacts_dashboard").mkdir()
+    (tmp_path / "artifacts_dashboard" / "dashboard_snapshot.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "artifacts_part10_bot").mkdir()
+    for name in ("signal_log.csv", "portfolio_state.json", "performance_report.json"):
+        (tmp_path / "artifacts_part10_bot" / name).write_text("{}", encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        "<a href='artifacts_part10_bot/signal_log.csv'>log</a>"
+        "<script>fetch('artifacts_dashboard/dashboard_snapshot.json')</script>",
+        encoding="utf-8",
+    )
+    site = tmp_path / "site"
+    prepare_site(tmp_path, site)
+    assert (site / "artifacts_dashboard" / "dashboard_snapshot.json").is_file()
+    assert (site / "artifacts_part10_bot" / "signal_log.csv").is_file()
+
+
+def test_second_pass_governance_uses_rowwise_base_rate():
+    text = Path("part2_predictor.py").read_text(encoding="utf-8")
+    assert 'float(out.loc[i, "base_rate"]),' in text
+    assert 'float(out.loc[i, "p_final_cal"]),\n            base_rate,' not in text
+
+
+def test_pages_workflow_uses_verified_builder():
+    text = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
+    assert "python prepare_pages.py --root . --site _site" in text
+    assert "workflow_dispatch:" in text
+    assert "push:" not in text
+
+
+def test_manifest_detects_a_post_generation_change(tmp_path):
+    for rel in REQUIRED_PUBLISHED_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    write_json_strict(tmp_path / "artifacts_manifest.json", build_run_manifest(tmp_path))
+    assert verify_run_manifest(tmp_path) == []
+    (tmp_path / "index.html").write_text("changed", encoding="utf-8")
+    assert any("index.html" in failure for failure in verify_run_manifest(tmp_path))
+
+
+def test_manifest_reports_a_post_generation_deletion(tmp_path):
+    for rel in REQUIRED_PUBLISHED_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    write_json_strict(tmp_path / "artifacts_manifest.json", build_run_manifest(tmp_path))
+    (tmp_path / "index.html").unlink()
+    failures = verify_run_manifest(tmp_path)
+    assert failures == ["published file is missing after manifest generation: index.html"]
