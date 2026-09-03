@@ -49,16 +49,16 @@
       "sha256": "d8d02fff4457b20aee0e924a9723834e045006ebdfb8ebcc2ef62d551c4a89a9"
     },
     "artifacts_part9/live_attribution_report.json": {
-      "bytes": 2744,
-      "sha256": "7fad3f159a960fa5eb3263db7d9f3dada1fbbc6c7f05e7085abc5e0bcc33a640"
+      "bytes": 2061,
+      "sha256": "18b5fef26d3e885949ac99f2e9d08da1bf033407849e00764bf1b99d13565d63"
     },
     "index.html": {
-      "bytes": 82650,
-      "sha256": "981bf1cdb3466fee2082ce0b53c2773e1b16f62dc69366bd727e7c10dcbee88d"
+      "bytes": 82674,
+      "sha256": "f07a2cdd27d617293f69eec9f3f71ed0dabc3b5493e70479656520a37bb53b31"
     }
   },
-  "generated_at_utc": "2026-09-03T18:07:30.827952+00:00",
-  "github_run_id": "33784814628",
+  "generated_at_utc": "2026-09-03T22:44:37.752818+00:00",
+  "github_run_id": "33814361139",
   "protocol_version": "causal-integrity-v3",
-  "source_code_sha": "79650fbd073f0588f6ce7aa6ea9de7c878a5124a"
+  "source_code_sha": "f5a3db75a4045dea92d1bbde8486e7eeaad4cfe6"
 }
