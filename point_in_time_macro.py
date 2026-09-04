@@ -35,6 +35,58 @@ FRED_SERIES = {
 }
 
 
+def realtime_windows(
+    start: object,
+    end: object,
+    *,
+    years: int = 4,
+) -> list[tuple[str, str]]:
+    """Create non-overlapping ALFRED real-time windows below FRED's cap.
+
+    The FRED file endpoint rejects responses spanning more than 2,000 vintage
+    dates. Four-year windows remain below that ceiling even for daily series.
+    """
+    if years < 1:
+        raise ValueError("years must be positive")
+    cursor = pd.Timestamp(start).normalize()
+    final = pd.Timestamp(end).normalize()
+    if cursor > final:
+        raise ValueError("start must not be after end")
+    windows: list[tuple[str, str]] = []
+    while cursor <= final:
+        window_end = min(cursor + pd.DateOffset(years=years) - pd.Timedelta(days=1), final)
+        windows.append((cursor.date().isoformat(), window_end.date().isoformat()))
+        cursor = window_end + pd.Timedelta(days=1)
+    return windows
+
+
+def get_series_releases_chunked(
+    fred: Fred,
+    series_id: str,
+    realtime_start: object,
+    realtime_end: object,
+) -> pd.DataFrame:
+    """Fetch all releases without requesting an unbounded vintage range."""
+    chunks = [
+        pd.DataFrame(
+            fred.get_series_all_releases(
+                series_id,
+                realtime_start=start,
+                realtime_end=end,
+            )
+        )
+        for start, end in realtime_windows(realtime_start, realtime_end)
+    ]
+    releases = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+    required = {"date", "realtime_start", "value"}
+    if not required.issubset(releases.columns):
+        raise ValueError(f"release response missing {sorted(required - set(releases.columns))}")
+    releases = releases.drop_duplicates(["date", "realtime_start"], keep="first")
+    if releases.empty:
+        raise ValueError(f"ALFRED returned no releases for {series_id}")
+    return releases
+
+
 def first_release_series(
     releases: pd.DataFrame,
     calendar: pd.DatetimeIndex,
@@ -100,14 +152,21 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     revised.index = pd.to_datetime(revised.index, errors="coerce").normalize()
 
     fred = Fred(api_key=api_key)
+    realtime_start = calendar.min() - pd.DateOffset(years=2)
+    realtime_end = calendar.max()
     columns: list[pd.Series] = []
     modes: dict[str, str] = {}
     errors: dict[str, str] = {}
     for series_id, name in FRED_SERIES.items():
         try:
-            releases = fred.get_series_all_releases(series_id)
+            releases = get_series_releases_chunked(
+                fred,
+                series_id,
+                realtime_start,
+                realtime_end,
+            )
             series = first_release_series(releases, calendar, name)
-            modes[name] = "alfred_first_release"
+            modes[name] = "alfred_first_release_chunked"
         except Exception as exc:
             series = _fallback_series(revised, calendar, name)
             modes[name] = "latest_revised_fallback" if series.notna().any() else "unavailable"
@@ -116,7 +175,9 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
 
     macro = pd.concat(columns, axis=1).reindex(calendar)
     macro.index.name = "Date"
-    complete = bool(modes) and all(mode == "alfred_first_release" for mode in modes.values())
+    complete = bool(modes) and all(
+        mode == "alfred_first_release_chunked" for mode in modes.values()
+    )
 
     # Part 6 consumes features_full.parquet, so rebuilding the macro file alone
     # would not remove revised values from the regime engine.
@@ -129,6 +190,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     meta.update({
         "protocol_version": PROTOCOL_VERSION,
         "fred_vintage_policy": "earliest ALFRED release, indexed by first availability date",
+        "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
         "fred_vintage_mode_by_series": modes,
         "fred_vintage_errors": errors,
         "historical_point_in_time_complete": complete,
@@ -139,7 +201,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     write_json_strict(meta_path, meta)
     print(
         f"[Point-in-time macro] complete={complete} "
-        f"first_release={sum(mode == 'alfred_first_release' for mode in modes.values())}/{len(modes)}"
+        f"first_release={sum(mode == 'alfred_first_release_chunked' for mode in modes.values())}/{len(modes)}"
     )
     return meta
 

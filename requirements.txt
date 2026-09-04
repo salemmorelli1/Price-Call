@@ -11,3 +11,4 @@ hmmlearn>=0.3,<1
 cvxpy>=1.5,<2
 gradio>=5,<7
 plotly>=5,<7
+exchange-calendars>=4.11,<5

@@ -57,6 +57,11 @@ def test_dashboard_snapshot_excludes_legacy_evidence(tmp_path):
         "artifacts_part2_g532/predictions/part2_g532_summary.json": {
             "publish_mode": "FAIL_CLOSED_NEUTRAL", "final_pass": False,
             "part1_data_freshness_ok": False,
+            "macro_point_in_time_ok": False,
+            "historical_evidence_ok": False,
+            "historical_brier_skill_causal": -0.01,
+            "delong_overall_auc": {"auc": 0.51, "p_one_sided": 0.30},
+            "distributional_diagnostics": {"conf_coverage": 0.89},
         },
         "artifacts_part3_v1/part3_summary.json": {
             "publish_mode": "FAIL_CLOSED_NEUTRAL", "deployment_mode": "DEFENSE_ONLY",
@@ -74,6 +79,10 @@ def test_dashboard_snapshot_excludes_legacy_evidence(tmp_path):
     assert snapshot["data_freshness_ok"] is False
     assert snapshot["evidence"]["eligible_realized"] == 0
     assert snapshot["evidence"]["legacy_realized_excluded"] == 28
+    assert snapshot["operator_validation"]["status"] == "NOT_VALIDATED"
+    assert snapshot["metrics"]["backtest_auc_p_value"] == 0.30
+    assert snapshot["prediction_interval"]["nominal_coverage"] == 0.90
+    assert snapshot["prediction_interval"]["empirical_coverage"] == 0.89
 
 
 def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
@@ -98,6 +107,8 @@ def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
     assert '"target_date":"2026-09-03"' in html
     assert 'const botRows=[{"date":"legacy"}]' in html
     assert 'id="pricecall-verified-snapshot"' in html
+    assert "AUC p-value" in html
+    assert "operator_validation.status" in html
 
 
 def test_dashboard_html_sync_refuses_empty_prediction_ledger(tmp_path):
@@ -163,3 +174,20 @@ def test_manifest_reports_a_post_generation_deletion(tmp_path):
     (tmp_path / "index.html").unlink()
     failures = verify_run_manifest(tmp_path)
     assert failures == ["published file is missing after manifest generation: index.html"]
+
+
+def test_manifest_directly_hashes_mutable_evidence_ledgers():
+    required = set(REQUIRED_PUBLISHED_FILES)
+    assert "artifacts_part2_g532/predictions/g532_final_consensus_tape.csv" in required
+    assert "artifacts_part3/prediction_log.csv" in required
+    assert "artifacts_part8/execution_cost_tape.csv" in required
+    assert "artifacts_part10_bot/signal_log.csv" in required
+    assert "artifacts_part10_bot/trade_log.csv" in required
+
+
+def test_current_html_has_no_pre_snapshot_performance_claims():
+    html = Path("index.html").read_text(encoding="utf-8")
+    assert "Committed artifact snapshot · August 25, 2026" not in html
+    assert "<strong>25 / 60</strong>live evidence" not in html
+    assert "<label>AUC p-value</label><strong>—</strong>" in html
+    assert "<span class=\"kicker\">Operator validation</span>" in html

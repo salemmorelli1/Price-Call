@@ -43,6 +43,10 @@ The system is designed to remain conservative:
 
 ### Operational runners
 - `run_tuesday_prediction.py` — canonical daily runner
+- `market_data_integrity.py` — overlays official Cboe VIX3M history when the
+  general market feed is stale, while preserving fail-closed freshness checks
+- `point_in_time_macro.py` — retrieves bounded ALFRED vintage windows and
+  rebuilds macro-dependent features
 - `backfill_realized.py` — fills matured realized prices and error metrics
 - `migrate_prediction_log.py` — one-time utility for prediction log schema migration
 
@@ -152,6 +156,9 @@ versus the rowwise causal prevalence forecast.
   revised-history fallbacks are labeled and force research governance to fail closed.
 - A separate `point_in_time_macro.py` adapter rebuilds the macro-dependent feature
   file before regime fitting, without changing the deferred credential-bearing source.
+- The VIX3M fallback uses Cboe's daily index history, records its download hash and
+  latest observation, and never invents a decision date without matching core prices.
+- Prediction target dates use the XNYS exchange calendar rather than weekday-only offsets.
 - Live evidence is versioned by methodology. Pre-integrity observations remain in the
   ledger as legacy rows but cannot satisfy the current 60-observation gate.
 - `causal-integrity-v3` requires AUC direction, DeLong uncertainty, and positive Brier
@@ -161,7 +168,10 @@ versus the rowwise causal prevalence forecast.
 - Fail-closed Part 8 output is an explicit `NO_ACTION_STALE_OR_UNCLEARED` artifact
   with an empty instruction list.
 - `sync_dashboard.py` builds one strict dashboard snapshot after production and
-  backfill; `artifact_integrity.py` publishes SHA-256 provenance and rejects invalid JSON.
+  backfill, including explicit operator-validation reasons, AUC p-values, 90% spread-
+  interval coverage, and separate market/model/prediction dates.
+- `artifact_integrity.py` hashes the mutable prediction, governance, allocation,
+  execution, signal, and trade ledgers in addition to their summaries.
 - Production and backfill abort rather than merge artifacts from different source commits,
   then explicitly dispatch a Pages build containing every local dashboard dependency.
 

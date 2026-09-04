@@ -15,19 +15,66 @@
     "progress_pct": 0.0
   },
   "final_pass": false,
+  "latest_signal": {
+    "action_reason": "neutral_model_not_cleared (FAIL_CLOSED_NEUTRAL)",
+    "base_rate": 0.199405,
+    "edge": -0.029783,
+    "p_tail": 0.229187,
+    "raw_validation_auc": 0.544,
+    "signal_count": 47,
+    "target_voo": 0.6
+  },
+  "lineage": {
+    "latest_prediction_target_date": "2026-08-27",
+    "latest_signal_run_date": "2026-09-03",
+    "latest_signal_source_decision_date": "2026-08-20T00:00:00",
+    "market_data_asof": "2026-09-03",
+    "message": "Market inputs extend through 2026-09-03, but the governed prediction tape stops at 2026-08-27 because validation failed closed at model as-of 2026-08-20. The observations were not deleted.",
+    "model_data_asof": "2026-08-20",
+    "prediction_tape_paused": true,
+    "stale_tickers": {
+      "^VIX3M": {
+        "age_business_days": 31,
+        "limit": 5
+      }
+    }
+  },
   "live_health": "IMMATURE",
   "live_health_reasons": [
     "Only 0 live observations (60 required)"
   ],
+  "macro_point_in_time_ok": false,
   "metrics": {
     "backtest_auc": 0.5027040446881142,
+    "backtest_auc_p_value": 0.43639,
+    "backtest_auc_permutation_p_value": 0.45027486256871563,
     "backtest_brier": 0.16184883503091793,
-    "backtest_brier_skill": -0.0007844735869366737,
+    "backtest_brier_skill": -0.000784474205766994,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": null,
     "live_brier_null": null,
-    "live_brier_skill": null
+    "live_brier_skill": null,
+    "rolling_median_auc": 0.5374988148288612
+  },
+  "operator_validation": {
+    "auc_p_value_max": 0.1,
+    "brier_skill_min": 0.005,
+    "historical_evidence_ok": false,
+    "reasons": [
+      "one-sided AUC p-value exceeds 0.10",
+      "causal Brier skill is below 0.005",
+      "required market data are stale",
+      "point-in-time macro coverage is incomplete"
+    ],
+    "status": "NOT_VALIDATED"
+  },
+  "prediction_interval": {
+    "empirical_coverage": 0.8965915655690352,
+    "lower_quantile": 0.05,
+    "nominal_coverage": 0.9,
+    "object": "next-day VOO-minus-IEF return spread",
+    "upper_quantile": 0.95
   },
   "protocol_version": "causal-integrity-v3",
   "publish_mode": "FAIL_CLOSED_NEUTRAL",

@@ -14,7 +14,7 @@ Current authoritative behavior
 
 Authoritative daily execution order
 -----------------------------------
-Part 0 -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10
+Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10
 (* Part 2B and Part 2C are optional: skipped if absent, non-blocking if they fail.
    Part 2C should only be activated after Part 2B's gate_validation_passed = true.)
 """
@@ -78,6 +78,7 @@ os.environ.setdefault("PRICECALL_ALPHA_FAMILY", "part2a21")
 # ------------------------------------------------------------
 CANONICAL_FILES: Dict[str, str] = {
     "PART0":  "part0_data_infrastructure.py",
+    "MARKET_INTEGRITY": "market_data_integrity.py",
     "PIT_MACRO": "point_in_time_macro.py",
     "PART1":  "part1_builder.py",
     "PART2":  "part2_predictor.py",
@@ -104,6 +105,7 @@ BACKFILL_CANDIDATES: Tuple[str, ...] = (
 
 DIRECT_PIPELINE_ORDER: List[str] = [
     "PART0",
+    "MARKET_INTEGRITY",
     "PIT_MACRO",
     "PART6",
     "PART1",
@@ -255,7 +257,7 @@ def run_with_validator(project_dir: Path) -> int:
 def run_direct_pipeline(project_dir: Path) -> int:
     print("\n[INFO] part5_validator.py not found. Falling back to direct execution.")
     print("[INFO] Direct daily order:")
-    print("       Part 0 -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("       Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
     print("       * Part 2B and Part 2C are optional / experimental and non-blocking.")
     print("       Part 4 remains optional / separate.\n")
 
@@ -392,5 +394,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 

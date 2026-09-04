@@ -40,6 +40,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+from market_calendar import next_xnys_session
 
 from artifact_integrity import (
     LEGACY_PROTOCOL_VERSION,
@@ -1822,7 +1823,7 @@ def main(cfg: Part3Config = CFG) -> None:
     decision_date = pd.to_datetime(_row_value(defense_row, ["Date", "decision_date", "asof_date"]), errors="coerce")
     if pd.isna(decision_date):
         decision_date = pd.Timestamp.today().normalize()
-    target_date = decision_date + pd.tseries.offsets.BDay(1)
+    target_date = next_xnys_session(decision_date)
 
     voo_call, ief_call = _extract_latest_price_call(defense_row)
 
