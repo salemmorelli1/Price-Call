@@ -1,268 +1,289 @@
 {
-  "built_at": "2026-09-03T17:31:31.296729+00:00",
-  "close_checksum": "d7f70be9f0507da9",
+  "built_at": "2026-09-04T02:03:18.888012+00:00",
+  "close_checksum": "0976f8a71344683d",
+  "close_prices_sha256": "631851717d182e20fb81bfd46d06aec4b62ea80c5cddd492ce11add55f3b3aba",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.08454191722674213,
+      "missing_pre_clean": 0.08470380194518126,
       "usable_for_model": true,
       "years_history": 20.57
     },
     "EEM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "EFA": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "GLD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "HYG": {
       "first_valid_date": "2007-04-11",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.13671736823487796,
+      "missing_pre_clean": 0.13687002652519895,
       "usable_for_model": true,
       "years_history": 19.4
     },
     "IEF": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "IWM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "JNK": {
       "first_valid_date": "2007-12-04",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.16590024761230987,
+      "missing_pre_clean": 0.1660477453580902,
       "usable_for_model": true,
       "years_history": 18.75
     },
     "LQD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "MDY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "QQQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "RSP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "SHY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "SMH": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "TLT": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "UUP": {
       "first_valid_date": "2007-03-01",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.13176512203749557,
+      "missing_pre_clean": 0.1319186560565871,
       "usable_for_model": true,
       "years_history": 19.51
     },
     "VNQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "VOO": {
       "first_valid_date": "2010-09-09",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.28899893880438626,
+      "missing_pre_clean": 0.2891246684350133,
       "usable_for_model": true,
-      "years_history": 15.98
+      "years_history": 15.99
     },
     "XLB": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLC": {
       "first_valid_date": "2018-06-19",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.6351255748142908,
+      "missing_pre_clean": 0.6351900972590627,
       "usable_for_model": true,
       "years_history": 8.21
     },
     "XLE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLF": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLI": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLK": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLU": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLV": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "XLY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.03590378493102229,
+      "missing_pre_clean": 0.03607427055702918,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "^MOVE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.051998585072515036,
+      "missing_pre_clean": 0.0519893899204244,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "^SKEW": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.04704633887513265,
+      "missing_pre_clean": 0.04703801945181255,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "^VIX": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03572691899540149,
+      "missing_pre_clean": 0.03572060123784262,
       "usable_for_model": true,
-      "years_history": 21.66
+      "years_history": 21.67
     },
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.11001061195613725,
+      "missing_pre_clean": 0.10999115826702034,
       "usable_for_model": true,
       "years_history": 20.13
     }
   },
   "date_range": {
-    "end": "2026-09-03",
+    "end": "2026-09-04",
     "start": "2005-01-01"
   },
-  "features_checksum": "d1e10f0ca855c550",
-  "features_file_sha256": "19b2c38cb9067b5610a48156f9b88e98bb5c7459cfa5a2e8d85ed5b45383f277",
+  "features_checksum": "ba856fce9e11e4e0",
+  "features_file_sha256": "3430a088aa7af7f6f5d9259df225e5738092fc873d8fd591fba861d15c916d5e",
   "fred_enabled": true,
   "fred_vintage_errors": {
-    "curve_2s10s": "ValueError: Bad Request.  There are 3113 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "curve_3m10y": "ValueError: Bad Request.  There are 3112 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "fed_funds_rate": "ValueError: Bad Request.  There are 5116 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "vix_fred": "ValueError: Bad Request.  There are 3926 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "yield_10y": "ValueError: Bad Request.  There are 5101 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "yield_2y": "ValueError: Bad Request.  There are 5102 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000).",
-    "yield_30y": "ValueError: Bad Request.  There are 5050 vintage dates in the specified real-time period: 1776-07-04 to 9999-12-31.  This exceeds the maximum number of vintage dates allowed for this file type (2000)."
+    "consumer_sentiment": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "curve_2s10s": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "curve_3m10y": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "dollar_index": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "fed_funds_rate": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "hy_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "ig_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "recession_flag": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "ted_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+    "vix_fred": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "wti_oil": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "yield_10y": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "yield_2y": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31.",
+    "yield_30y": "ValueError: Bad Request.  Variable realtime_end can not be after today's date (2026-09-03) unless it's equal to the real-time max date 9999-12-31."
   },
   "fred_vintage_mode_by_series": {
-    "consumer_sentiment": "alfred_first_release",
+    "consumer_sentiment": "latest_revised_fallback",
     "curve_2s10s": "latest_revised_fallback",
     "curve_3m10y": "latest_revised_fallback",
-    "dollar_index": "alfred_first_release",
+    "dollar_index": "latest_revised_fallback",
     "fed_funds_rate": "latest_revised_fallback",
-    "hy_spread": "alfred_first_release",
-    "ig_spread": "alfred_first_release",
-    "recession_flag": "alfred_first_release",
-    "ted_spread": "alfred_first_release",
+    "hy_spread": "latest_revised_fallback",
+    "ig_spread": "latest_revised_fallback",
+    "recession_flag": "latest_revised_fallback",
+    "ted_spread": "latest_revised_fallback",
     "vix_fred": "latest_revised_fallback",
-    "wti_oil": "alfred_first_release",
+    "wti_oil": "latest_revised_fallback",
     "yield_10y": "latest_revised_fallback",
     "yield_2y": "latest_revised_fallback",
     "yield_30y": "latest_revised_fallback"
   },
   "fred_vintage_policy": "earliest ALFRED release, indexed by first availability date",
+  "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
   "historical_point_in_time_complete": false,
   "horizon": 1,
-  "macro_data_sha256": "835cc021861ba6957843347592330b6415ce4553bbc2c5e7e1ed142135e9022e",
+  "macro_data_sha256": "856f49fe6ca5111c6df11e491b7b77630d6d41c8d46903690791c05a0cac4dee",
+  "market_data_source_overrides": {
+    "^VIX3M": {
+      "download_sha256": "bd1b5c8ff07c6b978337cfb246b2034537bcb36d8200c73663abac0119bc6d4e",
+      "latest_observation": "2026-09-03",
+      "provider": "Cboe Global Markets",
+      "retrieved_at_utc": "2026-09-04T02:03:19.692464+00:00",
+      "rows_applied": 4021,
+      "rows_downloaded": 4266,
+      "status": "applied",
+      "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv"
+    }
+  },
   "n_features": 59,
   "n_macro_series": 14,
   "n_market_tickers": 32,
@@ -270,6 +291,7 @@
   "point_in_time_adapter": "point_in_time_macro.py",
   "project_root": "/home/runner/work/Price-Call/Price-Call",
   "protocol_version": "causal-integrity-v3",
-  "tail_rate": 0.073621103117506,
-  "version": "V2_DAILY_CANONICAL"
+  "tail_rate": 0.07360345240949413,
+  "version": "V2_DAILY_CANONICAL",
+  "vix3m_authoritative_fallback_applied": true
 }

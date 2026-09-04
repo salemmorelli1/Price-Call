@@ -1,10 +1,10 @@
 {
   "date_min_data": "2010-09-09",
-  "date_max_data": "2026-08-20",
-  "n_data": 4161,
-  "n_X_live": 4126,
-  "n_y_reg_revealed": 4160,
-  "n_reg_train": 4125,
+  "date_max_data": "2026-09-04",
+  "n_data": 4172,
+  "n_X_live": 4137,
+  "n_y_reg_revealed": 4171,
+  "n_reg_train": 4136,
   "n_rows_lost_join": 1,
   "missing_frac": {
     "VOO": 0.0,
@@ -13,7 +13,7 @@
     "RSP": 0.0,
     "QQQ": 0.0,
     "^VIX": 0.0,
-    "^VIX3M": 0.007672021098058019
+    "^VIX3M": 0.0
   },
   "max_equal_close_run": {
     "VOO": 3,
@@ -22,7 +22,7 @@
     "RSP": 3,
     "QQQ": 3,
     "^VIX": 3,
-    "^VIX3M": 25
+    "^VIX3M": 2
   },
   "stale_dropped_rows": 0,
   "ticker_age_business_days_raw": {
@@ -32,7 +32,7 @@
     "RSP": 0,
     "QQQ": 0,
     "^VIX": 0,
-    "^VIX3M": 31
+    "^VIX3M": 0
   },
   "ticker_freshness_limits_business_days": {
     "VOO": 1,
@@ -43,5 +43,5 @@
     "^VIX": 5,
     "^VIX3M": 5
   },
-  "data_freshness_ok": false
+  "data_freshness_ok": true
 }
