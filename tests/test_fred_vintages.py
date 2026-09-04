@@ -14,3 +14,26 @@ def test_fred_history_uses_first_release_and_availability_date():
     assert pd.isna(result.loc[pd.Timestamp("2026-01-02")])
     assert result.loc[pd.Timestamp("2026-01-05")] == 1.0
     assert result.loc[pd.Timestamp("2026-01-06")] == 2.0
+
+
+def test_alfred_requests_are_bounded_and_deduplicated():
+    from point_in_time_macro import get_series_releases_chunked
+
+    class FakeFred:
+        def __init__(self):
+            self.calls = []
+
+        def get_series_all_releases(self, series_id, realtime_start, realtime_end):
+            self.calls.append((series_id, realtime_start, realtime_end))
+            return pd.DataFrame({
+                "date": ["2020-01-01"],
+                "realtime_start": ["2020-01-02"],
+                "value": [1.0],
+            })
+
+    fred = FakeFred()
+    result = get_series_releases_chunked(fred, "TEST", "2005-01-01", "2026-09-03")
+    assert len(fred.calls) == 6
+    assert fred.calls[0][1:] == ("2005-01-01", "2008-12-31")
+    assert fred.calls[-1][1:] == ("2025-01-01", "2026-09-03")
+    assert len(result) == 1

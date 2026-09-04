@@ -5,6 +5,7 @@ scipy>=1.13,<2
 scikit-learn>=1.5,<2
 yfinance>=0.2.54,<2
 fredapi>=0.5.2,<1
+exchange-calendars>=4.11,<5
 hmmlearn>=0.3,<1
 pytest>=8,<10
 ruff>=0.8,<1

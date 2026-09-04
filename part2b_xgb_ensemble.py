@@ -72,6 +72,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler
 
+from statistical_tests import uncertainty_gate_statistics
+
 warnings.filterwarnings("ignore")
 
 try:
@@ -531,8 +533,8 @@ def print_comparison(
     # less calibrated?  If ECE_high > ECE_low, spread is a real uncertainty signal.
     ece_hi_mean = wf_df["ece_high_spread"].mean()
     ece_lo_mean = wf_df["ece_low_spread"].mean()
-    spread_identifies_uncertainty = ece_hi_mean > ece_lo_mean
     ece_gap = ece_hi_mean - ece_lo_mean
+    uncertainty_test = uncertainty_gate_statistics(wf_df)
 
     # Secondary test: spread should have low correlation with Part 2's existing
     # caution_signal (if high, the spread adds no new information).
@@ -554,27 +556,32 @@ def print_comparison(
     print("=== OVERLAY GATE VALIDATION TEST ===")
     print(f"ECE on HIGH-spread rows:  {ece_hi_mean:.4f}")
     print(f"ECE on LOW-spread rows:   {ece_lo_mean:.4f}")
-    print(f"ECE gap (hi - lo):        {ece_gap:+.4f}  {'✅ spread identifies uncertainty' if spread_identifies_uncertainty else '❌ spread does not identify uncertainty'}")
+    print(f"ECE gap (hi - lo):        {ece_gap:+.4f}")
+    print(
+        "Paired sign-permutation:  "
+        f"p={uncertainty_test['p_one_sided']:.4f} "
+        f"(n={uncertainty_test['n_folds']} folds; alpha={uncertainty_test['alpha']:.2f})"
+    )
     print(f"Spread vs caution corr:   {spread_corr:.3f}  {'✅ orthogonal (new information)' if spread_is_orthogonal else '⚠️  correlated (partially redundant)'}")
     print()
 
     # Promotion decision
-    gate_validated = spread_identifies_uncertainty and ece_gap > 0.002
+    gate_validated = bool(uncertainty_test["validated"])
 
     if gate_validated and spread_is_orthogonal:
-        print("✅ VALIDATION PASSED — ensemble spread is a genuine uncertainty signal")
+        print("✅ VALIDATION PASSED — ensemble spread has guarded uncertainty evidence")
         print("   and is orthogonal to the existing caution_signal.")
         print("   RECOMMENDATION: Replace caution_signal heuristic with ensemble spread.")
         print("   NEXT STEP: Activate Part 2C (BNN) to test whether deeper uncertainty")
         print("   modelling further improves on this result.")
     elif gate_validated:
-        print("✅ VALIDATION PASSED (partial) — ensemble spread identifies uncertainty")
+        print("✅ VALIDATION PASSED (partial) — guarded uncertainty evidence is present")
         print("   but correlates with existing caution_signal. The overlay gate")
         print("   would improve, but the information gain is limited.")
         print("   RECOMMENDATION: Use ensemble spread as a supplement, not replacement.")
     else:
-        print("❌ VALIDATION FAILED — ensemble spread does not reliably identify")
-        print("   rows where the model is miscalibrated. The overlay gate would not")
+        print("❌ VALIDATION NOT ESTABLISHED — ensemble spread lacks sufficient paired")
+        print("   fold-level evidence that high-spread rows are less calibrated. The overlay would not")
         print("   improve. Do NOT activate Part 2C (BNN) until this passes.")
         print("   RECOMMENDATION: Investigate feature expansion or label quality first.")
 
@@ -955,6 +962,7 @@ def main() -> int:
         "walkforward_mean_ece":     float(wf_df["ece"].mean()),    # raw (no fold Platt)
         "walkforward_mean_ece_raw": float(wf_df["ece"].mean()),    # same (raw; kept for schema compat)
         "walkforward_ece_gap":      float(wf_df["ece_high_spread"].mean() - wf_df["ece_low_spread"].mean()),
+        "uncertainty_gate_test": uncertainty_gate_statistics(wf_df),
         "walkforward_spread_corr_vs_caution": float(wf_df["spread_corr_vs_caution"].mean()),
         "n_walkforward_eval_rows":   int(len(wf_eval_df)),
         "row_level_mean_spread":     float(np.mean(all_spreads)),
