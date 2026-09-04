@@ -36,32 +36,7 @@
   "current_cohort_eligible_predictions": 0,
   "current_cohort_predictions": 2,
   "evidence_cohort": "causal-integrity-v3",
-  "feature_drift": {
-    "most_drifted": [
-      {
-        "feature": "alpha_credit_spread",
-        "ks_pval": 1.9746615192183226e-116,
-        "ks_stat": 0.9926362297496318,
-        "mean_shift": 0.2789582124916732
-      },
-      {
-        "feature": "alpha_tech_relative",
-        "ks_pval": 4.116830351441444e-94,
-        "ks_stat": 0.9747177221404025,
-        "mean_shift": 0.33620258287219706
-      },
-      {
-        "feature": "alpha_breadth",
-        "ks_pval": 1.594372389596408e-72,
-        "ks_stat": 0.9354442808051056,
-        "mean_shift": -0.2153490528352734
-      }
-    ],
-    "n_drifted_5pct": 10,
-    "n_features_tested": 14,
-    "n_severely_drifted_1pct": 9
-  },
-  "generated_at": "2026-09-04T16:20:10.394571+00:00",
+  "generated_at": "2026-09-04T22:28:06.510425+00:00",
   "health_reasons": [
     "Only 0 live observations (60 required)"
   ],
