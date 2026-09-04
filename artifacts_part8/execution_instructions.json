@@ -1,13 +1,13 @@
 {
   "data_freshness_ok": true,
-  "decision_date": "2026-08-20 00:00:00",
+  "decision_date": "2026-09-04 00:00:00",
   "execute_window": null,
-  "generated_at": "2026-09-04T02:24:34.099162+00:00",
+  "generated_at": "2026-09-04T16:20:06.279405+00:00",
   "instructions": [],
   "n_trades": 0,
   "pipeline_run_date": null,
   "protocol_version": "causal-integrity-v3",
   "reason": "Part 2 did not clear governance: publish_mode=FAIL_CLOSED_NEUTRAL, final_pass=False, data_freshness_ok=True",
-  "source_decision_date": "2026-08-20 00:00:00",
+  "source_decision_date": "2026-09-04 00:00:00",
   "status": "NO_ACTION_STALE_OR_UNCLEARED"
 }

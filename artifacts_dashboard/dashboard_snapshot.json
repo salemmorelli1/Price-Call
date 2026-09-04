@@ -40,11 +40,11 @@
   ],
   "macro_point_in_time_ok": false,
   "metrics": {
-    "backtest_auc": 0.5025468979458915,
-    "backtest_auc_p_value": 0.440175,
-    "backtest_auc_permutation_p_value": 0.4492753623188406,
-    "backtest_brier": 0.16131355375860568,
-    "backtest_brier_skill": -0.00011403751291116926,
+    "backtest_auc": 0.507419491603532,
+    "backtest_auc_p_value": 0.330716,
+    "backtest_auc_permutation_p_value": 0.33983008495752126,
+    "backtest_brier": 0.1613587869539123,
+    "backtest_brier_skill": -0.00039447491282973424,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": null,
@@ -64,7 +64,7 @@
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8926521239954076,
+    "empirical_coverage": 0.8909299655568312,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",

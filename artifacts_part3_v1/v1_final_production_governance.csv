@@ -28,4 +28,4 @@ Date,publish_mode,final_pass,quality_ok,drift_ok,trial_gate_open,fused_gate_open
 2026-08-24,NORMAL,1,1,1,1,1,1,SHADOW,SHADOW,0,SHADOW,ok,1,0.062549,0,0.0,1.0,NONE,legacy-pre-causal-integrity-v3,
 2026-08-25,NORMAL,1,1,1,1,1,1,SHADOW,SHADOW,0,SHADOW,ok,1,0.0662,0,0.0,1.0,NONE,legacy-pre-causal-integrity-v3,
 2026-08-26,NORMAL,1,1,1,1,1,1,ELIGIBLE,CANDIDATE,0,FLAT_VETOED,high_risk_veto,0,0.0,0,0.0,1.0,NONE,legacy-pre-causal-integrity-v3,
-2026-09-04,FAIL_CLOSED_NEUTRAL,0,1,1,1,1,1,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.071639,0,0.0,1.0,NONE,causal-integrity-v3,causal-integrity-v3
+2026-09-04,FAIL_CLOSED_NEUTRAL,0,1,1,1,1,1,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.072885,0,0.0,1.0,NONE,causal-integrity-v3,causal-integrity-v3

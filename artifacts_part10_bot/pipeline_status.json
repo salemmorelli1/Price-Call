@@ -1,9 +1,9 @@
 {
-  "completed_at_utc": "2026-09-04T02:24:43.036320+00:00",
+  "completed_at_utc": "2026-09-04T16:20:19.166118+00:00",
   "github_run_attempt": "1",
-  "github_run_id": "33827957626",
-  "pipeline_run_date": "2026-09-03",
+  "github_run_id": "33890824408",
+  "pipeline_run_date": "2026-09-04",
   "protocol_version": "causal-integrity-v3",
   "result": "verified",
-  "source_code_sha": "9028d6751d956165921f4132babbbad970470de8"
+  "source_code_sha": "6383f4a312eabc6b94da2d5a89bcd961a2b44e9b"
 }
