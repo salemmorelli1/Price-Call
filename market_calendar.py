@@ -6,11 +6,24 @@ import exchange_calendars as xcals
 
 
 XNYS_CALENDAR_NAME = "XNYS"
+XNYS_CALENDAR_START = "1990-01-01"
+XNYS_CALENDAR_END = "2100-12-31"
 DEFAULT_SETTLEMENT_DELAY_MINUTES = 20
 
 
 def _calendar():
-    return xcals.get_calendar(XNYS_CALENDAR_NAME)
+    """Return an XNYS schedule with stable, explicit historical bounds.
+
+    ``exchange_calendars`` otherwise builds a rolling default schedule whose
+    first session is only about 20 years before the runtime date.  Price-Call
+    begins its research history in 2005, so relying on that default eventually
+    makes the same configured history fall out of bounds as time advances.
+    """
+    return xcals.get_calendar(
+        XNYS_CALENDAR_NAME,
+        start=XNYS_CALENDAR_START,
+        end=XNYS_CALENDAR_END,
+    )
 
 
 def _naive_date(value: object) -> pd.Timestamp:

@@ -45,13 +45,11 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements-lock.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-lock.txt
+          pip install --no-cache-dir -r requirements-lock.txt
 
       # ── Restore accumulated artifacts before running ──────────────────
       # FIX (Finding C, Audit 2026-04-21):
