@@ -9,7 +9,14 @@ from pathlib import Path
 
 
 DIRECTORIES = ("assets", "data", "report", "artifacts_dashboard")
-PART10_FILES = ("signal_log.csv", "portfolio_state.json", "performance_report.json")
+PART10_FILES = (
+    "signal_log.csv",
+    "portfolio_state.json",
+    "performance_report.json",
+    "pipeline_status.json",
+    "pipeline_run_date.txt",
+)
+PART9_FILES = ("backfill_status.json", "backfill_run_date.txt")
 
 
 def prepare_site(root: Path, site: Path) -> None:
@@ -31,6 +38,13 @@ def prepare_site(root: Path, site: Path) -> None:
         if not source.is_file():
             raise FileNotFoundError(f"required Pages artifact missing: {source}")
         shutil.copy2(source, part10_site / name)
+    part9_site = site / "artifacts_part9"
+    part9_site.mkdir(parents=True, exist_ok=True)
+    for name in PART9_FILES:
+        source = root / "artifacts_part9" / name
+        if not source.is_file():
+            raise FileNotFoundError(f"required Pages artifact missing: {source}")
+        shutil.copy2(source, part9_site / name)
     favicon = root / "favicon.ico"
     if favicon.is_file():
         shutil.copy2(favicon, site / "favicon.ico")

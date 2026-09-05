@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from artifact_integrity import current_evidence_mask, write_json_strict
+from market_calendar import latest_completed_xnys_session
 
 try:
     import yfinance as yf
@@ -183,7 +184,9 @@ def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFr
     import time as _time
 
     start_str = start.strftime("%Y-%m-%d")
-    end_str = (end + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+    # yfinance's end is exclusive. Never request or accept a bar after the
+    # exchange calendar's latest completed session.
+    end_str = (end + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
     _max_attempts = 3
     _last_exc: Optional[Exception] = None
@@ -224,6 +227,7 @@ def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFr
             close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
             close = close[[c for c in ["VOO", "IEF"] if c in close.columns]].copy()
             close = close.dropna(how="any")
+            close = close.loc[close.index <= end]
 
             if close.empty or not {"VOO", "IEF"}.issubset(close.columns):
                 raise RuntimeError("yfinance returned empty or incomplete data for VOO/IEF.")
@@ -300,8 +304,8 @@ def main() -> int:
 
     df = pd.read_csv(PREDLOG_PATH)
     if df.empty:
-        print("\n[WARN] prediction_log.csv is empty. Nothing to backfill.")
-        return 0
+        print("\n[ERROR] prediction_log.csv is empty; backfill cannot be verified.")
+        return 1
 
     decision_col = _pick_col(df, ["decision_date", "Date"])
     if decision_col is None:
@@ -331,7 +335,7 @@ def main() -> int:
         df["realized_target_date"] = df["realized_target_date"].astype("object")
         
     start = df[decision_col].dropna().min() - pd.Timedelta(days=20)
-    end = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
+    end = latest_completed_xnys_session()
     close = _download_close_history(start, end)
     trading_dates = pd.DatetimeIndex(close.index).sort_values()
     latest_trading_date = pd.Timestamp(trading_dates.max()).normalize()
@@ -454,7 +458,7 @@ def main() -> int:
     # the daily backfill. The patch is:
     #   - Exact: may increase or decrease after a protocol/eligibility change
     #   - Idempotent: no-op if the summary already shows the exact eligible count
-    #   - Exception-safe: any failure falls through silently
+    #   - Failure-closed: any write/regeneration failure aborts publication
     #   - Scope-limited: ONLY live_realized_dates, prediction_log_realized_rows,
     #     prediction_log_realized_pct are patched; no other fields are touched
     #
@@ -475,8 +479,7 @@ def main() -> int:
                 _summary["prediction_log_realized_pct"] = round(
                     live_realized_count / _total_predlog_rows, 4
                 )
-                with open(_summary_path, "w", encoding="utf-8") as _sf:
-                    _json_bf.dump(_summary, _sf, indent=2)
+                write_json_strict(_summary_path, _summary)
                 print(
                     f"[backfill] FIX F1/S54: part3_summary.json patched — "
                     f"eligible live_realized_dates {_current_live} → {live_realized_count}"
@@ -487,9 +490,14 @@ def main() -> int:
                     f"eligible live_realized_dates={_current_live} — no patch needed."
                 )
         except Exception as _summary_patch_exc:
-            print(f"[backfill] WARNING (F1/S54): could not patch part3_summary.json: {_summary_patch_exc}")
+            raise RuntimeError(
+                "Part 3 summary regeneration failed after backfill; "
+                f"refusing a green workflow: {_summary_patch_exc}"
+            ) from _summary_patch_exc
     else:
-        print(f"[backfill] FIX F1/S54: part3_summary.json not found at {_summary_path} — skipping patch.")
+        raise FileNotFoundError(
+            f"Part 3 summary is missing after backfill: {_summary_path}"
+        )
 
     # FIX (F3, Quant-Guild S58 Audit): After patching part3_summary.json, also
     # regenerate live_attribution_report.json by invoking Part 9's generate_live_report.
@@ -541,6 +549,5 @@ def main() -> int:
     return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
     
-

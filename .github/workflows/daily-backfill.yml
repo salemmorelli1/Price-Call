@@ -3,7 +3,7 @@ name: Daily Backfill Realized
 on:
   schedule:
     # 16:30 Eastern target with a second DST-covering trigger. The runtime
-    # gate rejects any job that arrives before 16:20 Eastern.
+    # gate keys work to the latest XNYS session settled by at least 20 minutes.
     - cron: "30 20 * * 1-5"   # 4:30 PM EDT (summer)
     - cron: "30 21 * * 1-5"   # 4:30 PM EST (winter)
     - cron: "30 23 * * 1-5"   # DST-independent catch-up if an earlier job was delayed
@@ -44,12 +44,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements-lock.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
 
       # ── Restore accumulating artifacts from remote ─────────────────────
       # FIX (Finding C, Audit 2026-04-21): same fix as tuesday-pipeline.yml.
@@ -93,24 +93,19 @@ jobs:
             artifacts_part3_v1/v1_final_production_governance.csv \
             2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
 
-      - name: Check for a completed market session
+      - name: Check for an unprocessed completed XNYS session
         id: gate
         run: |
           python - <<'PYEOF'
           import os
-          from datetime import datetime
           from pathlib import Path
-          from zoneinfo import ZoneInfo
-          now = datetime.now(ZoneInfo("America/New_York"))
-          manual = os.environ.get("GITHUB_EVENT_NAME", "") == "workflow_dispatch"
-          settled = now.weekday() < 5 and (now.hour > 16 or (now.hour == 16 and now.minute >= 20))
-          if manual and not settled:
-              raise SystemExit("Manual backfill refused: the current market session is not settled (requires weekday at/after 16:20 ET).")
+          from market_calendar import latest_completed_xnys_session
+          session_date = latest_completed_xnys_session().date().isoformat()
           marker = Path("artifacts_part9/backfill_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          should_run = settled and completed != now.date().isoformat()
-          status = "RUN" if should_run else ("ALREADY_COMPLETE" if completed == now.date().isoformat() else "PRE_CLOSE")
-          print(f"NY time={now.isoformat()} settled={settled} manual={manual} completed={completed or 'none'} status={status}")
+          should_run = completed != session_date
+          status = "RUN" if should_run else "ALREADY_COMPLETE"
+          print(f"latest_xnys_session={session_date} completed={completed or 'none'} status={status}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"run={'true' if should_run else 'false'}\n")
               f.write(f"status={status}\n")
@@ -124,13 +119,13 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           python - <<'PYEOF'
-          from datetime import datetime
           from pathlib import Path
-          from zoneinfo import ZoneInfo
+          from market_calendar import latest_completed_xnys_session
           marker = Path("artifacts_part9/backfill_run_date.txt")
           marker.parent.mkdir(parents=True, exist_ok=True)
-          marker.write_text(datetime.now(ZoneInfo("America/New_York")).date().isoformat() + "\n", encoding="utf-8")
+          marker.write_text(latest_completed_xnys_session().date().isoformat() + "\n", encoding="utf-8")
           PYEOF
+          python artifact_integrity.py --root . --write-backfill-status --status-only
 
       - name: Synchronize dashboard and verify published artifacts
         if: steps.gate.outputs.run == 'true'
@@ -174,6 +169,7 @@ jobs:
             artifacts_part3_v1/part3_summary.json \
             artifacts_part9/live_attribution_report.json \
             artifacts_part9/backfill_run_date.txt \
+            artifacts_part9/backfill_status.json \
             artifacts_dashboard/dashboard_snapshot.json \
             artifacts_manifest.json \
             index.html

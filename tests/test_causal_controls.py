@@ -98,6 +98,83 @@ def test_current_evidence_counter_excludes_legacy_rows():
     assert _count_realized_predlog_rows(frame) == 1
 
 
+def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monkeypatch):
+    from artifact_integrity import PROTOCOL_VERSION
+    from part3_governance import _upsert_prediction_log
+
+    path = tmp_path / "prediction_log.csv"
+    pd.DataFrame([{
+        "decision_date": "2026-09-04",
+        "model_protocol_version": PROTOCOL_VERSION,
+        "pipeline_run_id": 33827957626,
+        "model_code_sha": "old",
+        "px_voo_realized": 100.0,
+        "px_ief_realized": 90.0,
+        "evidence_eligible": 0,
+    }]).to_csv(path, index=False)
+    monkeypatch.setenv("PRICECALL_CODE_SHA", "new-code-sha")
+    monkeypatch.setenv("GITHUB_RUN_ID", "33890824408")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    alpha_status = {
+        "latest_state": "SHADOW",
+        "alpha_live": 0,
+        "current_alpha_live_status": "SHADOW",
+        "current_alpha_reason": "not_eligible",
+        "current_alpha_eligible": 0,
+        "current_alpha_abs": 0.0,
+    }
+    alpha_sources = {
+        "positions": tmp_path / "positions.csv",
+        "summary_tape": tmp_path / "summary.csv",
+        "eligibility": tmp_path / "eligibility.csv",
+        "summary_json": tmp_path / "summary.json",
+    }
+    frame, _ = _upsert_prediction_log(
+        path,
+        pd.Timestamp("2026-09-04"),
+        pd.Timestamp("2026-09-08"),
+        101.0,
+        91.0,
+        "FAIL_CLOSED_NEUTRAL",
+        0,
+        alpha_status,
+        tmp_path / "defense.csv",
+        alpha_sources,
+        pd.Series({
+            "tail_threshold_dynamic": -0.01,
+            "px_voo_t": 100.0,
+            "px_ief_t": 90.0,
+            "p_final_cal": 0.2,
+            "base_rate": 0.2,
+        }),
+        {
+            "part1_data_freshness_ok": True,
+            "macro_point_in_time_ok": True,
+            "tail_event_definition": "rowwise_trailing_63_observation_20th_percentile_shifted_1",
+        },
+    )
+    row = frame.loc[frame["model_protocol_version"].eq(PROTOCOL_VERSION)].iloc[-1]
+    assert row["pipeline_run_id"] == "33890824408"
+    assert row["model_code_sha"] == "new-code-sha"
+    assert row["prediction_revision_id"].endswith(":33890824408:2")
+    assert row["provenance_complete"] == 1
+    assert row["px_voo_realized"] == 100.0
+
+
+def test_missing_alpha_gate_fields_default_closed_and_are_namespaced():
+    from part3_governance import _build_governance_df, _load_alpha_status
+
+    status = _load_alpha_status(pd.DataFrame(), {}, live_realized_rows=0)
+    assert status["trial_gate_open"] == 0
+    assert status["fused_gate_open"] == 0
+    assert status["promotion_ready"] == 0
+    frame = _build_governance_df(pd.Timestamp("2026-09-04"), {}, status)
+    assert "alpha_trial_gate_open" in frame.columns
+    assert "alpha_fused_gate_open" in frame.columns
+    assert "alpha_promotion_ready" in frame.columns
+    assert "promotion_ready" not in frame.columns
+
+
 def test_shared_evidence_mask_excludes_prior_protocol_and_ineligible_rows():
     from artifact_integrity import PROTOCOL_VERSION, current_evidence_mask
 

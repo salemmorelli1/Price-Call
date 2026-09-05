@@ -35,6 +35,12 @@ FRED_SERIES = {
 }
 
 
+class AlfredCoverageError(RuntimeError):
+    def __init__(self, message: str, diagnostics: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics
+
+
 def realtime_windows(
     start: object,
     end: object,
@@ -66,24 +72,87 @@ def get_series_releases_chunked(
     realtime_start: object,
     realtime_end: object,
 ) -> pd.DataFrame:
-    """Fetch all releases without requesting an unbounded vintage range."""
-    chunks = [
-        pd.DataFrame(
-            fred.get_series_all_releases(
-                series_id,
-                realtime_start=start,
-                realtime_end=end,
-            )
-        )
-        for start, end in realtime_windows(realtime_start, realtime_end)
-    ]
-    releases = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+    """Fetch releases while isolating pre-history failures by window.
+
+    FRED can reject an ALFRED real-time window that predates a series even
+    though later windows are valid. Such leading failures are diagnostic, not
+    a reason to discard every successful later chunk. Once a usable chunk has
+    appeared, however, a request failure is a coverage gap and remains fatal.
+    """
+    chunks: list[pd.DataFrame] = []
+    diagnostics: list[dict[str, str | int]] = []
+    first_usable_window_start: str | None = None
+    seen_usable = False
+    coverage_errors: list[str] = []
     required = {"date", "realtime_start", "value"}
+    for start, end in realtime_windows(realtime_start, realtime_end):
+        try:
+            chunk = pd.DataFrame(
+                fred.get_series_all_releases(
+                    series_id,
+                    realtime_start=start,
+                    realtime_end=end,
+                )
+            )
+            missing = sorted(required - set(chunk.columns))
+            if chunk.empty:
+                diagnostics.append({
+                    "start": start,
+                    "end": end,
+                    "status": "empty",
+                    "rows": 0,
+                })
+                continue
+            if missing:
+                raise ValueError(f"release response missing {missing}")
+            usable = chunk.dropna(subset=["date", "realtime_start", "value"])
+            if usable.empty:
+                diagnostics.append({
+                    "start": start,
+                    "end": end,
+                    "status": "empty_after_validation",
+                    "rows": 0,
+                })
+                continue
+            if first_usable_window_start is None:
+                first_usable_window_start = start
+            seen_usable = True
+            chunks.append(chunk)
+            diagnostics.append({
+                "start": start,
+                "end": end,
+                "status": "ok",
+                "rows": int(len(chunk)),
+            })
+        except Exception as exc:
+            status = "coverage_error" if seen_usable else "prehistory_error"
+            detail = f"{type(exc).__name__}: {exc}"
+            diagnostics.append({
+                "start": start,
+                "end": end,
+                "status": status,
+                "rows": 0,
+                "error": detail,
+            })
+            if seen_usable:
+                coverage_errors.append(f"{start}..{end}: {detail}")
+
+    if coverage_errors:
+        raise AlfredCoverageError(
+            f"ALFRED coverage failed after the first usable {series_id} chunk: "
+            + "; ".join(coverage_errors),
+            diagnostics,
+        )
+    releases = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
     if not required.issubset(releases.columns):
         raise ValueError(f"release response missing {sorted(required - set(releases.columns))}")
     releases = releases.drop_duplicates(["date", "realtime_start"], keep="first")
     if releases.empty:
         raise ValueError(f"ALFRED returned no releases for {series_id}")
+    releases.attrs["chunk_diagnostics"] = diagnostics
+    releases.attrs["continuous_retrieval_start"] = first_usable_window_start
+    releases.attrs["requested_realtime_start"] = str(pd.Timestamp(realtime_start).date())
+    releases.attrs["requested_realtime_end"] = str(pd.Timestamp(realtime_end).date())
     return releases
 
 
@@ -111,7 +180,10 @@ def first_release_series(
     # Several observations can be released together.  At a daily decision
     # frequency, the newest observation available that day is authoritative.
     series = series[~series.index.duplicated(keep="last")].sort_index()
-    return series.reindex(calendar).ffill()
+    # Preserve weekend/holiday releases while aligning them to the first later
+    # exchange session. Reindexing directly to sessions would discard them.
+    aligned_index = calendar.union(series.index).sort_values()
+    return series.reindex(aligned_index).ffill().reindex(calendar)
 
 
 def _atomic_parquet(frame: pd.DataFrame, path: Path) -> None:
@@ -129,7 +201,9 @@ def _fallback_series(
         return pd.Series(index=calendar, dtype=float, name=name)
     series = pd.to_numeric(revised[name], errors="coerce")
     series.index = pd.to_datetime(series.index, errors="coerce").normalize()
-    return series[~series.index.duplicated(keep="last")].reindex(calendar).ffill().rename(name)
+    series = series[~series.index.duplicated(keep="last")].sort_index()
+    aligned_index = calendar.union(series.index).sort_values()
+    return series.reindex(aligned_index).ffill().reindex(calendar).rename(name)
 
 
 def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
@@ -157,6 +231,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     columns: list[pd.Series] = []
     modes: dict[str, str] = {}
     errors: dict[str, str] = {}
+    chunk_diagnostics: dict[str, Any] = {}
     for series_id, name in FRED_SERIES.items():
         try:
             releases = get_series_releases_chunked(
@@ -165,9 +240,20 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
                 realtime_start,
                 realtime_end,
             )
+            chunk_diagnostics[name] = releases.attrs.get("chunk_diagnostics", [])
+            continuous_start = pd.Timestamp(
+                releases.attrs.get("continuous_retrieval_start")
+            ).normalize()
+            if continuous_start > calendar.min():
+                raise ValueError(
+                    "first usable ALFRED window starts after the model calendar "
+                    f"({continuous_start.date()} > {calendar.min().date()})"
+                )
             series = first_release_series(releases, calendar, name)
             modes[name] = "alfred_first_release_chunked"
         except Exception as exc:
+            if isinstance(exc, AlfredCoverageError):
+                chunk_diagnostics[name] = exc.diagnostics
             series = _fallback_series(revised, calendar, name)
             modes[name] = "latest_revised_fallback" if series.notna().any() else "unavailable"
             errors[name] = f"{type(exc).__name__}: {exc}"
@@ -193,6 +279,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
         "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
         "fred_vintage_mode_by_series": modes,
         "fred_vintage_errors": errors,
+        "fred_vintage_chunk_diagnostics": chunk_diagnostics,
         "historical_point_in_time_complete": complete,
         "point_in_time_adapter": "point_in_time_macro.py",
         "macro_data_sha256": sha256_file(macro_path),

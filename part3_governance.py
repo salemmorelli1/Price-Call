@@ -439,13 +439,25 @@ def _load_alpha_status(alpha_tape_df: pd.DataFrame, alpha_summary_json: Dict[str
     if drift_rate is None:
         drift_rate = 0.0
 
-    quality_ok = _boolish(_row_value(latest_row, ["quality_ok"], _json_value(alpha_summary_json, ["quality_ok"], 1)), 1)
-    drift_ok = _boolish(_row_value(latest_row, ["drift_ok"], _json_value(alpha_summary_json, ["drift_ok"], 1)), 1)
-    trial_gate_open = _boolish(_row_value(latest_row, ["trial_gate_open"], _json_value(alpha_summary_json, ["trial_gate_open"], 1)), 1)
-    fused_gate_open = _boolish(_row_value(latest_row, ["fused_gate_open"], _json_value(alpha_summary_json, ["fused_gate_open"], 1)), 1)
-    promotion_ready = _boolish(_row_value(latest_row, ["promotion_ready"], _json_value(alpha_summary_json, ["promotion_ready"], 1)), 1)
+    quality_ok = _boolish(_row_value(latest_row, ["quality_ok"], _json_value(alpha_summary_json, ["quality_ok"], 0)), 0)
+    drift_ok = _boolish(_row_value(latest_row, ["drift_ok"], _json_value(alpha_summary_json, ["drift_ok"], 0)), 0)
+    trial_gate_open = _boolish(
+        _row_value(latest_row, ["alpha_trial_gate_open", "trial_gate_open"],
+                   _json_value(alpha_summary_json, ["alpha_trial_gate_open", "trial_gate_open"], 0)),
+        0,
+    )
+    fused_gate_open = _boolish(
+        _row_value(latest_row, ["alpha_fused_gate_open", "fused_gate_open"],
+                   _json_value(alpha_summary_json, ["alpha_fused_gate_open", "fused_gate_open"], 0)),
+        0,
+    )
+    promotion_ready = _boolish(
+        _row_value(latest_row, ["alpha_promotion_ready", "promotion_ready"],
+                   _json_value(alpha_summary_json, ["alpha_promotion_ready", "promotion_ready"], 0)),
+        0,
+    )
 
-    blockers = _row_value(latest_row, ["alpha_blockers", "blockers"], _json_value(alpha_summary_json, ["alpha_blockers", "blockers"], "NONE"))
+    blockers = _row_value(latest_row, ["alpha_blockers", "blockers"], _json_value(alpha_summary_json, ["alpha_blockers", "blockers"], "ALPHA_STATUS_NOT_PROVIDED"))
     if blockers is None or (isinstance(blockers, float) and math.isnan(blockers)):
         blockers = "NONE"
     if isinstance(blockers, list):
@@ -767,9 +779,9 @@ def _build_governance_df(
         "final_pass": (int(final_pass_override) if final_pass_override is not None else _boolish(_json_value(part2_summary, ["final_pass"], 0), 0)),
         "quality_ok": alpha_status["quality_ok"],
         "drift_ok": alpha_status["drift_ok"],
-        "trial_gate_open": alpha_status["trial_gate_open"],
-        "fused_gate_open": alpha_status["fused_gate_open"],
-        "promotion_ready": alpha_status["promotion_ready"],
+        "alpha_trial_gate_open": alpha_status["trial_gate_open"],
+        "alpha_fused_gate_open": alpha_status["fused_gate_open"],
+        "alpha_promotion_ready": alpha_status["promotion_ready"],
         "alpha_state": alpha_status["latest_state"],
         "alpha_state_display": alpha_status["display_state"],
         "alpha_live": alpha_status["alpha_live"],
@@ -818,7 +830,8 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             "alpha_eligibility_source", "alpha_summary_json_source",
             "px_voo_realized", "px_ief_realized", "voo_err", "ief_err", "spread_err", "hit_direction",
             "model_protocol_version", "model_code_sha", "pipeline_run_id",
-            "evidence_cohort", "evidence_eligible", "data_freshness_ok",
+            "pipeline_run_attempt", "prediction_revision_id",
+            "evidence_cohort", "evidence_eligible", "data_freshness_ok", "provenance_complete",
             "target_definition_id"
         ])
 
@@ -843,6 +856,17 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
     threshold_value = _safe_float(_row_value(defense_row, ["tail_threshold_dynamic"], None))
     if threshold_value is None or not np.isfinite(threshold_value):
         raise RuntimeError("Current Part 2 row is missing its causal tail_threshold_dynamic value.")
+
+    model_code_sha = os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA")
+    pipeline_run_id = os.environ.get("GITHUB_RUN_ID")
+    pipeline_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    prediction_revision_id = ":".join([
+        PROTOCOL_VERSION,
+        pd.Timestamp(decision_date).date().isoformat(),
+        str(pipeline_run_id or "local"),
+        str(pipeline_run_attempt or "0"),
+    ])
+    provenance_complete = bool(model_code_sha and pipeline_run_id and pipeline_run_attempt)
 
     row = {
         "decision_date": pd.Timestamp(decision_date).normalize(),
@@ -903,11 +927,16 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "alpha_eligibility_source": str(alpha_sources["eligibility"]),
         "alpha_summary_json_source": str(alpha_sources["summary_json"]),
         "model_protocol_version": PROTOCOL_VERSION,
-        "model_code_sha": os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA"),
-        "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "model_code_sha": model_code_sha,
+        "pipeline_run_id": pipeline_run_id,
+        "pipeline_run_attempt": pipeline_run_attempt,
+        "prediction_revision_id": prediction_revision_id,
         "evidence_cohort": PROTOCOL_VERSION,
-        "evidence_eligible": int(data_freshness_ok and target_definition_ok),
+        "evidence_eligible": int(
+            data_freshness_ok and target_definition_ok and provenance_complete
+        ),
         "data_freshness_ok": int(data_freshness_ok),
+        "provenance_complete": int(provenance_complete),
         "target_definition_id": target_definition_id,
     }
 
@@ -944,6 +973,20 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         for k, v in row.items()
     }
 
+    for column in _row_for_update:
+        if column not in predlog_df.columns:
+            predlog_df[column] = pd.NA
+    for column in (
+        "model_protocol_version",
+        "model_code_sha",
+        "pipeline_run_id",
+        "pipeline_run_attempt",
+        "prediction_revision_id",
+        "evidence_cohort",
+        "target_definition_id",
+    ):
+        predlog_df[column] = predlog_df[column].astype("string")
+
     if "decision_date" in predlog_df.columns:
         predlog_df["decision_date"] = pd.to_datetime(predlog_df["decision_date"], errors="coerce")
         mask = (
@@ -951,20 +994,44 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             & predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
         )
         if mask.any():
-            for k, v in _row_for_update.items():
+            if int(mask.sum()) != 1:
+                raise RuntimeError(
+                    "Prediction ledger contains duplicate current-protocol rows for "
+                    f"{pd.Timestamp(decision_date).date()}."
+                )
+            idx = predlog_df.index[mask][0]
+            for key, value in _row_for_update.items():
                 try:
-                    predlog_df.loc[mask, k] = v
+                    predlog_df.at[idx, key] = value
                 except (TypeError, ValueError):
-                    # Fallback: assign scalar via at-loop for edge-case dtype conflicts
-                    for idx in predlog_df.index[mask]:
-                        try:
-                            predlog_df.at[idx, k] = v
-                        except Exception:
-                            pass  # Best-effort; never lose the full row
+                    # Pandas may infer a numeric or Arrow dtype from old rows.
+                    # Convert that one column explicitly, then require assignment
+                    # to succeed; provenance writes are never best-effort.
+                    predlog_df[key] = predlog_df[key].astype("object")
+                    predlog_df.at[idx, key] = value
         else:
-            predlog_df = pd.concat([predlog_df, pd.DataFrame([row])], ignore_index=True)
+            predlog_df = pd.concat([predlog_df, pd.DataFrame([_row_for_update])], ignore_index=True)
     else:
-        predlog_df = pd.concat([predlog_df, pd.DataFrame([row])], ignore_index=True)
+        predlog_df = pd.concat([predlog_df, pd.DataFrame([_row_for_update])], ignore_index=True)
+
+    current_row_mask = (
+        pd.to_datetime(predlog_df["decision_date"], errors="coerce").eq(row["decision_date"])
+        & predlog_df["model_protocol_version"].astype(str).eq(PROTOCOL_VERSION)
+    )
+    if int(current_row_mask.sum()) != 1:
+        raise RuntimeError("Prediction ledger upsert did not produce one authoritative current row.")
+    current_row = predlog_df.loc[current_row_mask].iloc[0]
+    for field, expected in {
+        "model_code_sha": model_code_sha,
+        "pipeline_run_id": pipeline_run_id,
+        "pipeline_run_attempt": pipeline_run_attempt,
+        "prediction_revision_id": prediction_revision_id,
+    }.items():
+        if expected is not None and str(current_row[field]) != str(expected):
+            raise RuntimeError(
+                f"Prediction ledger provenance mismatch for {field}: "
+                f"expected={expected!r} actual={current_row[field]!r}"
+            )
 
     predlog_df = predlog_df.sort_values("decision_date").reset_index(drop=True)
     realized_rows = _count_realized_predlog_rows(predlog_df)
@@ -2413,9 +2480,9 @@ def main(cfg: Part3Config = CFG) -> None:
         "drift_rate": alpha_status["drift_rate"],
         "quality_ok": alpha_status["quality_ok"],
         "drift_ok": alpha_status["drift_ok"],
-        "trial_gate_open": alpha_status["trial_gate_open"],
-        "fused_gate_open": alpha_status["fused_gate_open"],
-        "promotion_ready": alpha_status["promotion_ready"],
+        "alpha_trial_gate_open": alpha_status["trial_gate_open"],
+        "alpha_fused_gate_open": alpha_status["fused_gate_open"],
+        "alpha_promotion_ready": alpha_status["promotion_ready"],
         "alpha_blockers": alpha_status["blockers"],
         "rows": int(len(prod_tape)),
         "rows_realized_fused": _post_upsert_realized_rows,  # FIX S51 F2: post-upsert count
@@ -2716,7 +2783,7 @@ def main(cfg: Part3Config = CFG) -> None:
     )
     print(
         f"Alpha diagnostics: quality_ok={alpha_status['quality_ok']} | drift_ok={alpha_status['drift_ok']} | "
-        f"trial_gate_open={alpha_status['trial_gate_open']} | fused_gate_open={alpha_status['fused_gate_open']} | promotion_ready={alpha_status['promotion_ready']}"
+        f"alpha_trial_gate_open={alpha_status['trial_gate_open']} | alpha_fused_gate_open={alpha_status['fused_gate_open']} | alpha_promotion_ready={alpha_status['promotion_ready']}"
     )
     print(f"Alpha blockers: {alpha_status['blockers']}")
     print("\n" + "=" * 96)

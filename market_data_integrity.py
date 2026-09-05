@@ -69,6 +69,7 @@ def refresh_vix3m(
     """
     output = root / "artifacts_part0"
     close_path = output / "close_prices.parquet"
+    observation_mask_path = output / "market_observation_mask.parquet"
     meta_path = output / "part0_meta.json"
     if not close_path.is_file() or not meta_path.is_file():
         raise FileNotFoundError("Part 0 outputs are incomplete; cannot repair VIX3M")
@@ -96,6 +97,20 @@ def refresh_vix3m(
         temporary = close_path.with_suffix(close_path.suffix + ".tmp")
         close.to_parquet(temporary)
         temporary.replace(close_path)
+        observation_mask = (
+            pd.read_parquet(observation_mask_path)
+            if observation_mask_path.is_file()
+            else close.notna().astype("uint8")
+        )
+        observation_mask = observation_mask.reindex(
+            index=close.index, columns=close.columns
+        ).fillna(0)
+        observation_mask.loc[overlap, "^VIX3M"] = 1
+        mask_temporary = observation_mask_path.with_suffix(
+            observation_mask_path.suffix + ".tmp"
+        )
+        observation_mask.astype("uint8").to_parquet(mask_temporary)
+        mask_temporary.replace(observation_mask_path)
         close_checksum = _dataframe_checksum(close)
         source.update({
             "status": "applied",
@@ -113,7 +128,16 @@ def refresh_vix3m(
         "market_data_source_overrides": sources,
         "vix3m_authoritative_fallback_applied": source["status"] == "applied",
         "close_prices_sha256": sha256_file(close_path),
+        "market_observation_mask_sha256": (
+            sha256_file(observation_mask_path) if observation_mask_path.is_file() else None
+        ),
     })
+    if source["status"] == "applied":
+        last_raw = dict(meta.get("last_raw_observation_by_ticker", {}))
+        # Record the last observation actually admitted to the completed-session
+        # panel, not a later date that may exist only in the source payload.
+        last_raw["^VIX3M"] = pd.Timestamp(overlap.max()).date().isoformat()
+        meta["last_raw_observation_by_ticker"] = last_raw
     if close_checksum is not None:
         meta["close_checksum"] = close_checksum
     write_json_strict(meta_path, meta)

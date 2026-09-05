@@ -20,6 +20,10 @@
       "bytes": 69,
       "sha256": "079a3fb9b074749683e918e393b38d0ed98062cada5d7c5fe29166a0be72bed2"
     },
+    "artifacts_part10_bot/pipeline_run_date.txt": {
+      "bytes": 11,
+      "sha256": "e0f20a8b5fa67eea9ae6e14177d88f46b43d111912764ae30890ece0b6058906"
+    },
     "artifacts_part10_bot/pipeline_status.json": {
       "bytes": 295,
       "sha256": "cf914424517d2ea96c996736cd3f2dc269b7809a85b503baa94a86882e76a01c"
@@ -87,6 +91,14 @@
     "artifacts_part8/part8_meta.json": {
       "bytes": 1290,
       "sha256": "b4363ae6556162ef834a53d455bd660e57ddce385c625610cbe09165bef7e14c"
+    },
+    "artifacts_part9/backfill_run_date.txt": {
+      "bytes": 11,
+      "sha256": "e0f20a8b5fa67eea9ae6e14177d88f46b43d111912764ae30890ece0b6058906"
+    },
+    "artifacts_part9/backfill_status.json": {
+      "bytes": 288,
+      "sha256": "0338be643a2d8a25919840903b55651f6c43a691a492c47e912bd0bc5ce591e1"
     },
     "artifacts_part9/live_attribution_report.json": {
       "bytes": 2059,

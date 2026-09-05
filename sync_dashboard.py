@@ -68,6 +68,8 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "artifacts_part10_bot/paper_state.json",
         "artifacts_part10_bot/portfolio_state.json",
     ])
+    pipeline_status = _json(root, ["artifacts_part10_bot/pipeline_status.json"])
+    backfill_status = _json(root, ["artifacts_part9/backfill_status.json"])
 
     part3_regime = str(part3.get("current_regime", "")).strip()
     part7_regime = str(part7.get("regime_label", "")).strip()
@@ -196,6 +198,12 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             "prediction_tape_paused": not freshness_ok,
             "message": history_message,
             "stale_tickers": stale_tickers,
+            "pipeline_run_date": pipeline_status.get("pipeline_run_date"),
+            "pipeline_run_id": pipeline_status.get("github_run_id"),
+            "pipeline_source_code_sha": pipeline_status.get("source_code_sha"),
+            "backfill_run_date": backfill_status.get("backfill_run_date"),
+            "backfill_run_id": backfill_status.get("github_run_id"),
+            "backfill_source_code_sha": backfill_status.get("source_code_sha"),
         },
         "latest_signal": {
             "signal_count": _csv_size(root / "artifacts_part10_bot" / "signal_log.csv"),
