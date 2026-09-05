@@ -44,6 +44,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from market_calendar import completed_xnys_sessions, latest_completed_xnys_session
+
 warnings.filterwarnings("ignore")
 
 try:
@@ -102,9 +104,6 @@ class Part0Config:
         "UMCSENT": "consumer_sentiment",
         "USREC": "recession_flag",
     })
-    fred_api_key: str = "09c48c7ed1bb6d3e9811c8e85bd5c48d"
-
-    allow_ffill_limit: int = 2
     max_pre_clean_warn_frac: float = 0.10
     min_history_years: float = 5.0
     core_tickers: Tuple[str, ...] = ("VOO", "IEF")
@@ -175,7 +174,8 @@ def _standardize_index(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _business_day_calendar(start: str, end: str) -> pd.DatetimeIndex:
-    return pd.bdate_range(start=start, end=end, freq="B")
+    """Compatibility name for the completed XNYS session calendar."""
+    return completed_xnys_sessions(start, end)
 
 
 def _max_consecutive_equal(x: pd.Series) -> int:
@@ -191,10 +191,16 @@ def _max_consecutive_equal(x: pd.Series) -> int:
 
 def download_market_data(cfg: Part0Config):
     tickers = list(dict.fromkeys(cfg.equity_tickers + cfg.vix_tickers))
+    bidx = _business_day_calendar(cfg.start, cfg.end)
+    if bidx.empty:
+        raise RuntimeError("Part 0 has no completed XNYS sessions in the requested range.")
+    # yfinance's end boundary is exclusive. Request the calendar day after the
+    # final completed session, never the wall-clock configuration date.
+    download_end = (bidx.max() + pd.Timedelta(days=1)).date().isoformat()
     raw = yf.download(
         tickers=tickers,
         start=cfg.start,
-        end=cfg.end,
+        end=download_end,
         auto_adjust=True,
         progress=False,
         group_by="ticker",
@@ -203,7 +209,6 @@ def download_market_data(cfg: Part0Config):
     if raw is None or raw.empty:
         raise RuntimeError("Part 0 failed to download market data.")
 
-    bidx = _business_day_calendar(cfg.start, cfg.end)
     close = pd.DataFrame(index=bidx)
     volume = pd.DataFrame(index=bidx)
     quality: Dict[str, Dict[str, object]] = {}
@@ -275,7 +280,7 @@ def download_market_data(cfg: Part0Config):
                     _r = yf.download(
                         tickers=[_t],
                         start=cfg.start,
-                        end=cfg.end,
+                        end=download_end,
                         auto_adjust=True,
                         progress=False,
                         threads=False,   # single-threaded: no SQLite lock contention
@@ -334,9 +339,8 @@ def download_market_data(cfg: Part0Config):
     close = close.loc[close.index >= common_start].copy()
     volume = volume.loc[volume.index >= common_start].copy()
 
-    close = close.ffill(limit=cfg.allow_ffill_limit)
-    volume = volume.ffill(limit=cfg.allow_ffill_limit)
-
+    # Market closes remain true source observations. Filling is allowed only
+    # later, after Part 1 has measured per-ticker freshness on this raw table.
     post_missing = close[core].isna().mean().to_dict()
     bad_post = {k: float(v) for k, v in post_missing.items() if float(v) > 0.0}
     if bad_post:
@@ -353,7 +357,9 @@ def download_market_data(cfg: Part0Config):
 
 
 def download_fred_data(cfg: Part0Config) -> pd.DataFrame:
-    api_key = cfg.fred_api_key or os.environ.get("FRED_API_KEY", "")
+    # Credentials are accepted from the runner environment only. Keeping a
+    # configurable plaintext default would cause it to override GitHub Secrets.
+    api_key = os.environ.get("FRED_API_KEY", "").strip()
     if not HAVE_FRED or not api_key:
         print("[Part 0] Skipping FRED download (fredapi not installed or FRED_API_KEY missing).")
         return pd.DataFrame(index=_business_day_calendar(cfg.start, cfg.end))
@@ -669,6 +675,7 @@ def save_outputs(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     close.to_parquet(out_dir / "close_prices.parquet")
+    close.notna().astype("uint8").to_parquet(out_dir / "market_observation_mask.parquet")
     volume.to_parquet(out_dir / "volume_data.parquet")
     features.to_parquet(out_dir / "features_full.parquet")
     if macro is not None and not macro.empty:
@@ -705,7 +712,23 @@ def save_outputs(
         "built_at": datetime.now(timezone.utc).isoformat(),
         "project_root": str(_resolve_project_root(cfg)),
         "out_dir": str(out_dir),
-        "date_range": {"start": cfg.start, "end": cfg.end},
+        "date_range": {
+            "start": str(close.index.min().date()),
+            "end": str(close.index.max().date()),
+            "requested_end": cfg.end,
+        },
+        "market_calendar": "XNYS",
+        "latest_completed_market_session": str(latest_completed_xnys_session().date()),
+        "market_data_asof": str(close.index.max().date()),
+        "market_values_are_raw_observations": True,
+        "last_raw_observation_by_ticker": {
+            ticker: (
+                str(close.index[close[ticker].notna()].max().date())
+                if close[ticker].notna().any()
+                else None
+            )
+            for ticker in close.columns
+        },
         "horizon": cfg.horizon,
         "n_market_tickers": int(len(close.columns)),
         "n_features": int(len(features.columns)),
@@ -758,7 +781,7 @@ def main() -> int:
     print(f"   Avg fill rate:   {usable_feature_frac:.2%}")
     print(f"   Tail base rate:  {tail_rate:.2%}")
     print(
-        "   Wrote:           close_prices.parquet, volume_data.parquet, features_full.parquet, "
+        "   Wrote:           close_prices.parquet, market_observation_mask.parquet, volume_data.parquet, features_full.parquet, "
         "y_labels_revealed.parquet, y_labels_full.parquet, part0_meta.json"
         + (", market_data.duckdb" if HAVE_DUCKDB else "")
     )
@@ -767,6 +790,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
 
 

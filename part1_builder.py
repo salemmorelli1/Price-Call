@@ -45,6 +45,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from market_calendar import latest_completed_xnys_session, xnys_session_age
+
 warnings.filterwarnings("ignore")
 
 
@@ -164,10 +166,8 @@ def _write_json(path: str, obj: Dict) -> None:
 
 
 def _expected_completed_market_date() -> pd.Timestamp:
-    """Return the latest weekday whose US cash session should be complete."""
-    now_et = pd.Timestamp.now(tz="America/New_York")
-    candidate = now_et.normalize() if now_et.hour >= 17 else now_et.normalize() - pd.offsets.BDay(1)
-    return pd.bdate_range(end=candidate.tz_localize(None), periods=1)[0].normalize()
+    """Return the latest settled NYSE session."""
+    return latest_completed_xnys_session()
 
 
 def _ticker_business_day_ages(data: pd.DataFrame) -> Dict[str, int]:
@@ -180,9 +180,7 @@ def _ticker_business_day_ages(data: pd.DataFrame) -> Dict[str, int]:
             ages[ticker] = 9999
             continue
         last_valid = pd.Timestamp(valid.max()).tz_localize(None).normalize()
-        ages[ticker] = 0 if last_valid >= expected else int(
-            len(pd.bdate_range(last_valid + pd.offsets.BDay(1), expected))
-        )
+        ages[ticker] = xnys_session_age(last_valid, expected)
     return ages
 
 
@@ -641,6 +639,8 @@ def build_part1_v20(cfg: Part1Config):
         "ticker_age_business_days_raw": ticker_age_business_days,
         "ticker_freshness_limits_business_days": freshness_limits,
         "data_freshness_ok": bool(data_freshness_ok),
+        "freshness_calendar": "XNYS",
+        "expected_completed_market_session": str(_expected_completed_market_date().date()),
     }
     _write_json(os.path.join(cfg.out_dir, "part1_diagnostics.json"), diag)
 
@@ -662,7 +662,9 @@ def build_part1_v20(cfg: Part1Config):
         "ticker_age_business_days_raw": ticker_age_business_days,
         "ticker_freshness_limits_business_days": freshness_limits,
         "data_freshness_ok": bool(data_freshness_ok),
-        "freshness_measurement": "raw_observations_before_fill_or_substitution",
+        "freshness_measurement": "raw_source_observations_before_fill_or_substitution",
+        "freshness_calendar": "XNYS",
+        "expected_completed_market_session": str(_expected_completed_market_date().date()),
     }
     _write_json(os.path.join(cfg.out_dir, "part1_meta.json"), meta)
 
@@ -693,7 +695,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 

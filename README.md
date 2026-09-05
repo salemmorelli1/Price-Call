@@ -110,23 +110,26 @@ Create and activate a virtual environment, then install dependencies:
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements-lock.txt
 ```
 
 For development checks:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-ci-lock.txt
 pytest -q
 ```
 
-CI uses the smaller bounded `requirements-ci.txt` set so optional dashboard,
+CI uses the smaller locked `requirements-ci-lock.txt` set so optional dashboard,
 optimizer, database, and gradient-boosting packages are not downloaded for unit tests.
+`requirements.txt` and `requirements-ci.txt` remain the human-maintained inputs;
+regenerate their `*-lock.txt` files intentionally when upgrading dependencies.
+The committed locks target the Python 3.12 Ubuntu environment used by GitHub Actions.
 
 The experimental BNN sleeve is optional:
 
 ```bash
-pip install -r requirements-bnn.txt
+pip install -r requirements-bnn-lock.txt
 PRICECALL_ENABLE_BNN=1 python run_tuesday_prediction.py --force
 ```
 
@@ -148,6 +151,22 @@ versus the rowwise causal prevalence forecast.
   the exact row-level backward-looking tail threshold.
 - Strategy returns use a one-rebalance-row execution lag.
 - Platt scaling must improve Brier loss on a newer chronological holdout.
+
+### Completed-session and publication integrity
+
+- Market panels use the XNYS exchange calendar and never contain holidays or an
+  unsettled same-day session.
+- VOO/IEF and auxiliary closes remain raw source observations through freshness
+  measurement; Part 0 also retains a per-cell observation mask.
+- Production is scheduled after the 16:20 Eastern settlement boundary and is
+  idempotent by completed XNYS session rather than wall-clock date.
+- Prediction rows carry source SHA, workflow run, run attempt, and a stable
+  revision identifier; provenance updates fail loudly on dtype or duplicate-row errors.
+- Production retains a 90-day immutable workflow artifact containing raw inputs,
+  point-in-time macro features, model intermediates, metadata, and hashes. Only the
+  declared publication surface is committed to Git, limiting future history growth.
+- Pipeline and backfill date markers are hashed in the publication manifest and
+  paired with structured status records containing run and source identities.
 - Live direction monitoring uses balanced accuracy and a prevalence-preserving permutation null.
 - Raw data freshness is recorded and participates in fail-closed governance.
 - Scheduled runs use idempotent date markers so delayed GitHub jobs still execute once.

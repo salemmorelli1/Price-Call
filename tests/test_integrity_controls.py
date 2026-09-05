@@ -8,6 +8,7 @@ from artifact_integrity import (
     REQUIRED_PUBLISHED_FILES,
     build_run_manifest,
     read_json_strict,
+    validate_status_markers,
     verify_run_manifest,
     write_json_strict,
 )
@@ -27,10 +28,11 @@ def test_strict_json_rejects_legacy_nan_token(tmp_path):
         read_json_strict(path)
 
 
-def test_backfill_manual_dispatch_cannot_bypass_close_gate():
+def test_backfill_uses_completed_exchange_session_gate():
     text = Path(".github/workflows/daily-backfill.yml").read_text(encoding="utf-8")
     assert "should_run = manual or settled" not in text
-    assert "Manual backfill refused" in text
+    assert "latest_completed_xnys_session" in text
+    assert "completed != session_date" in text
 
 
 def test_workflows_publish_dashboard_and_manifest():
@@ -43,11 +45,28 @@ def test_workflows_publish_dashboard_and_manifest():
         assert "--strategy-option=ours" not in text
 
 
-def test_production_gate_has_no_upper_time_window():
+def test_backfill_process_propagates_failure_exit_code():
+    text = Path("backfill_realized.py").read_text(encoding="utf-8")
+    assert 'raise SystemExit(main())' in text
+    assert "Part 3 summary regeneration failed after backfill" in text
+
+
+def test_production_gate_is_idempotent_by_completed_xnys_session():
     text = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
-    assert "after_start = now.hour >= 8" in text
-    assert "now.hour <=" not in text
-    assert "completed != today" in text
+    assert "latest_completed_xnys_session" in text
+    assert "completed != session_date" in text
+    assert 'cron: "45 20 * * 1-5"' in text
+
+
+def test_workflows_use_locked_dependencies_and_retain_research_bundle():
+    production = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
+    backfill = Path(".github/workflows/daily-backfill.yml").read_text(encoding="utf-8")
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "requirements-lock.txt" in production
+    assert "requirements-lock.txt" in backfill
+    assert "requirements-ci-lock.txt" in ci
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in production
+    assert "retention-days: 90" in production
 
 
 def test_dashboard_snapshot_excludes_legacy_evidence(tmp_path):
@@ -128,8 +147,14 @@ def test_pages_bundle_contains_every_local_reference(tmp_path):
     (tmp_path / "artifacts_dashboard").mkdir()
     (tmp_path / "artifacts_dashboard" / "dashboard_snapshot.json").write_text("{}", encoding="utf-8")
     (tmp_path / "artifacts_part10_bot").mkdir()
-    for name in ("signal_log.csv", "portfolio_state.json", "performance_report.json"):
+    for name in (
+        "signal_log.csv", "portfolio_state.json", "performance_report.json",
+        "pipeline_status.json", "pipeline_run_date.txt",
+    ):
         (tmp_path / "artifacts_part10_bot" / name).write_text("{}", encoding="utf-8")
+    (tmp_path / "artifacts_part9").mkdir()
+    for name in ("backfill_status.json", "backfill_run_date.txt"):
+        (tmp_path / "artifacts_part9" / name).write_text("{}", encoding="utf-8")
     (tmp_path / "index.html").write_text(
         "<a href='artifacts_part10_bot/signal_log.csv'>log</a>"
         "<script>fetch('artifacts_dashboard/dashboard_snapshot.json')</script>",
@@ -139,6 +164,8 @@ def test_pages_bundle_contains_every_local_reference(tmp_path):
     prepare_site(tmp_path, site)
     assert (site / "artifacts_dashboard" / "dashboard_snapshot.json").is_file()
     assert (site / "artifacts_part10_bot" / "signal_log.csv").is_file()
+    assert (site / "artifacts_part10_bot" / "pipeline_status.json").is_file()
+    assert (site / "artifacts_part9" / "backfill_status.json").is_file()
 
 
 def test_second_pass_governance_uses_rowwise_base_rate():
@@ -183,6 +210,30 @@ def test_manifest_directly_hashes_mutable_evidence_ledgers():
     assert "artifacts_part8/execution_cost_tape.csv" in required
     assert "artifacts_part10_bot/signal_log.csv" in required
     assert "artifacts_part10_bot/trade_log.csv" in required
+    assert "artifacts_part10_bot/pipeline_run_date.txt" in required
+    assert "artifacts_part9/backfill_run_date.txt" in required
+    assert "artifacts_part9/backfill_status.json" in required
+
+
+def test_status_records_must_match_date_markers(tmp_path):
+    pipeline_dir = tmp_path / "artifacts_part10_bot"
+    backfill_dir = tmp_path / "artifacts_part9"
+    pipeline_dir.mkdir()
+    backfill_dir.mkdir()
+    (pipeline_dir / "pipeline_run_date.txt").write_text("2026-09-04\n", encoding="utf-8")
+    (backfill_dir / "backfill_run_date.txt").write_text("2026-09-04\n", encoding="utf-8")
+    common = {
+        "protocol_version": PROTOCOL_VERSION,
+        "result": "verified",
+        "source_code_sha": "abc",
+        "github_run_id": "123",
+        "github_run_attempt": "1",
+    }
+    write_json_strict(pipeline_dir / "pipeline_status.json", {**common, "pipeline_run_date": "2026-09-04"})
+    write_json_strict(backfill_dir / "backfill_status.json", {**common, "backfill_run_date": "2026-09-04"})
+    assert validate_status_markers(tmp_path) == []
+    write_json_strict(backfill_dir / "backfill_status.json", {**common, "backfill_run_date": "2026-09-03"})
+    assert any("does not match" in failure for failure in validate_status_markers(tmp_path))
 
 
 def test_current_html_has_no_pre_snapshot_performance_claims():
