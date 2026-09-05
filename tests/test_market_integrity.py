@@ -47,6 +47,21 @@ def test_completed_session_calendar_excludes_holidays_and_unsettled_rows():
     assert sessions.max() == pd.Timestamp("2026-09-04")
 
 
+def test_completed_session_calendar_covers_configured_2005_history():
+    from market_calendar import completed_xnys_sessions
+
+    sessions = completed_xnys_sessions(
+        "2005-01-01", "2005-01-07", now="2026-09-05 02:45-04:00"
+    )
+    assert sessions.tolist() == [
+        pd.Timestamp("2005-01-03"),
+        pd.Timestamp("2005-01-04"),
+        pd.Timestamp("2005-01-05"),
+        pd.Timestamp("2005-01-06"),
+        pd.Timestamp("2005-01-07"),
+    ]
+
+
 def test_part0_market_panel_does_not_forward_fill_source_closes():
     text = Path("part0_data_infrastructure.py").read_text(encoding="utf-8")
     market_download = text.split("def download_market_data", 1)[1].split(

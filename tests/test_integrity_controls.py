@@ -65,6 +65,12 @@ def test_workflows_use_locked_dependencies_and_retain_research_bundle():
     assert "requirements-lock.txt" in production
     assert "requirements-lock.txt" in backfill
     assert "requirements-ci-lock.txt" in ci
+    assert "pip install --no-cache-dir -r requirements-lock.txt" in production
+    assert "pip install --no-cache-dir -r requirements-lock.txt" in backfill
+    assert "pip install --no-cache-dir -r requirements-ci-lock.txt" in ci
+    assert 'cache: "pip"' not in production
+    assert 'cache: "pip"' not in backfill
+    assert "cache: pip" not in ci
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in production
     assert "retention-days: 90" in production
 
