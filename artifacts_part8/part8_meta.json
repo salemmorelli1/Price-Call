@@ -8,7 +8,7 @@
     "GLD",
     "TLT"
   ],
-  "built_at": "2026-09-04T16:20:06.354172+00:00",
+  "built_at": "2026-09-05T12:37:36.958517+00:00",
   "governance_check_source": "/home/runner/work/Price-Call/Price-Call/artifacts_part2_g532/predictions/part2_g532_summary.json",
   "governance_override_applied": true,
   "governance_p2_final_pass": false,
@@ -23,7 +23,7 @@
     "data_freshness_ok": true,
     "decision_date": "2026-09-04 00:00:00",
     "execute_window": null,
-    "generated_at": "2026-09-04T16:20:06.279405+00:00",
+    "generated_at": "2026-09-05T12:37:36.896766+00:00",
     "instructions": [],
     "n_trades": 0,
     "pipeline_run_date": null,
@@ -32,7 +32,7 @@
     "source_decision_date": "2026-09-04 00:00:00",
     "status": "NO_ACTION_STALE_OR_UNCLEARED"
   },
-  "live_vix_used": 14.319999694824219,
+  "live_vix_used": 14.529999732971191,
   "max_annual_tc_drag_bps": 50.0,
   "min_rebalance_threshold": 0.005,
   "protocol_version": "causal-integrity-v3",

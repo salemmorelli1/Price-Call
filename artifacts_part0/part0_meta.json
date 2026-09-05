@@ -1,248 +1,711 @@
 {
-  "built_at": "2026-09-04T15:42:19.972573+00:00",
-  "close_checksum": "aebdfaadf5d6f0cf",
-  "close_prices_sha256": "55690b21943f03248bd09d1559d7f1bc9b82de1e17e18c10c492dcf2872ee171",
+  "built_at": "2026-09-05T11:59:31.231158+00:00",
+  "close_checksum": "a6f65d90ff3d1766",
+  "close_prices_sha256": "d0c7c384d9edaabfcc9af7bc2c46fd44e370caae276e17ea6a035286e3407f5f",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.08452696728558798,
+      "missing_pre_clean": 0.05043095543737392,
       "usable_for_model": true,
       "years_history": 20.57
     },
     "EEM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "EFA": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "GLD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "HYG": {
       "first_valid_date": "2007-04-11",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.13669319186560566,
+      "missing_pre_clean": 0.10452961672473868,
       "usable_for_model": true,
       "years_history": 19.4
     },
     "IEF": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "IWM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "JNK": {
       "first_valid_date": "2007-12-04",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.1658709106984969,
+      "missing_pre_clean": 0.13478818998716302,
       "usable_for_model": true,
       "years_history": 18.75
     },
     "LQD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "MDY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "QQQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "RSP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "SHY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "SMH": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "TLT": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "UUP": {
       "first_valid_date": "2007-03-01",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.1317418213969938,
+      "missing_pre_clean": 0.09939482853475151,
       "usable_for_model": true,
       "years_history": 19.51
     },
     "VNQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "VOO": {
       "first_valid_date": "2010-09-09",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.28894783377542,
+      "missing_pre_clean": 0.26242435356684396,
       "usable_for_model": true,
       "years_history": 15.99
     },
     "XLB": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLC": {
       "first_valid_date": "2018-06-19",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.6350132625994694,
+      "missing_pre_clean": 0.6213093709884467,
       "usable_for_model": true,
       "years_history": 8.21
     },
     "XLE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLF": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLI": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLK": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLU": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLV": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "XLY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.035897435897435895,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "^MOVE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0519893899204244,
+      "missing_pre_clean": 0.01668806161745828,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "^SKEW": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.04703801945181255,
+      "missing_pre_clean": 0.011553273427471117,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "^VIX": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.03572060123784262,
+      "missing_pre_clean": 0.0,
       "usable_for_model": true,
       "years_history": 21.67
     },
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.11016799292661361,
+      "missing_pre_clean": 0.07720520814230698,
       "usable_for_model": true,
       "years_history": 20.13
     }
   },
   "date_range": {
     "end": "2026-09-04",
-    "start": "2005-01-01"
+    "requested_end": "2026-09-05",
+    "start": "2010-09-09"
   },
-  "features_checksum": "e9e941403cfc7da2",
-  "features_file_sha256": "0ae883d90866efaafb488e3a7be7e0c70372d66cc45325d65b4ba0bca8fe72e4",
+  "features_checksum": "d77148563ee032da",
+  "features_file_sha256": "744c63294d81d20ad9c0a6ebafe21d78777fccc90a70eec5422abf3e04282b86",
   "fred_enabled": true,
+  "fred_vintage_chunk_diagnostics": {
+    "consumer_sentiment": [
+      {
+        "end": "2012-09-08",
+        "rows": 508,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 556,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 907,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 871,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 887,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "curve_2s10s": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 10507,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 11553,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 12596,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 13114,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "curve_3m10y": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 9048,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 10094,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 11137,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 11655,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "dollar_index": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2012-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 8351,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 15035,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 7381,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "fed_funds_rate": [
+      {
+        "end": "2012-09-08",
+        "rows": 21265,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 22727,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 24177,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 25635,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 26363,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "hy_spread": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2012-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2020-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2016-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 269,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 795,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "ig_spread": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2012-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2020-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2016-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 269,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 796,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "recession_flag": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 1917,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 1992,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 2051,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 2061,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "ted_spread": [
+      {
+        "end": "2012-09-08",
+        "error": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
+        "rows": 0,
+        "start": "2008-09-09",
+        "status": "prehistory_error"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 8008,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 9454,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 9407,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 9407,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "vix_fred": [
+      {
+        "end": "2012-09-08",
+        "rows": 5717,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 6963,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 8006,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 9071,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 9568,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "wti_oil": [
+      {
+        "end": "2012-09-08",
+        "rows": 6754,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 8014,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 9080,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 10109,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 10612,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "yield_10y": [
+      {
+        "end": "2012-09-08",
+        "rows": 13223,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 14268,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 15311,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 16355,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 16873,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "yield_2y": [
+      {
+        "end": "2012-09-08",
+        "rows": 9463,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 10508,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 11552,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 12593,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 13113,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ],
+    "yield_30y": [
+      {
+        "end": "2012-09-08",
+        "rows": 9278,
+        "start": "2008-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2016-09-08",
+        "rows": 10323,
+        "start": "2012-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2020-09-08",
+        "rows": 12360,
+        "start": "2016-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2024-09-08",
+        "rows": 12409,
+        "start": "2020-09-09",
+        "status": "ok"
+      },
+      {
+        "end": "2026-09-04",
+        "rows": 12928,
+        "start": "2024-09-09",
+        "status": "ok"
+      }
+    ]
+  },
   "fred_vintage_errors": {
-    "curve_2s10s": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "curve_3m10y": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "dollar_index": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "hy_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "ig_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "recession_flag": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables.",
-    "ted_spread": "ValueError: Bad Request.  The series does not exist in ALFRED but may exist in FRED.  Try setting realtime_start and realtime_end to today's date or removing the realtime_start and realtime_end variables."
+    "curve_2s10s": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
+    "curve_3m10y": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
+    "dollar_index": "ValueError: first usable ALFRED window starts after the model calendar (2016-09-09 > 2010-09-09)",
+    "hy_spread": "ValueError: first usable ALFRED window starts after the model calendar (2020-09-09 > 2010-09-09)",
+    "ig_spread": "ValueError: first usable ALFRED window starts after the model calendar (2020-09-09 > 2010-09-09)",
+    "recession_flag": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
+    "ted_spread": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)"
   },
   "fred_vintage_mode_by_series": {
     "consumer_sentiment": "alfred_first_release_chunked",
@@ -264,19 +727,58 @@
   "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
   "historical_point_in_time_complete": false,
   "horizon": 1,
-  "macro_data_sha256": "9abc1f1559211343dcc4eadf3954871350f10324abd409179e001bd714397beb",
+  "last_raw_observation_by_ticker": {
+    "DBC": "2026-09-04",
+    "EEM": "2026-09-04",
+    "EFA": "2026-09-04",
+    "GLD": "2026-09-04",
+    "HYG": "2026-09-04",
+    "IEF": "2026-09-04",
+    "IWM": "2026-09-04",
+    "JNK": "2026-09-04",
+    "LQD": "2026-09-04",
+    "MDY": "2026-09-04",
+    "QQQ": "2026-09-04",
+    "RSP": "2026-09-04",
+    "SHY": "2026-09-04",
+    "SMH": "2026-09-04",
+    "TLT": "2026-09-04",
+    "UUP": "2026-09-04",
+    "VNQ": "2026-09-04",
+    "VOO": "2026-09-04",
+    "XLB": "2026-09-04",
+    "XLC": "2026-09-04",
+    "XLE": "2026-09-04",
+    "XLF": "2026-09-04",
+    "XLI": "2026-09-04",
+    "XLK": "2026-09-04",
+    "XLP": "2026-09-04",
+    "XLU": "2026-09-04",
+    "XLV": "2026-09-04",
+    "XLY": "2026-09-04",
+    "^MOVE": "2026-09-04",
+    "^SKEW": "2026-09-04",
+    "^VIX": "2026-09-04",
+    "^VIX3M": "2026-09-04"
+  },
+  "latest_completed_market_session": "2026-09-04",
+  "macro_data_sha256": "7a492048a707e47fd51552743408bd34bdad212c3ba3e325f6087eee04a887e6",
+  "market_calendar": "XNYS",
+  "market_data_asof": "2026-09-04",
   "market_data_source_overrides": {
     "^VIX3M": {
-      "download_sha256": "bd1b5c8ff07c6b978337cfb246b2034537bcb36d8200c73663abac0119bc6d4e",
-      "latest_observation": "2026-09-03",
+      "download_sha256": "0c4c36992e253bef5cb4853a25a439ec44e1ea06daf48d1e3acc213fe0d39db4",
+      "latest_observation": "2026-09-04",
       "provider": "Cboe Global Markets",
-      "retrieved_at_utc": "2026-09-04T15:42:20.880194+00:00",
-      "rows_applied": 4021,
-      "rows_downloaded": 4266,
+      "retrieved_at_utc": "2026-09-05T11:59:32.138974+00:00",
+      "rows_applied": 4022,
+      "rows_downloaded": 4267,
       "status": "applied",
       "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv"
     }
   },
+  "market_observation_mask_sha256": "d90caa82e74e965601362e7c333400c258cf8f2f632f9138c83263e344af1e0b",
+  "market_values_are_raw_observations": true,
   "n_features": 59,
   "n_macro_series": 14,
   "n_market_tickers": 32,
@@ -284,7 +786,7 @@
   "point_in_time_adapter": "point_in_time_macro.py",
   "project_root": "/home/runner/work/Price-Call/Price-Call",
   "protocol_version": "causal-integrity-v3",
-  "tail_rate": 0.07360345240949413,
+  "tail_rate": 0.07634916687391197,
   "version": "V2_DAILY_CANONICAL",
   "vix3m_authoritative_fallback_applied": true
 }

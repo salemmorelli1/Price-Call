@@ -33,9 +33,9 @@
     "px_voo_fwd",
     "px_ief_fwd"
   ],
-  "n_X_live": 4137,
-  "n_y_reg_revealed": 4171,
-  "n_reg_train": 4136,
+  "n_X_live": 3987,
+  "n_y_reg_revealed": 4021,
+  "n_reg_train": 3986,
   "ticker_age_business_days_raw": {
     "VOO": 0,
     "IEF": 0,
@@ -55,5 +55,7 @@
     "^VIX3M": 5
   },
   "data_freshness_ok": true,
-  "freshness_measurement": "raw_observations_before_fill_or_substitution"
+  "freshness_measurement": "raw_source_observations_before_fill_or_substitution",
+  "freshness_calendar": "XNYS",
+  "expected_completed_market_session": "2026-09-04"
 }

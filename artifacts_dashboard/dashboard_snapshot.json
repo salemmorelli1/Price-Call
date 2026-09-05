@@ -25,12 +25,18 @@
     "target_voo": 0.6
   },
   "lineage": {
+    "backfill_run_date": "2026-09-04",
+    "backfill_run_id": "33925516010",
+    "backfill_source_code_sha": "a4a8d8515b00471541e41062baba42d7380d6663",
     "latest_prediction_target_date": "2026-09-08",
     "latest_signal_run_date": "2026-09-04",
     "latest_signal_source_decision_date": "2026-09-04T00:00:00",
     "market_data_asof": "2026-09-04",
     "message": "The prediction tape and market-data lineage are current under the published gate.",
     "model_data_asof": "2026-09-04",
+    "pipeline_run_date": "2026-09-04",
+    "pipeline_run_id": "33964706708",
+    "pipeline_source_code_sha": "988365608d832e337dfa2d1e8df40a95c7d86abb",
     "prediction_tape_paused": false,
     "stale_tickers": {}
   },
@@ -40,17 +46,17 @@
   ],
   "macro_point_in_time_ok": false,
   "metrics": {
-    "backtest_auc": 0.507419491603532,
-    "backtest_auc_p_value": 0.330716,
-    "backtest_auc_permutation_p_value": 0.33983008495752126,
-    "backtest_brier": 0.1613587869539123,
-    "backtest_brier_skill": -0.00039447491282973424,
+    "backtest_auc": 0.5163979804242881,
+    "backtest_auc_p_value": 0.177392,
+    "backtest_auc_permutation_p_value": 0.15992003998001,
+    "backtest_brier": 0.16138419516337135,
+    "backtest_brier_skill": -0.0027778034290459885,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": null,
     "live_brier_null": null,
     "live_brier_skill": null,
-    "rolling_median_auc": 0.5360498366013071
+    "rolling_median_auc": 0.5596354166666667
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -64,7 +70,7 @@
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8909299655568312,
+    "empirical_coverage": 0.8962432915921288,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",
