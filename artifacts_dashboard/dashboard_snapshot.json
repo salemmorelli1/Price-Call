@@ -25,9 +25,9 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-09-04",
-    "backfill_run_id": "33925516010",
-    "backfill_source_code_sha": "a4a8d8515b00471541e41062baba42d7380d6663",
+    "backfill_run_date": "2026-09-08",
+    "backfill_run_id": "34288001481",
+    "backfill_source_code_sha": "4027a785ba661fb2c504232554158c1c4ac91c81",
     "latest_prediction_target_date": "2026-09-08",
     "latest_signal_run_date": "2026-09-04",
     "latest_signal_source_decision_date": "2026-09-04T00:00:00",
