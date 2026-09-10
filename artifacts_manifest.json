@@ -2,7 +2,7 @@
   "files": {
     "artifacts_dashboard/dashboard_snapshot.json": {
       "bytes": 2673,
-      "sha256": "c9bec4c8d6538c171a4493cf8e4f4d4db76f574d01886ded524b2dbc11c316c8"
+      "sha256": "d4f749397cba3996f2f547b7c836c12eaaec5627ffaae734a2df0ae9c3afc6d4"
     },
     "artifacts_part0/part0_meta.json": {
       "bytes": 22268,
@@ -49,8 +49,8 @@
       "sha256": "411a0fa38ace8e0af61e4890ac5e247c362642f72127e95977ab8765c55cf3fb"
     },
     "artifacts_part3/prediction_log.csv": {
-      "bytes": 32784,
-      "sha256": "f56119967ab8e11d433691239161c370da1d3c9f5924be4956a71327ca301ec2"
+      "bytes": 32792,
+      "sha256": "720c6ac585b92c2e7e5a1a223dfb617bb6d80f01810fccabac5af33475bc5eeb"
     },
     "artifacts_part3_v1/part3_summary.json": {
       "bytes": 3662,
@@ -94,23 +94,23 @@
     },
     "artifacts_part9/backfill_run_date.txt": {
       "bytes": 11,
-      "sha256": "a24b543f55ad26e04de70a917f8ce0f103d4f06f5540c9333ccc55c228c100f6"
+      "sha256": "f458fc709736dfc46e03da1c16d734687c161a6d311f337974b685960e555427"
     },
     "artifacts_part9/backfill_status.json": {
       "bytes": 295,
-      "sha256": "c27516dd39ee2c33d701f716c38ccb531086b3d5bed38779f20cb531579418ac"
+      "sha256": "bae7c6cc786b914859a90da794f98e91a1e7679353b3b34e7da48acf7ca2bfcd"
     },
     "artifacts_part9/live_attribution_report.json": {
       "bytes": 2054,
-      "sha256": "cd84b831561e863764560e898099accbee28d213e5ec93978d51c4ce249f226d"
+      "sha256": "76c18ba7f85bf8057f6e9ed2a8e0d8f0563391548bf3e2478c238e11c5e099cb"
     },
     "index.html": {
-      "bytes": 90051,
-      "sha256": "d88fd2c891c891bd4996ef41766e2c92f192e3359deecc52c789615ef069c8de"
+      "bytes": 90053,
+      "sha256": "782a7090c4d2a23bb72f37633d4105d1272d832e2fafde62a2f63052262f80c3"
     }
   },
-  "generated_at_utc": "2026-09-09T22:41:50.062577+00:00",
-  "github_run_id": "34413385468",
+  "generated_at_utc": "2026-09-10T22:43:34.552558+00:00",
+  "github_run_id": "34538752583",
   "protocol_version": "causal-integrity-v3",
-  "source_code_sha": "fde33b07d06fafecea3f3b60c7b2712e1bd7fa73"
+  "source_code_sha": "5508bf7cf352e17898f5573cea608c4627022568"
 }

@@ -36,7 +36,7 @@
   "current_cohort_eligible_predictions": 0,
   "current_cohort_predictions": 2,
   "evidence_cohort": "causal-integrity-v3",
-  "generated_at": "2026-09-09T22:41:41.530551+00:00",
+  "generated_at": "2026-09-10T22:43:25.173677+00:00",
   "health_reasons": [
     "Only 0 live observations (60 required)"
   ],
