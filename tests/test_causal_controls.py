@@ -161,6 +161,65 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
     assert row["px_voo_realized"] == 100.0
 
 
+def test_prediction_upsert_appends_new_date_without_mixed_date_types(tmp_path, monkeypatch):
+    from artifact_integrity import PROTOCOL_VERSION
+    from part3_governance import _upsert_prediction_log
+
+    path = tmp_path / "prediction_log.csv"
+    pd.DataFrame([{
+        "decision_date": "2026-09-04",
+        "target_date": "2026-09-08",
+        "model_protocol_version": PROTOCOL_VERSION,
+        "evidence_eligible": 0,
+    }]).to_csv(path, index=False)
+    monkeypatch.setenv("PRICECALL_CODE_SHA", "new-code-sha")
+    monkeypatch.setenv("GITHUB_RUN_ID", "34539046830")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    alpha_status = {
+        "latest_state": "SHADOW",
+        "alpha_live": 0,
+        "current_alpha_live_status": "SHADOW",
+        "current_alpha_reason": "not_eligible",
+        "current_alpha_eligible": 0,
+        "current_alpha_abs": 0.0,
+    }
+    alpha_sources = {
+        "positions": tmp_path / "positions.csv",
+        "summary_tape": tmp_path / "summary.csv",
+        "eligibility": tmp_path / "eligibility.csv",
+        "summary_json": tmp_path / "summary.json",
+    }
+
+    frame, _ = _upsert_prediction_log(
+        path,
+        pd.Timestamp("2026-09-10"),
+        pd.Timestamp("2026-09-11"),
+        101.0,
+        91.0,
+        "FAIL_CLOSED_NEUTRAL",
+        0,
+        alpha_status,
+        tmp_path / "defense.csv",
+        alpha_sources,
+        pd.Series({
+            "tail_threshold_dynamic": -0.01,
+            "px_voo_t": 100.0,
+            "px_ief_t": 90.0,
+            "p_final_cal": 0.2,
+            "base_rate": 0.2,
+        }),
+        {
+            "part1_data_freshness_ok": True,
+            "macro_point_in_time_ok": True,
+            "tail_event_definition": "rowwise_trailing_63_observation_20th_percentile_shifted_1",
+        },
+    )
+
+    assert frame["decision_date"].tolist() == ["2026-09-04", "2026-09-10"]
+    assert frame["target_date"].tolist() == ["2026-09-08", "2026-09-11"]
+    assert frame["decision_date"].map(type).eq(str).all()
+
+
 def test_missing_alpha_gate_fields_default_closed_and_are_namespaced():
     from part3_governance import _build_governance_df, _load_alpha_status
 

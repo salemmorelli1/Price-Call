@@ -988,9 +988,19 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         predlog_df[column] = predlog_df[column].astype("string")
 
     if "decision_date" in predlog_df.columns:
-        predlog_df["decision_date"] = pd.to_datetime(predlog_df["decision_date"], errors="coerce")
+        parsed_decision_dates = pd.to_datetime(
+            predlog_df["decision_date"], errors="coerce"
+        )
+        invalid_decision_dates = parsed_decision_dates.isna()
+        if invalid_decision_dates.any():
+            bad_values = predlog_df.loc[
+                invalid_decision_dates, "decision_date"
+            ].astype(str).unique().tolist()
+            raise RuntimeError(
+                f"Prediction ledger contains invalid decision_date values: {bad_values[:5]}"
+            )
         mask = (
-            predlog_df["decision_date"].eq(row["decision_date"])
+            parsed_decision_dates.eq(row["decision_date"])
             & predlog_df["model_protocol_version"].eq(PROTOCOL_VERSION)
         )
         if mask.any():
@@ -1033,7 +1043,30 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
                 f"expected={expected!r} actual={current_row[field]!r}"
             )
 
-    predlog_df = predlog_df.sort_values("decision_date").reset_index(drop=True)
+    # Keep every serialized date in one canonical dtype before sorting.  The
+    # previous code converted existing rows to Timestamp, appended a new ISO
+    # string row, and then asked pandas to compare the mixed objects.  A new
+    # session consequently failed with ``str < Timestamp`` before the ledger
+    # could be written.
+    for date_column in ("decision_date", "target_date"):
+        if date_column not in predlog_df.columns:
+            continue
+        parsed = pd.to_datetime(predlog_df[date_column], errors="coerce")
+        invalid = parsed.isna()
+        if invalid.any():
+            bad_values = predlog_df.loc[invalid, date_column].astype(str).unique().tolist()
+            raise RuntimeError(
+                f"Prediction ledger contains invalid {date_column} values: {bad_values[:5]}"
+            )
+        predlog_df[date_column] = parsed.dt.strftime("%Y-%m-%d")
+
+    decision_order = pd.to_datetime(predlog_df["decision_date"], errors="raise")
+    predlog_df = (
+        predlog_df.assign(_decision_order=decision_order)
+        .sort_values("_decision_order", kind="stable")
+        .drop(columns="_decision_order")
+        .reset_index(drop=True)
+    )
     realized_rows = _count_realized_predlog_rows(predlog_df)
     predlog_df.to_csv(predlog_path, index=False)
     return predlog_df, realized_rows

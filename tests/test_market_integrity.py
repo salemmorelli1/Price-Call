@@ -91,6 +91,7 @@ def test_part0_rejects_missing_core_close_instead_of_synthesizing_it(monkeypatch
 
     monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
     monkeypatch.setattr(part0.yf, "download", fake_download)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
     cfg = part0.Part0Config(
         start="2026-09-03",
         end="2026-09-04",
@@ -99,9 +100,62 @@ def test_part0_rejects_missing_core_close_instead_of_synthesizing_it(monkeypatch
         core_tickers=("VOO", "IEF"),
         min_history_years=0.0,
     )
-    with pytest.raises(RuntimeError, match="core tickers still have NaN"):
+    with pytest.raises(RuntimeError, match="core tickers still have NaN") as error:
         part0.download_market_data(cfg)
     assert calls[0]["end"] == "2026-09-05"
+    assert len(calls) == 4
+    assert all(call.get("threads") is False for call in calls[1:])
+    assert "2026-09-04" in str(error.value)
+
+
+def test_part0_recovers_partial_core_gap_from_raw_individual_retry(monkeypatch):
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(["2026-09-03", "2026-09-04"]), name="Date"
+    )
+    bulk_columns = pd.MultiIndex.from_product(
+        [["VOO", "IEF"], ["Close", "Volume"]]
+    )
+    bulk = pd.DataFrame(
+        [[100.0, 10.0, 90.0, 9.0], [float("nan"), 11.0, 91.0, 10.0]],
+        index=sessions,
+        columns=bulk_columns,
+    )
+    # Exercise the alternate field-first MultiIndex returned by some one-ticker
+    # yfinance calls.
+    retry_columns = pd.MultiIndex.from_product([["Close", "Volume"], ["VOO"]])
+    retry = pd.DataFrame(
+        [[100.0, 10.0], [101.0, 11.0]],
+        index=sessions,
+        columns=retry_columns,
+    )
+    responses = iter([bulk, retry])
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", fake_download)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
+    cfg = part0.Part0Config(
+        start="2026-09-03",
+        end="2026-09-04",
+        equity_tickers=("VOO", "IEF"),
+        vix_tickers=(),
+        core_tickers=("VOO", "IEF"),
+        min_history_years=0.0,
+    )
+
+    close, _, quality = part0.download_market_data(cfg)
+
+    assert close.loc[pd.Timestamp("2026-09-04"), "VOO"] == 101.0
+    assert not close[["VOO", "IEF"]].isna().any().any()
+    assert calls[1]["tickers"] == ["VOO"]
+    assert calls[1]["threads"] is False
+    assert quality["VOO"]["individual_retry_recovered_rows"] == 1
 
 
 def test_completed_session_input_validator_rejects_non_session_row(tmp_path, monkeypatch):
@@ -141,3 +195,26 @@ def test_completed_session_input_validator_rejects_non_session_row(tmp_path, mon
     )
     failures = validate_completed_session_inputs(tmp_path)
     assert any("non-XNYS or uncompleted" in failure for failure in failures)
+
+
+def test_current_protocol_backfill_does_not_roll_a_missing_target_forward():
+    from backfill_realized import _resolve_target_trading_date
+
+    available = pd.DatetimeIndex(pd.to_datetime(["2026-09-04", "2026-09-09"]))
+    target = pd.Timestamp("2026-09-08")
+
+    assert _resolve_target_trading_date(
+        pd.Timestamp("2026-09-04"),
+        available,
+        1,
+        target,
+        require_exact_target=True,
+    ) is None
+    # Legacy rows retain the historical holiday/weekend roll-forward behavior.
+    assert _resolve_target_trading_date(
+        pd.Timestamp("2026-09-04"),
+        available,
+        1,
+        target,
+        require_exact_target=False,
+    ) == pd.Timestamp("2026-09-09")

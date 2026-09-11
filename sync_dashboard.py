@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from artifact_integrity import LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION, json_safe, write_json_strict
+from market_calendar import latest_completed_xnys_session, xnys_session_age
 
 
 def _first(root: Path, candidates: list[str]) -> Path | None:
@@ -52,6 +53,23 @@ def _latest_record(path: Path, date_columns: tuple[str, ...]) -> dict[str, Any]:
 
 def _csv_size(path: Path) -> int:
     return int(len(pd.read_csv(path))) if path.is_file() else 0
+
+
+def _date_text(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    parsed = pd.to_datetime(value, errors="coerce")
+    return None if pd.isna(parsed) else parsed.date().isoformat()
+
+
+def _age_from_expected(value: Any, expected: pd.Timestamp) -> int | None:
+    date_value = _date_text(value)
+    if date_value is None:
+        return None
+    try:
+        return int(xnys_session_age(date_value, expected))
+    except (TypeError, ValueError):
+        return None
 
 
 def build_snapshot(root: Path) -> dict[str, Any]:
@@ -102,8 +120,52 @@ def build_snapshot(root: Path) -> dict[str, Any]:
     auc_p_max = _number(part2.get("historical_auc_p_max")) or 0.10
     brier_skill_min = _number(part2.get("historical_brier_skill_min")) or 0.005
     macro_point_in_time_ok = bool(part2.get("macro_point_in_time_ok", False))
-    final_pass = bool(part3.get("final_pass", part2.get("final_pass", False)))
-    freshness_ok = bool(part2.get("part1_data_freshness_ok", False))
+    governance_final_pass = bool(
+        part3.get("final_pass", part2.get("final_pass", False))
+    )
+    source_freshness_ok = bool(part2.get("part1_data_freshness_ok", False))
+    market_asof = (part0.get("date_range", {}) or {}).get("end")
+    model_asof = part1.get("asof_date")
+    pipeline_session = (
+        pipeline_status.get("expected_completed_market_session")
+        or pipeline_status.get("pipeline_run_date")
+    )
+    expected_session = latest_completed_xnys_session()
+    expected_session_text = expected_session.date().isoformat()
+    publication_dates = {
+        "market_data": _date_text(market_asof),
+        "model_data": _date_text(model_asof),
+        "decision": _date_text(decision_date),
+        "pipeline": _date_text(pipeline_session),
+    }
+    publication_ages = {
+        name: _age_from_expected(value, expected_session)
+        for name, value in publication_dates.items()
+    }
+    publication_freshness_ok = all(
+        value == expected_session_text for value in publication_dates.values()
+    )
+    publication_session_age = (
+        max(publication_ages.values())
+        if all(age is not None for age in publication_ages.values())
+        else None
+    )
+    freshness_ok = source_freshness_ok and publication_freshness_ok
+    final_pass = governance_final_pass and freshness_ok
+    governance_publish_mode = part3.get(
+        "publish_mode", part2.get("publish_mode", "UNKNOWN")
+    )
+    governance_deployment_mode = part3.get("deployment_mode", "UNKNOWN")
+    publish_mode = (
+        "FAIL_CLOSED_STALE"
+        if not publication_freshness_ok and governance_publish_mode == "NORMAL"
+        else governance_publish_mode
+    )
+    deployment_mode = (
+        governance_deployment_mode
+        if publication_freshness_ok
+        else "NO_ACTION_STALE"
+    )
     validation_reasons: list[str] = []
     if auc is None or auc <= 0.50:
         validation_reasons.append("backtest AUC is not above 0.50")
@@ -113,8 +175,18 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         validation_reasons.append(
             f"causal Brier skill is below {brier_skill_min:.3f}"
         )
-    if not freshness_ok:
+    if not source_freshness_ok:
         validation_reasons.append("required market data are stale")
+    if not publication_freshness_ok:
+        age_text = (
+            f"{publication_session_age} completed XNYS session(s)"
+            if publication_session_age is not None
+            else "an unknown number of sessions"
+        )
+        validation_reasons.append(
+            f"published production is {age_text} behind "
+            f"(expected {expected_session_text})"
+        )
     if not macro_point_in_time_ok:
         validation_reasons.append("point-in-time macro coverage is incomplete")
     if not final_pass and not validation_reasons:
@@ -126,23 +198,36 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         for ticker, age in ticker_ages.items()
         if int(age) > int(ticker_limits.get(ticker, 0))
     }
-    market_asof = (part0.get("date_range", {}) or {}).get("end")
-    model_asof = part1.get("asof_date")
     latest_prediction_target = latest_prediction.get("target_date")
-    history_message = (
-        f"Market inputs extend through {market_asof}, but the governed prediction tape "
-        f"stops at {latest_prediction_target} because validation failed closed at model "
-        f"as-of {model_asof}. The observations were not deleted."
-        if market_asof and latest_prediction_target and not freshness_ok
-        else "The prediction tape and market-data lineage are current under the published gate."
-    )
+    if not publication_freshness_ok:
+        history_message = (
+            f"The dashboard is serving the last successful production snapshot "
+            f"(market {market_asof or 'unknown'}, model {model_asof or 'unknown'}); "
+            f"the latest completed XNYS session is {expected_session_text}. Backfill "
+            "updates do not make the forecast current."
+        )
+    elif not source_freshness_ok:
+        history_message = (
+            f"Market inputs extend through {market_asof}, but the governed prediction tape "
+            f"stops at {latest_prediction_target} because validation failed closed at model "
+            f"as-of {model_asof}. The observations were not deleted."
+        )
+    else:
+        history_message = (
+            "The prediction tape and market-data lineage are current under the published gate."
+        )
     return json_safe({
         "protocol_version": PROTOCOL_VERSION,
         "decision_date": decision_date,
-        "publish_mode": part3.get("publish_mode", part2.get("publish_mode", "UNKNOWN")),
-        "deployment_mode": part3.get("deployment_mode", "UNKNOWN"),
+        "publish_mode": publish_mode,
+        "deployment_mode": deployment_mode,
+        "governance_publish_mode": governance_publish_mode,
+        "governance_deployment_mode": governance_deployment_mode,
         "final_pass": final_pass,
+        "governance_final_pass": governance_final_pass,
         "data_freshness_ok": freshness_ok,
+        "source_data_freshness_ok": source_freshness_ok,
+        "publication_freshness_ok": publication_freshness_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
         "alpha_state": part3.get("current_alpha_live_status", part3.get("latest_alpha_state", "UNKNOWN")),
         "regime": part3.get("current_regime", "unknown"),
@@ -198,6 +283,10 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             "prediction_tape_paused": not freshness_ok,
             "message": history_message,
             "stale_tickers": stale_tickers,
+            "expected_completed_market_session": expected_session_text,
+            "publication_session_age": publication_session_age,
+            "publication_component_ages": publication_ages,
+            "publication_component_dates": publication_dates,
             "pipeline_run_date": pipeline_status.get("pipeline_run_date"),
             "pipeline_run_id": pipeline_status.get("github_run_id"),
             "pipeline_source_code_sha": pipeline_status.get("source_code_sha"),
