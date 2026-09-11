@@ -1,9 +1,9 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": true,
+  "data_freshness_ok": false,
   "decision_date": "2026-09-10T00:00:00",
-  "deployment_mode": "DEFENSE_ONLY",
+  "deployment_mode": "NO_ACTION_STALE",
   "evidence": {
     "cohort": "causal-integrity-v3",
     "eligible_realized": 0,
@@ -28,25 +28,25 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-09-10",
-    "backfill_run_id": "34538752583",
-    "backfill_source_code_sha": "5508bf7cf352e17898f5573cea608c4627022568",
-    "expected_completed_market_session": "2026-09-10",
+    "backfill_run_date": "2026-09-11",
+    "backfill_run_id": "34655163509",
+    "backfill_source_code_sha": "d3cb49b540a7b108feb59a96c0b32e4719316086",
+    "expected_completed_market_session": "2026-09-11",
     "latest_prediction_target_date": "2026-09-11",
     "latest_signal_run_date": "2026-09-11",
     "latest_signal_source_decision_date": "2026-09-10T00:00:00",
     "market_data_asof": "2026-09-10",
-    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "message": "The dashboard is serving the last successful production snapshot (market 2026-09-10, model 2026-09-10); the latest completed XNYS session is 2026-09-11. Backfill updates do not make the forecast current.",
     "model_data_asof": "2026-09-10",
     "pipeline_run_date": "2026-09-10",
     "pipeline_run_id": "34632982618",
     "pipeline_source_code_sha": "89a995adbdd07b050e4afe40fbcf5c8e12b65296",
-    "prediction_tape_paused": false,
+    "prediction_tape_paused": true,
     "publication_component_ages": {
-      "decision": 0,
-      "market_data": 0,
-      "model_data": 0,
-      "pipeline": 0
+      "decision": 1,
+      "market_data": 1,
+      "model_data": 1,
+      "pipeline": 1
     },
     "publication_component_dates": {
       "decision": "2026-09-10",
@@ -54,7 +54,7 @@
       "model_data": "2026-09-10",
       "pipeline": "2026-09-10"
     },
-    "publication_session_age": 0,
+    "publication_session_age": 1,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
@@ -82,6 +82,7 @@
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
+      "published production is 1 completed XNYS session(s) behind (expected 2026-09-11)",
       "point-in-time macro coverage is incomplete"
     ],
     "status": "NOT_VALIDATED"
@@ -94,7 +95,7 @@
     "upper_quantile": 0.95
   },
   "protocol_version": "causal-integrity-v3",
-  "publication_freshness_ok": true,
+  "publication_freshness_ok": false,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "risk_on",
   "source_data_freshness_ok": true,
