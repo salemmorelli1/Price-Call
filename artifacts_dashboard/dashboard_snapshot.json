@@ -1,9 +1,9 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": false,
-  "decision_date": "2026-09-10T00:00:00",
-  "deployment_mode": "NO_ACTION_STALE",
+  "data_freshness_ok": true,
+  "decision_date": "2026-09-11T00:00:00",
+  "deployment_mode": "DEFENSE_ONLY",
   "evidence": {
     "cohort": "causal-integrity-v3",
     "eligible_realized": 0,
@@ -24,7 +24,7 @@
     "edge": -0.007196,
     "p_tail": 0.204616,
     "raw_validation_auc": 0.5965,
-    "signal_count": 49,
+    "signal_count": 50,
     "target_voo": 0.6
   },
   "lineage": {
@@ -32,29 +32,29 @@
     "backfill_run_id": "34655163509",
     "backfill_source_code_sha": "d3cb49b540a7b108feb59a96c0b32e4719316086",
     "expected_completed_market_session": "2026-09-11",
-    "latest_prediction_target_date": "2026-09-11",
+    "latest_prediction_target_date": "2026-09-14",
     "latest_signal_run_date": "2026-09-11",
     "latest_signal_source_decision_date": "2026-09-10T00:00:00",
-    "market_data_asof": "2026-09-10",
-    "message": "The dashboard is serving the last successful production snapshot (market 2026-09-10, model 2026-09-10); the latest completed XNYS session is 2026-09-11. Backfill updates do not make the forecast current.",
-    "model_data_asof": "2026-09-10",
-    "pipeline_run_date": "2026-09-10",
-    "pipeline_run_id": "34632982618",
-    "pipeline_source_code_sha": "89a995adbdd07b050e4afe40fbcf5c8e12b65296",
-    "prediction_tape_paused": true,
+    "market_data_asof": "2026-09-11",
+    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "model_data_asof": "2026-09-11",
+    "pipeline_run_date": "2026-09-11",
+    "pipeline_run_id": "34655470242",
+    "pipeline_source_code_sha": "b1727d7df15d0177a189cb98c11a146e53f57937",
+    "prediction_tape_paused": false,
     "publication_component_ages": {
-      "decision": 1,
-      "market_data": 1,
-      "model_data": 1,
-      "pipeline": 1
+      "decision": 0,
+      "market_data": 0,
+      "model_data": 0,
+      "pipeline": 0
     },
     "publication_component_dates": {
-      "decision": "2026-09-10",
-      "market_data": "2026-09-10",
-      "model_data": "2026-09-10",
-      "pipeline": "2026-09-10"
+      "decision": "2026-09-11",
+      "market_data": "2026-09-11",
+      "model_data": "2026-09-11",
+      "pipeline": "2026-09-11"
     },
-    "publication_session_age": 1,
+    "publication_session_age": 0,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
@@ -63,17 +63,17 @@
   ],
   "macro_point_in_time_ok": false,
   "metrics": {
-    "backtest_auc": 0.511911480700888,
-    "backtest_auc_p_value": 0.250718,
-    "backtest_auc_permutation_p_value": 0.24287856071964017,
-    "backtest_brier": 0.16155568654847735,
-    "backtest_brier_skill": -0.0029527927426309386,
+    "backtest_auc": 0.5134865420964281,
+    "backtest_auc_p_value": 0.221604,
+    "backtest_auc_permutation_p_value": 0.24887556221889057,
+    "backtest_brier": 0.16142294521469408,
+    "backtest_brier_skill": -0.0025808319056146445,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": null,
     "live_brier_null": null,
     "live_brier_skill": null,
-    "rolling_median_auc": 0.5575065847234417
+    "rolling_median_auc": 0.5602532679738561
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -82,20 +82,19 @@
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
-      "published production is 1 completed XNYS session(s) behind (expected 2026-09-11)",
       "point-in-time macro coverage is incomplete"
     ],
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8976190476190476,
+    "empirical_coverage": 0.8958953004164188,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",
     "upper_quantile": 0.95
   },
   "protocol_version": "causal-integrity-v3",
-  "publication_freshness_ok": false,
+  "publication_freshness_ok": true,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "risk_on",
   "source_data_freshness_ok": true,
