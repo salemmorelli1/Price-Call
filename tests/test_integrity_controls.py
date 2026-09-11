@@ -110,6 +110,70 @@ def test_dashboard_snapshot_excludes_legacy_evidence(tmp_path):
     assert snapshot["prediction_interval"]["empirical_coverage"] == 0.89
 
 
+def test_dashboard_marks_last_successful_pipeline_stale(tmp_path, monkeypatch):
+    import sync_dashboard
+
+    sources = {
+        "artifacts_part2_g532/predictions/part2_g532_summary.json": {
+            "publish_mode": "NORMAL",
+            "final_pass": True,
+            "part1_data_freshness_ok": True,
+            "macro_point_in_time_ok": True,
+            "historical_evidence_ok": True,
+            "historical_brier_skill_causal": 0.01,
+            "delong_overall_auc": {"auc": 0.55, "p_one_sided": 0.05},
+        },
+        "artifacts_part3_v1/part3_summary.json": {
+            "publish_mode": "NORMAL",
+            "deployment_mode": "NORMAL",
+            "final_pass": True,
+            "current_regime": "risk_on",
+        },
+        "artifacts_part9/live_attribution_report.json": {
+            "evidence_cohort": PROTOCOL_VERSION,
+            "n_live_realized": 60,
+            "legacy_realized_rows": 28,
+            "health_status": "HEALTHY",
+        },
+        "artifacts_part0/part0_meta.json": {
+            "date_range": {"end": "2026-09-04"},
+        },
+        "artifacts_part1/part1_meta.json": {"asof_date": "2026-09-04"},
+        "artifacts_part7/current_target_weights.json": {
+            "Date": "2026-09-04",
+            "regime_label": "risk_on",
+        },
+        "artifacts_part10_bot/pipeline_status.json": {
+            "pipeline_run_date": "2026-09-04",
+            "expected_completed_market_session": "2026-09-04",
+        },
+    }
+    for rel, payload in sources.items():
+        write_json_strict(tmp_path / rel, payload)
+    monkeypatch.setattr(
+        sync_dashboard,
+        "latest_completed_xnys_session",
+        lambda: __import__("pandas").Timestamp("2026-09-10"),
+    )
+
+    snapshot = sync_dashboard.build_snapshot(tmp_path)
+
+    assert snapshot["governance_final_pass"] is True
+    assert snapshot["final_pass"] is False
+    assert snapshot["governance_publish_mode"] == "NORMAL"
+    assert snapshot["publish_mode"] == "FAIL_CLOSED_STALE"
+    assert snapshot["deployment_mode"] == "NO_ACTION_STALE"
+    assert snapshot["source_data_freshness_ok"] is True
+    assert snapshot["publication_freshness_ok"] is False
+    assert snapshot["data_freshness_ok"] is False
+    assert snapshot["lineage"]["prediction_tape_paused"] is True
+    assert snapshot["lineage"]["publication_session_age"] == 3
+    assert snapshot["operator_validation"]["status"] == "NOT_VALIDATED"
+    assert "published production is 3 completed XNYS session(s) behind" in " ".join(
+        snapshot["operator_validation"]["reasons"]
+    )
+
+
 def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
     import pandas as pd
 

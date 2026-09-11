@@ -34,6 +34,7 @@ def _colab_init(extra_packages=None):
 import hashlib
 import json
 import os
+import time
 import warnings
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -189,6 +190,59 @@ def _max_consecutive_equal(x: pd.Series) -> int:
     return int(best)
 
 
+def _extract_yfinance_field(
+    frame: pd.DataFrame,
+    ticker: str,
+    field: str,
+) -> pd.Series | None:
+    """Extract one ticker field from either yfinance MultiIndex layout.
+
+    ``yf.download`` has returned both ``(ticker, field)`` and
+    ``(field, ticker)`` column orders across versions and call shapes.  The
+    bulk request asks for ticker-first columns, while a one-ticker retry can
+    still return field-first columns.  Treating only one layout as valid makes
+    the recovery path silently ineffective.
+    """
+    if frame is None or frame.empty:
+        return None
+    if not isinstance(frame.columns, pd.MultiIndex):
+        return frame[field] if field in frame.columns else None
+
+    for level in range(frame.columns.nlevels):
+        labels = frame.columns.get_level_values(level).astype(str)
+        if ticker not in set(labels):
+            continue
+        subset = frame.xs(ticker, axis=1, level=level, drop_level=True)
+        if isinstance(subset, pd.Series):
+            return subset if field in {ticker, subset.name} else None
+        if field in subset.columns:
+            value = subset[field]
+            return value.iloc[:, -1] if isinstance(value, pd.DataFrame) else value
+
+    # Defensive fallback for an unexpected level name/order.
+    for column in frame.columns:
+        labels = {str(value) for value in column}
+        if ticker in labels and field in labels:
+            return frame[column]
+    return None
+
+
+def _series_on_calendar(
+    values: pd.Series | None,
+    ticker: str,
+    calendar: pd.DatetimeIndex,
+) -> pd.Series | None:
+    if values is None:
+        return None
+    series = pd.to_numeric(pd.Series(values), errors="coerce")
+    series.index = pd.to_datetime(series.index, errors="coerce")
+    frame = _standardize_index(pd.DataFrame({ticker: series}))
+    if frame.empty:
+        return pd.Series(index=calendar, dtype=float, name=ticker)
+    frame = frame[~frame.index.duplicated(keep="last")]
+    return frame[ticker].reindex(calendar)
+
+
 def download_market_data(cfg: Part0Config):
     tickers = list(dict.fromkeys(cfg.equity_tickers + cfg.vix_tickers))
     bidx = _business_day_calendar(cfg.start, cfg.end)
@@ -215,27 +269,20 @@ def download_market_data(cfg: Part0Config):
 
     for t in tickers:
         try:
-            if isinstance(raw.columns, pd.MultiIndex):
-                if t not in raw.columns.get_level_values(0):
-                    continue
-                sub = raw[t].copy()
-                c = sub["Close"] if "Close" in sub.columns else None
-                v = sub["Volume"] if "Volume" in sub.columns else None
-            else:
-                c = raw["Close"] if "Close" in raw.columns else None
-                v = raw["Volume"] if "Volume" in raw.columns else None
+            c = _extract_yfinance_field(raw, t, "Close")
+            v = _extract_yfinance_field(raw, t, "Volume")
             if c is None:
                 continue
 
-            c = pd.Series(c).astype(float)
-            c.index = pd.to_datetime(c.index)
-            c = c.reindex(bidx)
+            c = _series_on_calendar(c, t, bidx)
+            if c is None:
+                continue
             close[t] = c
 
             if v is not None:
-                vv = pd.Series(v).astype(float)
-                vv.index = pd.to_datetime(vv.index)
-                volume[t] = vv.reindex(bidx)
+                vv = _series_on_calendar(v, t, bidx)
+                if vv is not None:
+                    volume[t] = vv
 
             first_valid = c.dropna().index.min()
             years_history = 0.0
@@ -255,66 +302,110 @@ def download_market_data(cfg: Part0Config):
     close = _standardize_index(close)
     volume = _standardize_index(volume)
 
-    # FIX (BUG-1, Quant-Guild Part 44 Hotfix): Retry individual tickers that returned
-    # all-NaN from the bulk download. Root cause: yf.download(threads=True) causes
-    # concurrent writes to yfinance's SQLite cache, producing OperationalError('database
-    # is locked'). The failed ticker ends up with all-NaN in the output even though the
-    # data exists. Example: RSP returning 100% NaN due to lock contention on 2026-06-13.
-    #
-    # Fix: after the bulk download, identify any non-core ticker whose close price is
-    # all-NaN (unambiguous download failure, not a history-start issue) and retry it
-    # individually with threads=False (no concurrent cache writes). Core tickers (VOO,
-    # IEF) are already guarded below with a hard RuntimeError — they don't need retry.
+    # Retry transient bulk-download gaps as individual, single-threaded requests.
+    # Core prices are still never forward-filled: a retry must return an actual raw
+    # observation for every post-inception XNYS session or the hard failure below
+    # remains authoritative.
     _core_set = set(cfg.core_tickers)
-    _all_nan_tickers = [
+    _noncore_all_nan = [
         t for t in tickers
         if t in close.columns and close[t].isna().all() and t not in _core_set
     ]
-    if _all_nan_tickers:
-        import time as _time
-        print(f"[Part 0] Retrying {len(_all_nan_tickers)} all-NaN ticker(s) individually: {_all_nan_tickers}")
-        for _t in _all_nan_tickers:
+    _core_with_gaps = []
+    for _t in cfg.core_tickers:
+        if _t not in close.columns or close[_t].isna().all():
+            _core_with_gaps.append(_t)
+            continue
+        _first = close[_t].first_valid_index()
+        if _first is not None and close.loc[_first:, _t].isna().any():
+            _core_with_gaps.append(_t)
+    _retry_tickers = list(dict.fromkeys(_core_with_gaps + _noncore_all_nan))
+
+    if _retry_tickers:
+        print(
+            f"[Part 0] Retrying {len(_retry_tickers)} incomplete ticker(s) "
+            f"individually: {_retry_tickers}"
+        )
+        for _t in _retry_tickers:
+            existing = (
+                pd.to_numeric(close[_t], errors="coerce")
+                if _t in close.columns
+                else pd.Series(index=bidx, dtype=float, name=_t)
+            )
+            first_valid = existing.first_valid_index()
+            gaps = (
+                existing.loc[first_valid:].index[existing.loc[first_valid:].isna()]
+                if first_valid is not None
+                else bidx
+            )
+            retry_start_date = (
+                max(pd.Timestamp(cfg.start), gaps.min() - pd.Timedelta(days=7))
+                if len(gaps)
+                else pd.Timestamp(cfg.start)
+            )
+            recovered_total = 0
+            attempts_used = 0
             for _attempt in range(1, 4):  # up to 3 retry attempts
+                attempts_used = _attempt
                 try:
-                    _time.sleep(1.5 * _attempt)  # back-off: 1.5s, 3.0s, 4.5s
+                    if _attempt > 1:
+                        time.sleep(1.5 * (_attempt - 1))
                     _r = yf.download(
                         tickers=[_t],
-                        start=cfg.start,
+                        start=retry_start_date.date().isoformat(),
                         end=download_end,
                         auto_adjust=True,
                         progress=False,
+                        group_by="ticker",
                         threads=False,   # single-threaded: no SQLite lock contention
                     )
                     if _r is None or _r.empty:
                         print(f"[Part 0]   {_t} attempt {_attempt}: empty response")
                         continue
-                    # Extract close price — handle both single- and multi-ticker schemas
-                    if isinstance(_r.columns, pd.MultiIndex):
-                        _c = _r[_t]["Close"] if _t in _r.columns.get_level_values(0) else None
-                    else:
-                        _c = _r["Close"] if "Close" in _r.columns else None
-                    if _c is None or pd.Series(_c).isna().all():
+                    _c = _series_on_calendar(
+                        _extract_yfinance_field(_r, _t, "Close"), _t, bidx
+                    )
+                    if _c is None or _c.isna().all():
                         print(f"[Part 0]   {_t} attempt {_attempt}: still all-NaN")
                         continue
-                    _c = pd.Series(_c.values, index=pd.to_datetime(_c.index), name=_t)
-                    _c = _c.reindex(bidx)
-                    _n_valid = int(_c.notna().sum())
-                    close[_t] = _standardize_index(pd.DataFrame({_t: _c}))[_t]
-                    # Rebuild quality entry
-                    _fv = _c.dropna().index.min()
-                    quality[_t] = {
-                        "missing_pre_clean": float(_c.isna().mean()),
-                        "max_equal_close_run": _max_consecutive_equal(_c),
-                        "first_valid_date": str(_fv.date()) if pd.notna(_fv) else None,
-                        "years_history": round((bidx.max() - _fv).days / 365.25, 2) if pd.notna(_fv) else 0.0,
-                        "usable_for_model": True,
-                    }
-                    print(f"[Part 0]   {_t} attempt {_attempt}: recovered {_n_valid} valid rows ✅")
-                    break
+                    recovered = existing.isna() & _c.notna()
+                    recovered_total += int(recovered.sum())
+                    existing = existing.combine_first(_c)
+                    close[_t] = existing
+
+                    _fv = existing.first_valid_index()
+                    remaining = (
+                        int(existing.loc[_fv:].isna().sum())
+                        if _fv is not None
+                        else int(len(existing))
+                    )
+                    print(
+                        f"[Part 0]   {_t} attempt {_attempt}: recovered "
+                        f"{int(recovered.sum())} row(s); remaining post-inception gaps={remaining}"
+                    )
+                    if _t not in _core_set or remaining == 0:
+                        break
                 except Exception as _retry_e:
                     print(f"[Part 0]   {_t} attempt {_attempt}: {_retry_e}")
-            else:
-                print(f"[Part 0]   {_t}: all retry attempts failed — will remain all-NaN.")
+
+            _fv = existing.first_valid_index()
+            quality_entry = dict(quality.get(_t, {}))
+            quality_entry.update({
+                "individual_retry_attempted": True,
+                "individual_retry_attempts": attempts_used,
+                "individual_retry_recovered_rows": recovered_total,
+                "missing_after_retry": float(existing.isna().mean()),
+                "first_valid_date": str(_fv.date()) if _fv is not None else None,
+                "years_history": (
+                    round((bidx.max() - _fv).days / 365.25, 2)
+                    if _fv is not None else 0.0
+                ),
+                "usable_for_model": bool(
+                    _fv is not None
+                    and (bidx.max() - _fv).days / 365.25 >= cfg.min_history_years
+                ),
+            })
+            quality[_t] = quality_entry
 
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
@@ -344,9 +435,14 @@ def download_market_data(cfg: Part0Config):
     post_missing = close[core].isna().mean().to_dict()
     bad_post = {k: float(v) for k, v in post_missing.items() if float(v) > 0.0}
     if bad_post:
+        missing_dates = {
+            ticker: [date.date().isoformat() for date in close.index[close[ticker].isna()][:10]]
+            for ticker in bad_post
+        }
         raise RuntimeError(
-            "Part 0 core tickers still have NaN after core-history trim and cleaning. "
-            f"common_start={common_start.date()} | Post-clean missingness: {bad_post}"
+            "Part 0 core tickers still have NaN after individual raw-data retries. "
+            f"common_start={common_start.date()} | Post-retry missingness: {bad_post} "
+            f"| First missing XNYS dates: {missing_dates}"
         )
 
     print(
@@ -790,5 +886,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-
-

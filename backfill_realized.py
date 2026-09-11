@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from artifact_integrity import current_evidence_mask, write_json_strict
+from artifact_integrity import PROTOCOL_VERSION, current_evidence_mask, write_json_strict
 from market_calendar import latest_completed_xnys_session
 
 try:
@@ -249,9 +249,17 @@ def _resolve_target_trading_date(
     trading_dates: pd.DatetimeIndex,
     h_reb: int,
     explicit_target_date: Optional[pd.Timestamp],
+    *,
+    require_exact_target: bool = False,
 ) -> Optional[pd.Timestamp]:
     if explicit_target_date is not None and not pd.isna(explicit_target_date):
-        pos = trading_dates.searchsorted(explicit_target_date)
+        explicit_target = pd.Timestamp(explicit_target_date).normalize()
+        pos = trading_dates.searchsorted(explicit_target)
+        if require_exact_target:
+            if pos >= len(trading_dates):
+                return None
+            candidate = pd.Timestamp(trading_dates[pos]).normalize()
+            return candidate if candidate == explicit_target else None
         if pos < len(trading_dates):
             return pd.Timestamp(trading_dates[pos]).normalize()
         return None
@@ -361,6 +369,9 @@ def main() -> int:
             trading_dates=trading_dates,
             h_reb=h_reb,
             explicit_target_date=None if pd.isna(explicit_target) else pd.Timestamp(explicit_target).normalize(),
+            require_exact_target=(
+                str(row.get("model_protocol_version", "")) == PROTOCOL_VERSION
+            ),
         )
 
         if target_trading_date is None:
