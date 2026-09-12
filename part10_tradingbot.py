@@ -135,6 +135,23 @@ def _identity_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _canonical_csv_flag(value: Any) -> str:
+    """Serialize nullable CSV flags without pandas numeric coercion."""
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        raise RuntimeError(f"CSV flag must be scalar: {value!r}") from None
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "1.0"}:
+        return "true"
+    if normalized in {"false", "0", "0.0"}:
+        return "false"
+    raise RuntimeError(f"CSV flag has an invalid boolean value: {value!r}")
+
+
 def _resolve_root() -> Path:
     candidates: List[Path] = []
     env_root = os.environ.get("PRICECALL_ROOT", "").strip()
@@ -431,6 +448,13 @@ class SignalLog:
         output = output.sort_values(
             ["_decision_order", "run_date"], kind="stable", na_position="first"
         ).drop(columns="_decision_order")
+        # Legacy tapes have no lineage column.  When pandas adds that nullable
+        # column, concatenating a bool can coerce True to the float 1.0.  Keep a
+        # stable textual representation so the publication contract is not
+        # dependent on pandas' inferred dtype.
+        output["execution_lineage_verified"] = output[
+            "execution_lineage_verified"
+        ].map(_canonical_csv_flag)
         output[self.COLUMNS].to_csv(self.path, index=False)
 
 

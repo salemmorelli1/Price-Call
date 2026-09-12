@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 
@@ -134,7 +135,10 @@ def _write_execution_fixture(root: Path) -> None:
                 "pipeline_run_id": RUN_ID,
                 "pipeline_run_attempt": RUN_ATTEMPT,
                 "execution_source_code_sha": SOURCE_SHA,
-                "execution_lineage_verified": True,
+                # A legacy-schema migration can round-trip True through a
+                # nullable numeric column as 1.0.  That is still an explicit
+                # true marker and must pass validation.
+                "execution_lineage_verified": 1.0,
                 "price_source": "artifacts_part0/close_prices.parquet",
                 "price_session": SESSION,
             }
@@ -221,6 +225,18 @@ def test_publication_validator_rejects_mixed_execution_run(tmp_path):
     failures = validate_execution_lineage(tmp_path)
     assert any("Part 8 pipeline_run_id" in failure for failure in failures)
     assert any("metadata and execution_instructions" in failure for failure in failures)
+
+
+def test_publication_validator_rejects_false_numeric_signal_flag(tmp_path):
+    _write_execution_fixture(tmp_path)
+    path = tmp_path / "artifacts_part10_bot" / "signal_log.csv"
+    signals = pd.read_csv(path)
+    signals["execution_lineage_verified"] = 0.0
+    signals.to_csv(path, index=False)
+
+    failures = validate_execution_lineage(tmp_path)
+
+    assert "Part 10 signal is not marked execution_lineage_verified" in failures
 
 
 def test_execution_cost_upsert_sorts_and_replaces_same_session(tmp_path):
@@ -332,6 +348,47 @@ def test_signal_log_replaces_same_session_revision_and_sorts(tmp_path):
     assert output["source_decision_date"].tolist() == ["2026-09-10", SESSION]
     assert str(output.iloc[-1]["pipeline_run_id"]) == RUN_ID
     assert output.iloc[-1]["p_tail"] == pytest.approx(0.20)
+
+
+def test_signal_log_schema_migration_canonicalizes_lineage_flag(tmp_path):
+    from part10_tradingbot import SignalLog
+
+    path = tmp_path / "signal_log.csv"
+    legacy_columns = [
+        "date", "run_date", "source_decision_date", "model_protocol_version",
+        "model_code_sha", "p_tail", "base_rate", "edge", "target_w_voo",
+        "action_reason", "target_source", "dry_run", "accuracy_gate_passed",
+        "accuracy_gate_reason", "publish_mode", "final_pass", "raw_val_auc",
+        "px_voo", "px_ief", "nav",
+    ]
+    pd.DataFrame(
+        [["2026-09-10", SESSION, "2026-09-10"] + [None] * 17],
+        columns=legacy_columns,
+    ).to_csv(path, index=False)
+
+    log = SignalLog(str(path))
+    log.append(
+        {
+            "date": SESSION,
+            "run_date": "2026-09-12",
+            "source_decision_date": SESSION,
+            "model_protocol_version": PROTOCOL_VERSION,
+            "model_code_sha": SOURCE_SHA,
+            "pipeline_run_date": SESSION,
+            "pipeline_run_id": RUN_ID,
+            "pipeline_run_attempt": RUN_ATTEMPT,
+            "execution_source_code_sha": SOURCE_SHA,
+            "execution_lineage_verified": True,
+            "price_source": "artifacts_part0/close_prices.parquet",
+            "price_session": SESSION,
+        }
+    )
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[-1]["source_decision_date"] == SESSION
+    assert rows[-1]["execution_lineage_verified"] == "true"
+    assert rows[0]["execution_lineage_verified"] == ""
 
 
 def test_current_sec_section31_fee_is_sell_only(monkeypatch):
