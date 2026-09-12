@@ -44,6 +44,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from market_calendar import latest_completed_xnys_session
+
 
 @dataclass(frozen=True)
 class Part5Config:
@@ -54,6 +56,8 @@ class Part5Config:
     default_drive_root: str = "/content/drive/MyDrive/PriceCallProject"
 
     part0_candidates: Tuple[str, ...] = ("part0_data_infrastructure.py",)
+    market_integrity_candidates: Tuple[str, ...] = ("market_data_integrity.py",)
+    point_in_time_macro_candidates: Tuple[str, ...] = ("point_in_time_macro.py",)
     part1_candidates: Tuple[str, ...] = ("part1_builder.py",)
     part2_candidates: Tuple[str, ...] = ("part2_predictor.py",)
     # Part 2B and 2C are experimental sleeves — optional, validated at syntax level only.
@@ -509,6 +513,12 @@ def _predlog_stats(predlog_path: Path) -> Tuple[int, int, dict]:
 
 def run_pipeline(root: Path, validate_only: bool = False) -> None:
     part0 = _find_first_existing(root, CFG.part0_candidates, "Part 0")
+    market_integrity = _find_first_existing(
+        root, CFG.market_integrity_candidates, "market-data integrity adapter"
+    )
+    point_in_time_macro = _find_first_existing(
+        root, CFG.point_in_time_macro_candidates, "point-in-time macro adapter"
+    )
     part1 = _find_first_existing(root, CFG.part1_candidates, "Part 1")
     part2 = _find_first_existing(root, CFG.part2_candidates, "Part 2")
     # Optional experimental sleeves — syntax-checked if present, never required.
@@ -526,15 +536,17 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     print(f"ROOT: {root}")
     # Core pipeline — all required
     ordered_scripts = [
-        ("PART0",  part0),
-        ("PART6",  part6),
-        ("PART1",  part1),
-        ("PART2",  part2),
+        ("PART0", part0),
+        ("MARKET_INTEGRITY", market_integrity),
+        ("POINT_IN_TIME_MACRO", point_in_time_macro),
+        ("PART6", part6),
+        ("PART1", part1),
+        ("PART2", part2),
         ("PART2A", part2a),
-        ("PART7",  part7),
-        ("PART8",  part8),
-        ("PART3",  part3),
-        ("PART9",  part9),
+        ("PART7", part7),
+        ("PART3", part3),
+        ("PART8", part8),
+        ("PART9", part9),
         ("PART10", part10),
     ]
     for label, script in ordered_scripts:
@@ -559,13 +571,17 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
         CFG.root_env_var: str(root),
         CFG.strict_env_var: "1",
         CFG.alpha_family_env_var: expected_alpha_family,
+        "PRICECALL_RUN_DATE_ET": os.environ.get("PRICECALL_RUN_DATE_ET")
+        or latest_completed_xnys_session().date().isoformat(),
     }
 
     ordered = [
-        ("PART 0",  part0),
-        ("PART 6",  part6),
-        ("PART 1",  part1),
-        ("PART 2",  part2),
+        ("PART 0", part0),
+        ("MARKET INTEGRITY", market_integrity),
+        ("POINT-IN-TIME MACRO", point_in_time_macro),
+        ("PART 6", part6),
+        ("PART 1", part1),
+        ("PART 2", part2),
     ]
 
     # Insert optional experimental sleeves between PART2 and PART2A.
@@ -578,8 +594,8 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
     ordered_tail = [
         ("PART 2A", part2a),
         ("PART 7",  part7),
-        ("PART 8",  part8),
         ("PART 3",  part3),
+        ("PART 8",  part8),
         ("PART 9",  part9),
         ("PART 10", part10),
     ]
@@ -699,7 +715,10 @@ def run_pipeline(root: Path, validate_only: bool = False) -> None:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Validate and run standalone daily Price Call Parts 0/6/1/2/2A/7/8/3/9/10 from the project root."
+        description=(
+            "Validate and run the governed daily Price Call stack, including "
+            "market-integrity and point-in-time macro adapters."
+        )
     )
     p.add_argument(
         "--validate-only",
@@ -722,8 +741,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-
-
 
 
 

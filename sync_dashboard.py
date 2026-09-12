@@ -10,7 +10,13 @@ from typing import Any
 
 import pandas as pd
 
-from artifact_integrity import LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION, json_safe, write_json_strict
+from artifact_integrity import (
+    LEGACY_PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
+    json_safe,
+    validate_execution_lineage,
+    write_json_strict,
+)
 from market_calendar import latest_completed_xnys_session, xnys_session_age
 
 
@@ -42,12 +48,22 @@ def _latest_record(path: Path, date_columns: tuple[str, ...]) -> dict[str, Any]:
     frame = pd.read_csv(path)
     if frame.empty:
         return {}
-    ordering = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
-    for column in date_columns:
-        if column in frame.columns:
-            ordering = ordering.fillna(pd.to_datetime(frame[column], errors="coerce"))
-    valid = ordering.dropna()
-    row = frame.loc[valid.idxmax()] if not valid.empty else frame.iloc[-1]
+    ordering_columns: list[str] = []
+    for index, column in enumerate(date_columns):
+        if column not in frame.columns:
+            continue
+        key = f"_dashboard_order_{index}"
+        frame[key] = pd.to_datetime(frame[column], errors="coerce")
+        ordering_columns.append(key)
+    if ordering_columns:
+        valid = frame[ordering_columns].notna().any(axis=1)
+        ordered = frame.loc[valid].sort_values(
+            ordering_columns, kind="stable", na_position="first"
+        )
+        row = ordered.iloc[-1] if not ordered.empty else frame.iloc[-1]
+    else:
+        row = frame.iloc[-1]
+    row = row.drop(labels=ordering_columns, errors="ignore")
     return json_safe(row.to_dict())
 
 
@@ -88,6 +104,9 @@ def build_snapshot(root: Path) -> dict[str, Any]:
     ])
     pipeline_status = _json(root, ["artifacts_part10_bot/pipeline_status.json"])
     backfill_status = _json(root, ["artifacts_part9/backfill_status.json"])
+    execution = _json(root, ["artifacts_part8/execution_instructions.json"])
+    execution_lineage_failures = validate_execution_lineage(root)
+    execution_lineage_ok = not execution_lineage_failures
 
     part3_regime = str(part3.get("current_regime", "")).strip()
     part7_regime = str(part7.get("regime_label", "")).strip()
@@ -107,7 +126,7 @@ def build_snapshot(root: Path) -> dict[str, Any]:
     )
     latest_signal = _latest_record(
         root / "artifacts_part10_bot" / "signal_log.csv",
-        ("run_date", "date", "source_decision_date"),
+        ("source_decision_date", "date", "run_date"),
     )
     decision_date = (
         part7.get("Date") or part7.get("decision_date") or part2.get("decision_date")
@@ -137,18 +156,27 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "model_data": _date_text(model_asof),
         "decision": _date_text(decision_date),
         "pipeline": _date_text(pipeline_session),
+        "execution": _date_text(
+            execution.get("pipeline_run_date")
+            or execution.get("source_decision_date")
+            or execution.get("decision_date")
+        ),
     }
     publication_ages = {
         name: _age_from_expected(value, expected_session)
         for name, value in publication_dates.items()
     }
-    publication_freshness_ok = all(
+    component_dates_current = all(
         value == expected_session_text for value in publication_dates.values()
     )
+    core_component_dates_current = all(
+        publication_dates[name] == expected_session_text
+        for name in ("market_data", "model_data", "decision", "pipeline")
+    )
+    publication_freshness_ok = component_dates_current and execution_lineage_ok
+    known_ages = [age for age in publication_ages.values() if age is not None]
     publication_session_age = (
-        max(publication_ages.values())
-        if all(age is not None for age in publication_ages.values())
-        else None
+        max(known_ages) if known_ages else None
     )
     freshness_ok = source_freshness_ok and publication_freshness_ok
     final_pass = governance_final_pass and freshness_ok
@@ -187,6 +215,10 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             f"published production is {age_text} behind "
             f"(expected {expected_session_text})"
         )
+    if not execution_lineage_ok:
+        validation_reasons.append(
+            "execution artifacts do not match the governed production lineage"
+        )
     if not macro_point_in_time_ok:
         validation_reasons.append("point-in-time macro coverage is incomplete")
     if not final_pass and not validation_reasons:
@@ -199,7 +231,13 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         if int(age) > int(ticker_limits.get(ticker, 0))
     }
     latest_prediction_target = latest_prediction.get("target_date")
-    if not publication_freshness_ok:
+    if not execution_lineage_ok and core_component_dates_current:
+        history_message = (
+            "Market, model, and decision artifacts are current, but the execution "
+            "publication is quarantined because its date/run/SHA lineage does not "
+            "match the governed production run."
+        )
+    elif not publication_freshness_ok:
         history_message = (
             f"The dashboard is serving the last successful production snapshot "
             f"(market {market_asof or 'unknown'}, model {model_asof or 'unknown'}); "
@@ -228,6 +266,7 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "data_freshness_ok": freshness_ok,
         "source_data_freshness_ok": source_freshness_ok,
         "publication_freshness_ok": publication_freshness_ok,
+        "execution_lineage_ok": execution_lineage_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
         "alpha_state": part3.get("current_alpha_live_status", part3.get("latest_alpha_state", "UNKNOWN")),
         "regime": part3.get("current_regime", "unknown"),
@@ -290,6 +329,12 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             "pipeline_run_date": pipeline_status.get("pipeline_run_date"),
             "pipeline_run_id": pipeline_status.get("github_run_id"),
             "pipeline_source_code_sha": pipeline_status.get("source_code_sha"),
+            "execution_decision_date": execution.get("decision_date"),
+            "execution_pipeline_run_date": execution.get("pipeline_run_date"),
+            "execution_pipeline_run_id": execution.get("pipeline_run_id"),
+            "execution_source_code_sha": execution.get("source_code_sha"),
+            "execution_lineage_ok": execution_lineage_ok,
+            "execution_lineage_failures": execution_lineage_failures,
             "backfill_run_date": backfill_status.get("backfill_run_date"),
             "backfill_run_id": backfill_status.get("github_run_id"),
             "backfill_source_code_sha": backfill_status.get("source_code_sha"),
