@@ -14,6 +14,7 @@
     "n_positive": 0,
     "progress_pct": 0.0
   },
+  "execution_lineage_ok": true,
   "final_pass": false,
   "governance_deployment_mode": "DEFENSE_ONLY",
   "governance_final_pass": false,
@@ -21,35 +22,43 @@
   "latest_signal": {
     "action_reason": "neutral_model_not_cleared (FAIL_CLOSED_NEUTRAL)",
     "base_rate": 0.197421,
-    "edge": -0.007196,
-    "p_tail": 0.204616,
-    "raw_validation_auc": 0.5965,
-    "signal_count": 50,
+    "edge": -0.005615,
+    "p_tail": 0.203036,
+    "raw_validation_auc": 0.643,
+    "signal_count": 47,
     "target_voo": 0.6
   },
   "lineage": {
     "backfill_run_date": "2026-09-11",
     "backfill_run_id": "34655163509",
     "backfill_source_code_sha": "d3cb49b540a7b108feb59a96c0b32e4719316086",
+    "execution_decision_date": "2026-09-11",
+    "execution_lineage_failures": [],
+    "execution_lineage_ok": true,
+    "execution_pipeline_run_date": "2026-09-11",
+    "execution_pipeline_run_id": "34723082396",
+    "execution_source_code_sha": "a69123c9fb15815e249945dfe5882a0cad29a460",
     "expected_completed_market_session": "2026-09-11",
     "latest_prediction_target_date": "2026-09-14",
-    "latest_signal_run_date": "2026-09-11",
-    "latest_signal_source_decision_date": "2026-09-10T00:00:00",
+    "latest_signal_run_date": "2026-09-12",
+    "latest_signal_source_decision_date": "2026-09-11",
     "market_data_asof": "2026-09-11",
     "message": "The prediction tape and market-data lineage are current under the published gate.",
     "model_data_asof": "2026-09-11",
     "pipeline_run_date": "2026-09-11",
-    "pipeline_run_id": "34655470242",
-    "pipeline_source_code_sha": "b1727d7df15d0177a189cb98c11a146e53f57937",
+    "pipeline_run_id": "34723082396",
+    "pipeline_source_code_sha": "a69123c9fb15815e249945dfe5882a0cad29a460",
     "prediction_tape_paused": false,
     "publication_component_ages": {
       "decision": 0,
+      "execution": 0,
       "market_data": 0,
       "model_data": 0,
       "pipeline": 0
     },
     "publication_component_dates": {
       "decision": "2026-09-11",
+      "execution": "2026-09-11",
       "market_data": "2026-09-11",
       "model_data": "2026-09-11",
       "pipeline": "2026-09-11"
@@ -63,17 +72,17 @@
   ],
   "macro_point_in_time_ok": false,
   "metrics": {
-    "backtest_auc": 0.5134865420964281,
-    "backtest_auc_p_value": 0.221604,
-    "backtest_auc_permutation_p_value": 0.24887556221889057,
-    "backtest_brier": 0.16142294521469408,
-    "backtest_brier_skill": -0.0025808319056146445,
+    "backtest_auc": 0.512964439764371,
+    "backtest_auc_p_value": 0.232099,
+    "backtest_auc_permutation_p_value": 0.2513743128435782,
+    "backtest_brier": 0.1615371972639355,
+    "backtest_brier_skill": -0.0032904392939756555,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": null,
     "live_brier_null": null,
     "live_brier_skill": null,
-    "rolling_median_auc": 0.5602532679738561
+    "rolling_median_auc": 0.5567602040816326
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -87,7 +96,7 @@
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8958953004164188,
+    "empirical_coverage": 0.8941106484235574,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",

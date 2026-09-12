@@ -1,7 +1,7 @@
 {
-  "built_at": "2026-09-11T22:48:10.048100+00:00",
-  "close_checksum": "85e35bbcd4078980",
-  "close_prices_sha256": "67007c47d2a01637808fae48a4662390a4b149496954989e1c38c98b39d90081",
+  "built_at": "2026-09-12T22:34:49.635888+00:00",
+  "close_checksum": "953efe951f17b624",
+  "close_prices_sha256": "996727fa842dab67606258624fc6fe6e625046991238ef1205a293e5909186a2",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
@@ -223,18 +223,18 @@
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.07769836906725307,
+      "missing_pre_clean": 0.0778816199376947,
       "usable_for_model": true,
       "years_history": 20.15
     }
   },
   "date_range": {
     "end": "2026-09-11",
-    "requested_end": "2026-09-11",
+    "requested_end": "2026-09-12",
     "start": "2010-09-09"
   },
-  "features_checksum": "3be376c7a9601c93",
-  "features_file_sha256": "68aa130bd3054c9fb72cef77bae0681749028af8666db41720f959d9df79f5b5",
+  "features_checksum": "9c86a1cd1cdbb7cd",
+  "features_file_sha256": "563af9fbfbd4e3ae7cd52ff31ee5810055089c01f9b14e5849bfec655ec64165",
   "fred_enabled": true,
   "fred_vintage_chunk_diagnostics": {
     "consumer_sentiment": [
@@ -770,7 +770,7 @@
       "download_sha256": "519408c5638f731eb47177ef7bcfbdd315a376ec353df52cd92ea67c9a51be65",
       "latest_observation": "2026-09-11",
       "provider": "Cboe Global Markets",
-      "retrieved_at_utc": "2026-09-11T22:48:11.008941+00:00",
+      "retrieved_at_utc": "2026-09-12T22:34:50.613723+00:00",
       "rows_applied": 4026,
       "rows_downloaded": 4271,
       "status": "applied",
