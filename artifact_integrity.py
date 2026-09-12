@@ -265,6 +265,20 @@ def _identity_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _is_true_flag(value: Any) -> bool:
+    """Accept the explicit true encodings produced by CSV round-trips."""
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        return False
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "1.0"}
+
+
 def _latest_csv_rows(path: Path, date_column: str) -> pd.DataFrame:
     frame = pd.read_csv(path)
     if frame.empty or date_column not in frame.columns:
@@ -499,9 +513,9 @@ def validate_execution_lineage(root: str | Path) -> list[str]:
         failures.append("Part 10 state is not marked execution_lineage_verified")
     if bot_performance.get("execution_lineage_verified") is not True:
         failures.append("Part 10 performance is not marked execution_lineage_verified")
-    if not bot_signals.empty and str(
+    if not bot_signals.empty and not _is_true_flag(
         bot_signals.iloc[0].get("execution_lineage_verified")
-    ).strip().lower() != "true":
+    ):
         failures.append("Part 10 signal is not marked execution_lineage_verified")
     if instructions.get("allocation_source") != "v1_fusion_allocations":
         failures.append("Part 8 instructions do not identify the Part 3 fusion allocation")
