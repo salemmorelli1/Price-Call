@@ -14,7 +14,7 @@ Current authoritative behavior
 
 Authoritative daily execution order
 -----------------------------------
-Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10
+Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 3 -> Part 8 -> Part 9 -> Part 10
 (* Part 2B and Part 2C are optional: skipped if absent, non-blocking if they fail.
    Part 2C should only be activated after Part 2B's gate_validation_passed = true.)
 """
@@ -28,6 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+
+from market_calendar import latest_completed_xnys_session
 
 
 # ------------------------------------------------------------
@@ -114,8 +116,8 @@ DIRECT_PIPELINE_ORDER: List[str] = [
     "PART2C",  # optional, non-blocking
     "PART2A",
     "PART7",
-    "PART8",
     "PART3",
+    "PART8",
     "PART9",
 ]
 
@@ -255,9 +257,9 @@ def run_with_validator(project_dir: Path) -> int:
 # Fallback direct execution path
 # ------------------------------------------------------------
 def run_direct_pipeline(project_dir: Path) -> int:
-    print("\n[INFO] part5_validator.py not found. Falling back to direct execution.")
+    print("\n[INFO] Running the direct production pipeline.")
     print("[INFO] Direct daily order:")
-    print("       Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("       Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 3 -> Part 8 -> Part 9 -> Part 10")
     print("       * Part 2B and Part 2C are optional / experimental and non-blocking.")
     print("       Part 4 remains optional / separate.\n")
 
@@ -351,6 +353,14 @@ def main() -> int:
     if unknown:
         print(f"[INFO] Ignoring extra notebook/launcher args: {' '.join(unknown)}")
 
+    # One session authority is propagated to every subprocess.  In GitHub Actions
+    # the run ID/SHA come from the runner; local and Colab runs still receive the
+    # same completed-XNYS date contract used by Part 0 and the workflow gate.
+    os.environ.setdefault(
+        "PRICECALL_RUN_DATE_ET",
+        latest_completed_xnys_session().date().isoformat(),
+    )
+
     print(f"ROOT: {PROJECT_DIR}")
     print(f"IN_COLAB: {IN_COLAB}")
 
@@ -366,7 +376,7 @@ def main() -> int:
         return 1
 
     print("\n=== AUTHORITATIVE DAILY EXECUTION ORDER ===")
-    print("Part 0 -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10")
+    print("Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 3 -> Part 8 -> Part 9 -> Part 10")
     print("* Part 2B and Part 2C are optional / experimental and non-blocking.")
     if not args.with_gui:
         print("GUI note: HTML / GitHub dashboard is separate; Python GUI is not launched unless --with-gui is passed.")
@@ -394,4 +404,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

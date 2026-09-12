@@ -245,6 +245,323 @@ def validate_status_markers(root: str | Path) -> list[str]:
     return failures
 
 
+def _canonical_date_text(value: Any) -> str | None:
+    parsed = pd.to_datetime(value, errors="coerce")
+    return None if pd.isna(parsed) else pd.Timestamp(parsed).date().isoformat()
+
+
+def _identity_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _latest_csv_rows(path: Path, date_column: str) -> pd.DataFrame:
+    frame = pd.read_csv(path)
+    if frame.empty or date_column not in frame.columns:
+        return pd.DataFrame()
+    dates = pd.to_datetime(frame[date_column], errors="coerce")
+    if not dates.notna().any():
+        return pd.DataFrame()
+    return frame.loc[dates == dates.max()].copy()
+
+
+def validate_execution_lineage(root: str | Path) -> list[str]:
+    """Require Parts 3, 7, 8, and 10 to share one publication identity."""
+    root_path = Path(root)
+    paths = {
+        "pipeline status": root_path / "artifacts_part10_bot" / "pipeline_status.json",
+        "Part 3 summary": root_path / "artifacts_part3_v1" / "part3_summary.json",
+        "Part 3 allocation": root_path / "artifacts_part3_v1" / "v1_fusion_allocations.csv",
+        "Part 7 target": root_path / "artifacts_part7" / "current_target_weights.json",
+        "Part 8 instructions": root_path / "artifacts_part8" / "execution_instructions.json",
+        "Part 8 metadata": root_path / "artifacts_part8" / "part8_meta.json",
+        "Part 8 cost tape": root_path / "artifacts_part8" / "execution_cost_tape.csv",
+        "Part 10 signal log": root_path / "artifacts_part10_bot" / "signal_log.csv",
+        "Part 10 state": root_path / "artifacts_part10_bot" / "portfolio_state.json",
+        "Part 10 performance": root_path / "artifacts_part10_bot" / "performance_report.json",
+    }
+    missing = [
+        f"execution lineage source is missing: {label}"
+        for label, path in paths.items()
+        if not path.is_file()
+    ]
+    if missing:
+        return missing
+
+    failures: list[str] = []
+    try:
+        status = read_json_strict(paths["pipeline status"])
+        part3 = read_json_strict(paths["Part 3 summary"])
+        part7 = read_json_strict(paths["Part 7 target"])
+        instructions = read_json_strict(paths["Part 8 instructions"])
+        meta = read_json_strict(paths["Part 8 metadata"])
+        bot_state = read_json_strict(paths["Part 10 state"])
+        bot_performance = read_json_strict(paths["Part 10 performance"])
+        allocations = _latest_csv_rows(paths["Part 3 allocation"], "Date")
+        costs = _latest_csv_rows(paths["Part 8 cost tape"], "Date")
+        bot_signals = _latest_csv_rows(
+            paths["Part 10 signal log"], "source_decision_date"
+        )
+    except (OSError, ValueError, json.JSONDecodeError, pd.errors.ParserError) as exc:
+        return [f"execution lineage source could not be parsed: {exc}"]
+
+    if allocations.empty:
+        failures.append("Part 3 allocation has no valid dated row")
+    if costs.empty:
+        failures.append("Part 8 cost tape has no valid dated row")
+    if bot_signals.empty:
+        failures.append("Part 10 signal log has no valid dated row")
+
+    expected_date = _canonical_date_text(
+        status.get("expected_completed_market_session")
+        or status.get("pipeline_run_date")
+    )
+    if expected_date is None:
+        failures.append("pipeline status lacks a valid completed-session date")
+    else:
+        date_values: dict[str, Any] = {
+            "pipeline status pipeline_run_date": status.get("pipeline_run_date"),
+            "Part 3 decision_date": part3.get("decision_date"),
+            "Part 3 pipeline_run_date": part3.get("pipeline_run_date"),
+            "Part 7 Date": part7.get("Date") or part7.get("decision_date"),
+            "Part 8 decision_date": instructions.get("decision_date"),
+            "Part 8 source_decision_date": instructions.get("source_decision_date"),
+            "Part 8 pipeline_run_date": instructions.get("pipeline_run_date"),
+            "Part 8 metadata decision_date": meta.get("decision_date"),
+            "Part 8 metadata pipeline_run_date": meta.get("pipeline_run_date"),
+            "Part 10 state decision_date": bot_state.get("decision_date"),
+            "Part 10 state pipeline_run_date": bot_state.get("pipeline_run_date"),
+            "Part 10 state price_session": bot_state.get("price_session"),
+            "Part 10 performance decision_date": bot_performance.get("decision_date"),
+            "Part 10 performance pipeline_run_date": bot_performance.get(
+                "pipeline_run_date"
+            ),
+            "Part 10 performance price_session": bot_performance.get("price_session"),
+        }
+        if not allocations.empty:
+            date_values["Part 3 allocation Date"] = allocations.iloc[0].get("Date")
+            date_values["Part 3 allocation source_decision_date"] = allocations.iloc[0].get(
+                "source_decision_date"
+            )
+        if not costs.empty:
+            date_values["Part 8 cost-tape Date"] = costs.iloc[0].get("Date")
+            date_values["Part 8 cost-tape pipeline_run_date"] = costs.iloc[0].get(
+                "pipeline_run_date"
+            )
+        if not bot_signals.empty:
+            for field in (
+                "date",
+                "source_decision_date",
+                "pipeline_run_date",
+                "price_session",
+            ):
+                date_values[f"Part 10 signal {field}"] = bot_signals.iloc[0].get(
+                    field
+                )
+        for label, value in date_values.items():
+            actual = _canonical_date_text(value)
+            if actual != expected_date:
+                failures.append(
+                    f"{label} does not match completed session: "
+                    f"actual={actual or 'missing'} expected={expected_date}"
+                )
+
+    expected_sha = _identity_text(status.get("source_code_sha"))
+    sha_values: dict[str, Any] = {
+        "Part 3 source_code_sha": part3.get("source_code_sha"),
+        "Part 7 model_code_sha": part7.get("model_code_sha"),
+        "Part 8 source_code_sha": instructions.get("source_code_sha"),
+        "Part 8 metadata source_code_sha": meta.get("source_code_sha"),
+        "Part 10 state source_code_sha": bot_state.get("source_code_sha"),
+        "Part 10 performance source_code_sha": bot_performance.get("source_code_sha"),
+    }
+    if not allocations.empty:
+        sha_values["Part 3 allocation model_code_sha"] = allocations.iloc[0].get(
+            "model_code_sha"
+        )
+    if not costs.empty:
+        sha_values["Part 8 cost-tape source_code_sha"] = costs.iloc[0].get(
+            "source_code_sha"
+        )
+    if not bot_signals.empty:
+        sha_values["Part 10 signal model_code_sha"] = bot_signals.iloc[0].get(
+            "model_code_sha"
+        )
+        sha_values["Part 10 signal execution_source_code_sha"] = bot_signals.iloc[
+            0
+        ].get("execution_source_code_sha")
+    for label, value in sha_values.items():
+        actual = _identity_text(value)
+        if not expected_sha or actual != expected_sha:
+            failures.append(
+                f"{label} does not match pipeline source SHA: "
+                f"actual={actual or 'missing'} expected={expected_sha or 'missing'}"
+            )
+
+    expected_run_id = _identity_text(status.get("github_run_id"))
+    run_values: dict[str, Any] = {
+        "Part 3 pipeline_run_id": part3.get("pipeline_run_id"),
+        "Part 8 pipeline_run_id": instructions.get("pipeline_run_id"),
+        "Part 8 metadata pipeline_run_id": meta.get("pipeline_run_id"),
+        "Part 10 state pipeline_run_id": bot_state.get("pipeline_run_id"),
+        "Part 10 performance pipeline_run_id": bot_performance.get("pipeline_run_id"),
+    }
+    if not allocations.empty:
+        run_values["Part 3 allocation pipeline_run_id"] = allocations.iloc[0].get(
+            "pipeline_run_id"
+        )
+    if not costs.empty:
+        run_values["Part 8 cost-tape pipeline_run_id"] = costs.iloc[0].get(
+            "pipeline_run_id"
+        )
+    if not bot_signals.empty:
+        run_values["Part 10 signal pipeline_run_id"] = bot_signals.iloc[0].get(
+            "pipeline_run_id"
+        )
+    for label, value in run_values.items():
+        actual = _identity_text(value)
+        if not expected_run_id or actual != expected_run_id:
+            failures.append(
+                f"{label} does not match pipeline run ID: "
+                f"actual={actual or 'missing'} expected={expected_run_id or 'missing'}"
+            )
+
+    expected_attempt = _identity_text(status.get("github_run_attempt"))
+    attempt_values: dict[str, Any] = {
+        "Part 3 pipeline_run_attempt": part3.get("pipeline_run_attempt"),
+        "Part 8 pipeline_run_attempt": instructions.get("pipeline_run_attempt"),
+        "Part 8 metadata pipeline_run_attempt": meta.get("pipeline_run_attempt"),
+        "Part 10 state pipeline_run_attempt": bot_state.get("pipeline_run_attempt"),
+        "Part 10 performance pipeline_run_attempt": bot_performance.get(
+            "pipeline_run_attempt"
+        ),
+    }
+    if not allocations.empty:
+        attempt_values["Part 3 allocation pipeline_run_attempt"] = allocations.iloc[0].get(
+            "pipeline_run_attempt"
+        )
+    if not costs.empty:
+        attempt_values["Part 8 cost-tape pipeline_run_attempt"] = costs.iloc[0].get(
+            "pipeline_run_attempt"
+        )
+    if not bot_signals.empty:
+        attempt_values["Part 10 signal pipeline_run_attempt"] = bot_signals.iloc[
+            0
+        ].get("pipeline_run_attempt")
+    for label, value in attempt_values.items():
+        actual = _identity_text(value)
+        if not expected_attempt or actual != expected_attempt:
+            failures.append(
+                f"{label} does not match pipeline run attempt: "
+                f"actual={actual or 'missing'} expected={expected_attempt or 'missing'}"
+            )
+
+    protocol_values: dict[str, Any] = {
+        "pipeline status": status.get("protocol_version"),
+        "Part 3 summary": part3.get("protocol_version"),
+        "Part 7 target": part7.get("model_protocol_version"),
+        "Part 8 instructions": instructions.get("protocol_version"),
+        "Part 8 metadata": meta.get("protocol_version"),
+        "Part 10 state": bot_state.get("protocol_version"),
+        "Part 10 performance": bot_performance.get("protocol_version"),
+    }
+    if not allocations.empty:
+        protocol_values["Part 3 allocation"] = allocations.iloc[0].get(
+            "model_protocol_version"
+        )
+    if not costs.empty:
+        protocol_values["Part 8 cost tape"] = costs.iloc[0].get("protocol_version")
+    if not bot_signals.empty:
+        protocol_values["Part 10 signal"] = bot_signals.iloc[0].get(
+            "model_protocol_version"
+        )
+    for label, value in protocol_values.items():
+        if _identity_text(value) != PROTOCOL_VERSION:
+            failures.append(
+                f"{label} protocol does not match {PROTOCOL_VERSION}: {value!r}"
+            )
+
+    if instructions.get("lineage_verified") is not True:
+        failures.append("Part 8 instructions are not marked lineage_verified")
+    if meta.get("lineage_verified") is not True:
+        failures.append("Part 8 metadata are not marked lineage_verified")
+    if bot_state.get("execution_lineage_verified") is not True:
+        failures.append("Part 10 state is not marked execution_lineage_verified")
+    if bot_performance.get("execution_lineage_verified") is not True:
+        failures.append("Part 10 performance is not marked execution_lineage_verified")
+    if not bot_signals.empty and str(
+        bot_signals.iloc[0].get("execution_lineage_verified")
+    ).strip().lower() != "true":
+        failures.append("Part 10 signal is not marked execution_lineage_verified")
+    if instructions.get("allocation_source") != "v1_fusion_allocations":
+        failures.append("Part 8 instructions do not identify the Part 3 fusion allocation")
+    if meta.get("allocation_source") != "v1_fusion_allocations":
+        failures.append("Part 8 metadata do not identify the Part 3 fusion allocation")
+    if meta.get("latest_order_instructions") != instructions:
+        failures.append("Part 8 metadata and execution_instructions.json disagree")
+    for label, source in (
+        ("Part 10 state", bot_state.get("price_source")),
+        ("Part 10 performance", bot_performance.get("price_source")),
+    ):
+        if source != "artifacts_part0/close_prices.parquet":
+            failures.append(f"{label} does not identify the verified Part 0 price source")
+    if not bot_signals.empty and bot_signals.iloc[0].get(
+        "price_source"
+    ) != "artifacts_part0/close_prices.parquet":
+        failures.append("Part 10 signal does not identify the verified Part 0 price source")
+
+    # Multi-row allocation records must carry one identity across every sleeve.
+    # Checking only the first VOO/IEF row would allow a partially overwritten CSV
+    # to pass even though the portfolio as a whole had mixed provenance.
+    for label, frame, fields in (
+        (
+            "Part 3 allocation",
+            allocations,
+            {
+                "source_decision_date": _canonical_date_text,
+                "model_protocol_version": _identity_text,
+                "model_code_sha": _identity_text,
+                "pipeline_run_id": _identity_text,
+                "pipeline_run_attempt": _identity_text,
+            },
+        ),
+        (
+            "Part 8 cost tape latest session",
+            costs,
+            {
+                "pipeline_run_date": _canonical_date_text,
+                "protocol_version": _identity_text,
+                "source_code_sha": _identity_text,
+                "pipeline_run_id": _identity_text,
+                "pipeline_run_attempt": _identity_text,
+            },
+        ),
+    ):
+        if frame.empty:
+            continue
+        for field, normalize in fields.items():
+            if field not in frame.columns:
+                continue
+            values = {
+                normalize(value) or "<missing>" for value in frame[field].tolist()
+            }
+            if len(values) != 1:
+                failures.append(
+                    f"{label} has mixed {field} values: {sorted(values)}"
+                )
+    return failures
+
+
 def validate_completed_session_inputs(root: str | Path) -> list[str]:
     """Verify the retained market panel contains true completed XNYS rows."""
     from market_calendar import completed_xnys_sessions, latest_completed_xnys_session
@@ -374,6 +691,11 @@ def main() -> int:
     status_failures = validate_status_markers(root)
     if status_failures:
         raise SystemExit("Status-marker validation failed:\n" + "\n".join(status_failures))
+    lineage_failures = validate_execution_lineage(root)
+    if lineage_failures:
+        raise SystemExit(
+            "Execution-lineage validation failed:\n" + "\n".join(lineage_failures)
+        )
     write_json_strict(root / "artifacts_manifest.json", build_run_manifest(root))
     manifest_failures = verify_run_manifest(root)
     if manifest_failures:

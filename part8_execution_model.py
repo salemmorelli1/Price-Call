@@ -26,11 +26,10 @@
 #
 # POSITION IN THE PIPELINE
 # ─────────────────────────
-# Part 7 (Portfolio Construction) outputs: target weights + trade sizes
-# Part 8 (Execution)               inputs: those trade sizes + market data
-#                                  outputs: cost estimates, trade schedule,
-#                                           post-trade attribution
-# Part 3 (Governance)              consumes: Part 8 net-of-costs weights
+# Part 7 (Portfolio Construction) outputs: proposed target weights
+# Part 3 (Governance)              outputs: final governed fusion allocation
+# Part 8 (Execution)               consumes: that same-run allocation + market data
+#                                  outputs: cost estimates and research instructions
 # Part 9 (Attribution)             consumes: Part 8 post-trade record
 #
 # =============================================================================
@@ -75,11 +74,9 @@
 #   in all live runs the tape provides the correct prior target. Documented
 #   clearly; no code change required beyond the comment.
 #
-# Finding 8 (MEDIUM): sec_fee_bps = 0.278 corresponds to the FY2023 SEC fee
-#   schedule and is stale. The value is not hard-updated here because the
-#   correct rate requires verification against the current SEC advisory each
-#   October. The comment is updated to flag the rate as year-specific and
-#   provide the lookup URL.
+# Finding 8 (MEDIUM): the Section 31 sell-side fee is now sourced from the
+#   current FY2026 SEC advisory ($20.60/million = 0.206 bps, effective
+#   2026-04-04) and can be overridden explicitly when the SEC changes it.
 #
 # Finding 32 (prior): dead 'volume.parquet' fallback already removed in prior
 #   audit; retained as-is.
@@ -93,13 +90,14 @@ import warnings
 from pathlib import Path
 import json
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from artifact_integrity import PROTOCOL_VERSION, write_json_strict
+from market_calendar import latest_completed_xnys_session
 from scipy.optimize import minimize_scalar
 
 warnings.filterwarnings("ignore")
@@ -115,6 +113,7 @@ class Part8Config:
     part7_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part7"
     part0_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part0"
     out_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part8"
+    part3_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part3_v1"
     # FIX (Finding E, prior audit): direct path to Part 2 consensus tape.
     part2_dir: str = os.environ.get("PRICECALL_ROOT", "/content/drive/MyDrive/PriceCallProject") + "/artifacts_part2_g532/predictions"
 
@@ -197,15 +196,16 @@ class Part8Config:
     # === Borrowing costs (long-only — not applicable) ===
     borrow_cost_bps_annual: float = 0.0
 
-    # === SEC fee (applies to sell transactions on US equities) ===
-    # IMPORTANT (Finding 8): the SEC fee rate is reset annually each October.
-    # Do NOT hard-code a new value without verifying the current rate at:
-    #   https://www.sec.gov/rules-regulations/fee-rate-advisory
-    # FY2023 rate: $27.80/million = 0.278 bps
-    # FY2025 rate: $8.00/million  = 0.800 bps  (verify before updating)
-    # The value below is intentionally left at 0.278 until the current advisory
-    # is confirmed; update it together with the comment each October.
-    sec_fee_bps: float = 0.278
+    # === SEC Section 31 fee (applies to covered sell transactions) ===
+    # FY2026 advisory: $20.60 per $1,000,000 = 0.206 bps, effective 2026-04-04.
+    # The SEC says this remains effective until 60 days after FY2027
+    # appropriations legislation is enacted. Verify before changing:
+    # https://www.sec.gov/rules-regulations/fee-rate-advisories/2026-2
+    sec_fee_bps: float = float(os.environ.get("PRICECALL_SEC_FEE_BPS", "0.206"))
+    sec_fee_effective_date: str = "2026-04-04"
+    sec_fee_source: str = (
+        "https://www.sec.gov/rules-regulations/fee-rate-advisories/2026-2"
+    )
 
     # === Post-trade tracking ===
     post_trade_retention_days: int = 365
@@ -992,14 +992,13 @@ def compute_annual_cost_drag(
 # ============================================================
 
 def load_part7_instructions(cfg: Part8Config = CFG) -> Dict:
+    """Load the newest available allocation candidate.
+
+    The verified instruction-producing path accepts only Part 3 fusion output.
+    Part 7 fallbacks remain readable here for diagnostics and are rejected by
+    :func:`load_verified_execution_context`.
     """
-    Load the latest allocation target from Part 3 fusion allocations (preferred)
-    or Part 7 target weights (fallback).
-    """
-    part3_dir = os.path.join(
-        os.path.dirname(cfg.part7_dir.rstrip("/\\")), "artifacts_part3_v1"
-    )
-    fusion_alloc_path = os.path.join(part3_dir, "v1_fusion_allocations.csv")
+    fusion_alloc_path = os.path.join(cfg.part3_dir, "v1_fusion_allocations.csv")
 
     if os.path.exists(fusion_alloc_path):
         try:
@@ -1021,15 +1020,33 @@ def load_part7_instructions(cfg: Part8Config = CFG) -> Dict:
                         (latest["sleeve"] == "VOO") & (latest["is_alpha"] == 1)
                     ]["weight"].sum()
                 )
-                return {
+                result = {
                     "Date": str(latest_date),
                     "w_target_voo": voo_total,
                     "w_target_ief": ief_total,
                     "w_alpha_voo": alpha_voo,
                     "source": "v1_fusion_allocations",
+                    "source_path": fusion_alloc_path,
                 }
+                for column in (
+                    "model_protocol_version",
+                    "model_code_sha",
+                    "pipeline_run_id",
+                    "pipeline_run_attempt",
+                    "source_decision_date",
+                ):
+                    if column in latest.columns:
+                        values = latest[column].dropna().astype(str).unique().tolist()
+                        if len(values) > 1:
+                            raise RuntimeError(
+                                f"fusion allocation has mixed {column} values: {values}"
+                            )
+                        result[column] = values[0] if values else None
+                return result
         except Exception as e:
-            print(f"[Part 8] Warning: could not load fusion allocations: {e}")
+            raise RuntimeError(
+                f"Part 8 could not load the governed fusion allocation: {e}"
+            ) from e
 
     # Fallback: Part 7 current target weights
     current_path = os.path.join(cfg.part7_dir, "current_target_weights.json")
@@ -1037,15 +1054,226 @@ def load_part7_instructions(cfg: Part8Config = CFG) -> Dict:
 
     if os.path.exists(current_path):
         with open(current_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            result = json.load(f)
+        result["source"] = "part7_current_target_weights"
+        result["source_path"] = current_path
+        return result
     if os.path.exists(weights_path):
         df = pd.read_csv(weights_path)
         if "Date" in df.columns:
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
             df = df.dropna(subset=["Date"]).sort_values("Date")
         if not df.empty:
-            return df.iloc[-1].to_dict()
+            result = df.iloc[-1].to_dict()
+            result["source"] = "part7_portfolio_weights_tape"
+            result["source_path"] = weights_path
+            return result
     return {}
+
+
+def _canonical_iso_date(value: object, label: str) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        raise RuntimeError(f"{label} is missing or is not a valid date: {value!r}")
+    return pd.Timestamp(parsed).date().isoformat()
+
+
+def _identity_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _load_required_json(path: str | Path, label: str) -> Dict:
+    source = Path(path)
+    if not source.is_file():
+        raise FileNotFoundError(f"required {label} is missing: {source}")
+    try:
+        with source.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"could not read {label} at {source}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label} must contain one JSON object: {source}")
+    return payload
+
+
+def load_verified_execution_context(
+    cfg: Part8Config = CFG,
+) -> Tuple[Dict, Dict, Dict]:
+    """Load the governed allocation and prove it belongs to this run/session.
+
+    Part 8 is an instruction-producing boundary.  It must never fall back to a
+    prior Part 3 allocation merely because the file exists.  In GitHub Actions,
+    the allocation, Part 3 summary, Part 7 target, and runner identity must agree
+    on completed XNYS session, protocol, source SHA, run ID, and run attempt.
+    """
+    latest = load_part7_instructions(cfg)
+    if not latest:
+        raise RuntimeError("Part 8 cannot run without a governed allocation")
+    if latest.get("source") != "v1_fusion_allocations":
+        raise RuntimeError(
+            "Part 8 requires the current Part 3 fusion allocation; "
+            f"received {latest.get('source', 'unknown')}"
+        )
+
+    part7_path = Path(cfg.part7_dir) / "current_target_weights.json"
+    part3_path = Path(cfg.part3_dir) / "part3_summary.json"
+    part7 = _load_required_json(part7_path, "Part 7 current target")
+    part3 = _load_required_json(part3_path, "Part 3 summary")
+
+    expected_session = _canonical_iso_date(
+        os.environ.get("PRICECALL_RUN_DATE_ET")
+        or latest_completed_xnys_session().date().isoformat(),
+        "expected completed XNYS session",
+    )
+    dates = {
+        "fusion allocation Date": latest.get("Date"),
+        "fusion source_decision_date": latest.get("source_decision_date"),
+        "Part 7 Date": part7.get("Date") or part7.get("decision_date"),
+        "Part 3 decision_date": part3.get("decision_date"),
+        "Part 3 pipeline_run_date": part3.get("pipeline_run_date"),
+    }
+    for label, value in dates.items():
+        actual = _canonical_iso_date(value, label)
+        if actual != expected_session:
+            raise RuntimeError(
+                f"execution lineage date mismatch: {label}={actual}, "
+                f"expected={expected_session}"
+            )
+
+    protocols = {
+        "fusion allocation": latest.get("model_protocol_version"),
+        "Part 7": part7.get("model_protocol_version"),
+        "Part 3": part3.get("protocol_version"),
+    }
+    for label, value in protocols.items():
+        if _identity_text(value) != PROTOCOL_VERSION:
+            raise RuntimeError(
+                f"execution lineage protocol mismatch: {label}={value!r}, "
+                f"expected={PROTOCOL_VERSION}"
+            )
+
+    expected_sha = _identity_text(
+        os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA")
+    )
+    source_shas = {
+        "fusion allocation": _identity_text(latest.get("model_code_sha")),
+        "Part 7": _identity_text(part7.get("model_code_sha")),
+        "Part 3": _identity_text(part3.get("source_code_sha")),
+    }
+    nonempty_shas = {value for value in source_shas.values() if value}
+    if len(nonempty_shas) > 1:
+        raise RuntimeError(f"execution lineage SHA mismatch: {source_shas}")
+    if expected_sha:
+        for label, value in source_shas.items():
+            if value != expected_sha:
+                raise RuntimeError(
+                    f"execution lineage SHA mismatch: {label}={value or 'missing'}, "
+                    f"expected={expected_sha}"
+                )
+
+    expected_run_id = _identity_text(os.environ.get("GITHUB_RUN_ID"))
+    run_ids = {
+        "fusion allocation": _identity_text(latest.get("pipeline_run_id")),
+        "Part 3": _identity_text(part3.get("pipeline_run_id")),
+    }
+    nonempty_run_ids = {value for value in run_ids.values() if value}
+    if len(nonempty_run_ids) > 1:
+        raise RuntimeError(f"execution lineage run-ID mismatch: {run_ids}")
+    if expected_run_id:
+        for label, value in run_ids.items():
+            if value != expected_run_id:
+                raise RuntimeError(
+                    f"execution lineage run-ID mismatch: {label}={value or 'missing'}, "
+                    f"expected={expected_run_id}"
+                )
+
+    expected_attempt = _identity_text(os.environ.get("GITHUB_RUN_ATTEMPT"))
+    allocation_attempt = _identity_text(latest.get("pipeline_run_attempt"))
+    part3_attempt = _identity_text(part3.get("pipeline_run_attempt"))
+    if expected_attempt:
+        for label, value in {
+            "fusion allocation": allocation_attempt,
+            "Part 3": part3_attempt,
+        }.items():
+            if value != expected_attempt:
+                raise RuntimeError(
+                    f"execution lineage run-attempt mismatch: {label}={value or 'missing'}, "
+                    f"expected={expected_attempt}"
+                )
+
+    try:
+        weights = np.asarray(
+            [latest.get("w_target_voo"), latest.get("w_target_ief")], dtype=float
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("governed execution weights are not numeric") from exc
+    if not np.isfinite(weights).all() or (weights < 0).any():
+        raise RuntimeError(f"governed execution weights are invalid: {weights.tolist()}")
+    if not np.isclose(float(weights.sum()), 1.0, atol=1e-9):
+        raise RuntimeError(
+            f"governed execution weights do not sum to one: {float(weights.sum())}"
+        )
+
+    lineage = {
+        "lineage_verified": True,
+        "protocol_version": PROTOCOL_VERSION,
+        "pipeline_run_date": expected_session,
+        "pipeline_run_id": expected_run_id
+        or _identity_text(part3.get("pipeline_run_id"))
+        or None,
+        "pipeline_run_attempt": expected_attempt
+        or _identity_text(part3.get("pipeline_run_attempt"))
+        or None,
+        "source_code_sha": expected_sha
+        or _identity_text(part3.get("source_code_sha"))
+        or None,
+        "allocation_source": latest["source"],
+        "allocation_source_path": latest.get("source_path"),
+    }
+    return latest, part3, lineage
+
+
+def _upsert_execution_cost_record(path: str | Path, record: Dict) -> pd.DataFrame:
+    """Upsert one session record and keep the execution tape chronological."""
+    target = Path(path)
+    new_row = pd.DataFrame([record])
+    if target.is_file():
+        try:
+            existing = pd.read_csv(target)
+            if "Date" in existing.columns:
+                existing_dates = pd.to_datetime(existing["Date"], errors="coerce")
+                decision = _canonical_iso_date(record.get("Date"), "execution Date")
+                existing = existing.loc[
+                    existing_dates.dt.date.astype("string") != decision
+                ].copy()
+            output = pd.concat([existing, new_row], ignore_index=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"could not safely read the existing execution-cost tape: {exc}"
+            ) from exc
+    else:
+        output = new_row
+    if "Date" in output.columns:
+        output["_order_date"] = pd.to_datetime(output["Date"], errors="coerce")
+        order = ["_order_date"]
+        if "built_at" in output.columns:
+            order.append("built_at")
+        output = output.sort_values(
+            order, kind="stable", na_position="first"
+        ).drop(columns="_order_date").reset_index(drop=True)
+    output.to_csv(target, index=False)
+    return output
 
 
 def calibrate_impact_coefficients(cfg: Part8Config = CFG) -> Dict[str, float]:
@@ -1085,100 +1313,68 @@ def main() -> int:
     cfg = dataclasses.replace(cfg, part0_dir=_abs_path(cfg.part0_dir))
     cfg = dataclasses.replace(cfg, out_dir=_abs_path(cfg.out_dir))
     cfg = dataclasses.replace(cfg, part2_dir=_abs_path(cfg.part2_dir))
+    cfg = dataclasses.replace(cfg, part3_dir=_abs_path(cfg.part3_dir))
     os.makedirs(cfg.out_dir, exist_ok=True)
 
     print("=" * 70)
     print("PART 8 — Execution & Transaction Cost Model v2 (daily canonical)")
     print("=" * 70)
 
-    analyzer = PreTradeAnalyzer(cfg)
     scheduler = AlmgrenChrissScheduler(cfg)
 
-    latest = load_part7_instructions(cfg)
-    if not latest:
-        print("[Part 8] Part 7 target weights not found — writing meta only.")
-        meta = {
-            "version": cfg.version,
-            "built_at": datetime.now(timezone.utc).isoformat(),
-            "warning": "no_part7_targets",
-        }
-        with open(os.path.join(cfg.out_dir, "part8_meta.json"), "w") as f:
-            json.dump(meta, f, indent=2, default=str)
-        return 0
+    # Part 3 now runs before Part 8.  Refuse to publish any instruction artifact
+    # unless the governed allocation is proven to belong to this exact session and
+    # (in GitHub Actions) this exact source SHA, workflow run, and run attempt.
+    latest, _p3_sum, lineage = load_verified_execution_context(cfg)
+    decision_date = lineage["pipeline_run_date"]
+    w_voo = float(latest["w_target_voo"])
+    w_ief = float(latest["w_target_ief"])
 
-    decision_date = str(latest.get("Date", date.today().isoformat()))
-    w_voo = float(latest.get("w_target_voo", latest.get("VOO", 0.60)))
-    w_ief = float(latest.get("w_target_ief", latest.get("IEF", 0.40)))
-
-    # FIX (Quant-Guild Part 46 Audit): independent fail-closed governance override.
-    #
-    # ROOT CAUSE: load_part7_instructions() prefers artifacts_part3_v1/v1_fusion_allocations.csv
-    # over Part 7's current_target_weights.json. That fusion file is built from Part 7's
-    # RAW base weights, which may reflect Part 7's "soft-clearance" BL pass-through
-    # (e.g. 0.6507/0.3493) even while governance is FAIL_CLOSED_NEUTRAL — a sibling fix in
-    # part3_governance.py (same audit) now corrects that file going forward. But Part 8
-    # runs BEFORE Part 3 in the canonical pipeline order (Part7 -> Part8 -> Part3), so even
-    # after that fix lands, Part 8 would only ever see YESTERDAY's corrected fusion file on
-    # any given day, not today's. Result: example_order_instructions.json and
-    # execution_cost_tape.csv were computed against an allocation that governance was about
-    # to veto and replace with the safe 60/40 default — a real risk if a human operator acts
-    # on these instructions (they include explicit execution windows and broker-style trade
-    # schedules), and a confirmed source of contradictory numbers between the GitHub Pages
-    # dashboard's "Portfolio Snapshot" panel (current_target_weights.json, correctly 60/40)
-    # and "Latest Fusion Allocations" panel (v1_fusion_allocations.csv, incorrectly 65/35)
-    # for the same decision date.
-    #
-    # FIX: mirror Part 7's defense-in-depth pattern (part7_portfolio_construction.py,
-    # fail_closed_override) by checking Part 2's summary directly — the earliest and most
-    # reliable governance signal available by the time Part 8 runs in the pipeline — and
-    # override to the safe 60/40 default whenever Part 2 has not unambiguously cleared.
-    # Unlike Part 7, Part 8 deliberately does NOT apply Part 7's soft-clearance carve-out:
-    # that carve-out exists so Part 7's diagnostic tape still shows a meaningful
-    # regime-conditional view, not so a downstream cost/order-instruction layer treats it
-    # as capital that will actually be deployed.
+    # Keep Part 2 as a defense-in-depth check, but make Part 3 the authoritative
+    # governance source.  A disagreement between them can only close the gate.
     _p2_gov_path = os.path.join(cfg.part2_dir, "part2_g532_summary.json")
-    _p2_publish_mode = "UNKNOWN"
-    _p2_final_pass = False
-    _p2_sum: Dict = {}
-    if os.path.exists(_p2_gov_path):
-        try:
-            with open(_p2_gov_path, "r", encoding="utf-8") as _p2_f:
-                _p2_sum = json.load(_p2_f)
-            _p2_publish_mode = str(_p2_sum.get("publish_mode", "UNKNOWN")).strip().upper()
-            _p2_final_pass = bool(_p2_sum.get("final_pass", False))
-        except Exception as _p2_exc:
-            print(f"[Part 8] WARNING: could not read Part 2 summary for governance check: {_p2_exc}")
-    else:
-        print(f"[Part 8] WARNING: Part 2 summary not found at {_p2_gov_path} — cannot verify governance state.")
-    _fail_closed_modes = {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"}
-    _p8_governance_override = (_p2_publish_mode in _fail_closed_modes) or (not _p2_final_pass)
+    _p2_sum = _load_required_json(_p2_gov_path, "Part 2 summary")
+    _p2_publish_mode = str(_p2_sum.get("publish_mode", "UNKNOWN")).strip().upper()
+    _p2_final_pass = bool(_p2_sum.get("final_pass", False))
+    _p3_publish_mode = str(_p3_sum.get("publish_mode", "UNKNOWN")).strip().upper()
+    _p3_final_pass = bool(_p3_sum.get("final_pass", False))
+    _p8_governance_override = not (
+        _p2_publish_mode == "NORMAL"
+        and _p2_final_pass
+        and _p3_publish_mode == "NORMAL"
+        and _p3_final_pass
+    )
     if _p8_governance_override:
         if abs(w_voo - cfg.default_voo_weight) > 1e-9 or abs(w_ief - cfg.default_ief_weight) > 1e-9:
             print(
-                f"[Part 8] Governance override: Part 2 publish_mode={_p2_publish_mode}, "
-                f"final_pass={_p2_final_pass} -> using safe default weights "
+                f"[Part 8] Governance override: Part 2={_p2_publish_mode}/"
+                f"{_p2_final_pass}, Part 3={_p3_publish_mode}/{_p3_final_pass} "
+                f"-> using safe default weights "
                 f"VOO={cfg.default_voo_weight:.4f}/IEF={cfg.default_ief_weight:.4f} "
                 f"instead of loaded VOO={w_voo:.4f}/IEF={w_ief:.4f} "
-                f"(source={latest.get('source', 'part7_current_target_weights')})."
+                f"(source={latest['source']})."
             )
         w_voo, w_ief = float(cfg.default_voo_weight), float(cfg.default_ief_weight)
 
-    # prev_weights: use second-to-last row of Part 7 tape (yesterday's model
-    # target).  The fallback of {VOO: 0.60, IEF: 0.40} fires only on the very
-    # first run before the tape has ≥ 2 rows; in all live runs the tape row
-    # is authoritative.  (Finding 7 note: the bot's portfolio_state.json shows
-    # 100% cash because no paper trades have executed yet; this is the MODEL
-    # target state, not the executed state, so 60/40 is still a reasonable
-    # first-run prior for the MODEL portfolio even though it differs from the
-    # bot's cash state.)
+    # Select the latest distinct session before today's decision.  Physical row
+    # order is not a provenance contract, and same-day reruns must not become the
+    # "previous" portfolio accidentally.
     prev_weights: Dict[str, float] = {"VOO": 0.60, "IEF": 0.40}
     weights_path = os.path.join(cfg.part7_dir, "portfolio_weights_tape.csv")
     if os.path.exists(weights_path):
         wdf = pd.read_csv(weights_path)
-        if len(wdf) >= 2:
+        if "Date" in wdf.columns:
+            wdf["_date"] = pd.to_datetime(wdf["Date"], errors="coerce")
+            prior = wdf.loc[
+                wdf["_date"] < pd.Timestamp(decision_date)
+            ].sort_values("_date", kind="stable")
+        else:
+            prior = pd.DataFrame()
+        if not prior.empty:
+            previous = prior.iloc[-1]
             prev_weights = {
-                "VOO": float(wdf.iloc[-2].get("w_target_voo", 0.60)),
-                "IEF": float(wdf.iloc[-2].get("w_target_ief", 0.40)),
+                "VOO": float(previous.get("w_target_voo", 0.60)),
+                "IEF": float(previous.get("w_target_ief", 0.40)),
             }
 
     # FIX (Finding 3): load live VIX from Part 0 artifacts.
@@ -1188,21 +1384,17 @@ def main() -> int:
 
     if _p8_governance_override:
         instructions = {
-            "protocol_version": PROTOCOL_VERSION,
             "decision_date": decision_date,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "status": "NO_ACTION_STALE_OR_UNCLEARED",
             "reason": (
-                f"Part 2 did not clear governance: publish_mode={_p2_publish_mode}, "
-                f"final_pass={_p2_final_pass}, "
+                f"Governance did not clear: Part 2={_p2_publish_mode}/"
+                f"{_p2_final_pass}, Part 3={_p3_publish_mode}/{_p3_final_pass}, "
                 f"data_freshness_ok={bool(_p2_sum.get('part1_data_freshness_ok', False))}"
             ),
             "instructions": [],
             "n_trades": 0,
             "execute_window": None,
-            "source_decision_date": decision_date,
-            "pipeline_run_date": os.environ.get("PRICECALL_RUN_DATE_ET"),
-            "data_freshness_ok": bool(_p2_sum.get("part1_data_freshness_ok", False)),
         }
     else:
         instructions = scheduler.generate_order_instructions(
@@ -1212,11 +1404,17 @@ def main() -> int:
             prev_allocations=prev_weights,
             vix_level=live_vix,
         )
-        instructions["protocol_version"] = PROTOCOL_VERSION
         instructions["status"] = "RESEARCH_INSTRUCTIONS_GENERATED"
-        instructions["source_decision_date"] = decision_date
-        instructions["pipeline_run_date"] = os.environ.get("PRICECALL_RUN_DATE_ET")
-        instructions["data_freshness_ok"] = True
+    instructions.update(lineage)
+    instructions.update({
+        "decision_date": decision_date,
+        "source_decision_date": decision_date,
+        "data_freshness_ok": bool(_p2_sum.get("part1_data_freshness_ok", False)),
+        "governance_part2_publish_mode": _p2_publish_mode,
+        "governance_part2_final_pass": _p2_final_pass,
+        "governance_part3_publish_mode": _p3_publish_mode,
+        "governance_part3_final_pass": _p3_final_pass,
+    })
 
     tape_path = os.path.join(cfg.part2_dir, "g532_final_consensus_tape.csv")
     annual_drag: Dict = {}
@@ -1234,41 +1432,17 @@ def main() -> int:
         "Date": decision_date,
         "w_target_voo": w_voo,
         "w_target_ief": w_ief,
+        "protocol_version": PROTOCOL_VERSION,
+        "lineage_verified": True,
+        "pipeline_run_date": lineage["pipeline_run_date"],
+        "pipeline_run_id": lineage["pipeline_run_id"],
+        "pipeline_run_attempt": lineage["pipeline_run_attempt"],
+        "source_code_sha": lineage["source_code_sha"],
+        "allocation_source": lineage["allocation_source"],
     })
 
-    # FIX (Audit 2026-05-07 — F1: execution_cost_tape.csv overwrote history on every run):
-    # The prior code wrote pd.DataFrame([record]).to_csv(tape_path) on every run,
-    # replacing the accumulated tape with a single row each day.  Historical execution
-    # cost data (n_rebalances, turnover, cost_bps) was permanently lost.
-    #
-    # Fix: read-then-append pattern (identical to Part 9's attribution report approach).
-    #   1. Read the existing tape if it exists.
-    #   2. Drop any row whose Date matches today (idempotent re-run safety).
-    #   3. Concat new row and write.
-    #
-    # This means the tape now correctly accumulates one row per production day, matching
-    # the intent of the annual_drag_summary.n_rebalances calculation.
     tape_path = os.path.join(cfg.out_dir, "execution_cost_tape.csv")
-    df_new_row = pd.DataFrame([record])
-    if os.path.exists(tape_path):
-        try:
-            df_existing_tape = pd.read_csv(tape_path)
-            # Normalise Date column for dedup comparison
-            if "Date" in df_existing_tape.columns:
-                df_existing_tape["Date"] = pd.to_datetime(
-                    df_existing_tape["Date"], errors="coerce"
-                )
-                _today_str = str(pd.to_datetime(decision_date).normalize().date())
-                df_existing_tape = df_existing_tape[
-                    df_existing_tape["Date"].dt.date.astype(str) != _today_str
-                ]
-            df_tape_out = pd.concat([df_existing_tape, df_new_row], ignore_index=True)
-        except Exception as _tape_exc:
-            print(f"[Part 8] Warning: could not read existing tape ({_tape_exc}); starting fresh.")
-            df_tape_out = df_new_row
-    else:
-        df_tape_out = df_new_row
-    df_tape_out.to_csv(tape_path, index=False)
+    _upsert_execution_cost_record(tape_path, record)
 
     meta = {
         "version": cfg.version,
@@ -1281,11 +1455,17 @@ def main() -> int:
         "annual_drag_summary": annual_drag,
         "min_rebalance_threshold": cfg.min_rebalance_threshold,
         "max_annual_tc_drag_bps": cfg.max_annual_tc_drag_bps,
-        # FIX (Quant-Guild Part 46 Audit): expose the governance check inputs/outcome
-        # so any consumer can see whether the weights above were overridden and why.
-        "governance_check_source": _p2_gov_path,
+        "sec_fee_bps": cfg.sec_fee_bps,
+        "sec_fee_effective_date": cfg.sec_fee_effective_date,
+        "sec_fee_source": cfg.sec_fee_source,
+        **lineage,
+        "decision_date": decision_date,
+        "governance_part2_source": _p2_gov_path,
+        "governance_part3_source": str(Path(cfg.part3_dir) / "part3_summary.json"),
         "governance_p2_publish_mode": _p2_publish_mode,
         "governance_p2_final_pass": _p2_final_pass,
+        "governance_p3_publish_mode": _p3_publish_mode,
+        "governance_p3_final_pass": _p3_final_pass,
         "governance_override_applied": bool(_p8_governance_override),
     }
     write_json_strict(os.path.join(cfg.out_dir, "part8_meta.json"), meta)
@@ -1299,5 +1479,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
-
+    raise SystemExit(main())

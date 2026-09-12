@@ -68,6 +68,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from artifact_integrity import validate_execution_lineage
+
 # ── Colour output (degrades gracefully on Windows / CI) ──────────────────────
 try:
     GREEN  = "\033[32m"
@@ -382,6 +384,14 @@ def check_part8(r: Results, root: Path):
         return
 
     r.add("Part 8", "file exists", True)
+
+    lineage_failures = validate_execution_lineage(root)
+    r.add(
+        "Part 8",
+        "execution date/run/SHA matches governed production",
+        not lineage_failures,
+        "verified" if not lineage_failures else "; ".join(lineage_failures[:3]),
+    )
 
     # ── Finding E — annual_drag populated ────────────────────────────────────
     #
@@ -730,4 +740,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

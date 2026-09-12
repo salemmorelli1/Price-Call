@@ -4,7 +4,7 @@ A production-style Python pipeline for **daily (H=1) VOO vs IEF forecasting**, g
 
 The stack is built around a strict daily production order:
 
-**Part 0 -> Part 6 -> Part 1 -> Part 2 -> Part 2A -> Part 7 -> Part 8 -> Part 3 -> Part 9 -> Part 10**
+**Part 0 -> market integrity -> point-in-time macro -> Part 6 -> Part 1 -> Part 2 -> Part 2B* -> Part 2C* -> Part 2A -> Part 7 -> Part 3 -> Part 8 -> Part 9 -> Part 10**
 
 ## What the system does
 

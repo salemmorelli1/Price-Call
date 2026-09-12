@@ -2286,6 +2286,19 @@ def main(cfg: Part3Config = CFG) -> None:
     # with publish_mode/deployment_mode whenever FAIL_CLOSED_NEUTRAL is in effect.
     alloc_df, max_dev = _build_fusion_allocations(decision_date, defense_row, alpha_positions_latest, alpha_status, fusion_base_weights)
 
+    # Bind the allocation consumed by Part 8 to this exact governance run.  Date
+    # equality alone is insufficient because a same-session retry can otherwise
+    # pair a new Part 3 summary with an allocation left by an earlier attempt.
+    _lineage_sha = os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA")
+    _lineage_run_id = os.environ.get("GITHUB_RUN_ID")
+    _lineage_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    _lineage_date = pd.Timestamp(decision_date).date().isoformat()
+    alloc_df["model_protocol_version"] = PROTOCOL_VERSION
+    alloc_df["model_code_sha"] = _lineage_sha
+    alloc_df["pipeline_run_id"] = _lineage_run_id
+    alloc_df["pipeline_run_attempt"] = _lineage_run_attempt
+    alloc_df["source_decision_date"] = _lineage_date
+
     out_dir = root / cfg.out_dir_relative
     predlog_dir = root / cfg.predlog_dir_relative
     _ensure_dir(out_dir)
@@ -2463,8 +2476,11 @@ def main(cfg: Part3Config = CFG) -> None:
         "part": "PART3_V1",
         "protocol_version": PROTOCOL_VERSION,
         "evidence_cohort": PROTOCOL_VERSION,
-        "source_code_sha": os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA"),
-        "pipeline_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "decision_date": _lineage_date,
+        "pipeline_run_date": os.environ.get("PRICECALL_RUN_DATE_ET") or _lineage_date,
+        "source_code_sha": _lineage_sha,
+        "pipeline_run_id": _lineage_run_id,
+        "pipeline_run_attempt": _lineage_run_attempt,
         "root": str(root),
         "defense_source": str(part2_tape),
         "part2_summary_source": str(part2_summary_path),

@@ -29,6 +29,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from artifact_integrity import PROTOCOL_VERSION, write_json_strict
+from market_calendar import latest_completed_xnys_session
+
 warnings.filterwarnings("ignore")
 
 try:
@@ -66,8 +69,12 @@ class BotConfig:
     root_dir: str = _DRIVE_ROOT
     part2_summary_path: str = _DRIVE_ROOT + "/artifacts_part2_g532/predictions/part2_g532_summary.json"
     part2_tape_path: str = _DRIVE_ROOT + "/artifacts_part2_g532/predictions/g532_final_consensus_tape.csv"
+    part0_close_path: str = _DRIVE_ROOT + "/artifacts_part0/close_prices.parquet"
+    part0_observation_mask_path: str = _DRIVE_ROOT + "/artifacts_part0/market_observation_mask.parquet"
+    part0_meta_path: str = _DRIVE_ROOT + "/artifacts_part0/part0_meta.json"
     part7_current_target_path: str = _DRIVE_ROOT + "/artifacts_part7/current_target_weights.json"
     part7_weights_tape_path: str = _DRIVE_ROOT + "/artifacts_part7/portfolio_weights_tape.csv"
+    part8_instructions_path: str = _DRIVE_ROOT + "/artifacts_part8/execution_instructions.json"
     part9_report_path: str = _DRIVE_ROOT + "/artifacts_part9/live_attribution_report.json"
     bot_dir: str = _DRIVE_ROOT + "/artifacts_part10_bot"
 
@@ -104,6 +111,28 @@ def _safe_float(x: Any, default: float = np.nan) -> float:
         return v if np.isfinite(v) else default
     except Exception:
         return default
+
+
+def _canonical_iso_date(value: Any, label: str) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        raise RuntimeError(f"{label} is missing or is not a valid date: {value!r}")
+    return pd.Timestamp(parsed).date().isoformat()
+
+
+def _identity_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value).strip()
 
 
 def _resolve_root() -> Path:
@@ -305,7 +334,9 @@ class TradeLog:
         "decision_date", "executed_at", "signal_p_tail", "action_reason", "target_source",
         "w_voo_before", "w_voo_after", "delta_w_voo", "trade_voo_shares", "trade_ief_shares",
         "px_voo", "px_ief", "tc_dollars", "tc_bps", "nav_before", "nav_after", "peak_nav",
-        "drawdown", "trade_count", "is_stopped", "mode",
+        "drawdown", "trade_count", "is_stopped", "mode", "protocol_version",
+        "pipeline_run_date", "pipeline_run_id", "pipeline_run_attempt", "source_code_sha",
+        "execution_lineage_verified", "price_source", "price_session",
     ]
 
     def __init__(self, path: str):
@@ -314,8 +345,28 @@ class TradeLog:
         if not os.path.exists(path):
             with open(path, "w", newline="") as f:
                 csv.DictWriter(f, fieldnames=self.COLUMNS).writeheader()
+        else:
+            existing = pd.read_csv(path)
+            if list(existing.columns) != self.COLUMNS:
+                for column in self.COLUMNS:
+                    if column not in existing.columns:
+                        existing[column] = None
+                existing[self.COLUMNS].to_csv(path, index=False)
 
     def append(self, record: Dict[str, Any]) -> None:
+        existing = self.load()
+        if not existing.empty and "decision_date" in existing.columns:
+            decision = _canonical_iso_date(
+                record.get("decision_date"), "trade decision_date"
+            )
+            existing_dates = pd.to_datetime(
+                existing["decision_date"], errors="coerce"
+            ).dt.date.astype("string")
+            if bool((existing_dates == decision).any()):
+                raise RuntimeError(
+                    f"trade log already contains a rebalance for {decision}; "
+                    "refusing a same-session duplicate"
+                )
         with open(self.path, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=self.COLUMNS, extrasaction="ignore").writerow(record)
 
@@ -331,6 +382,8 @@ class TradeLog:
 class SignalLog:
     COLUMNS = [
         "date", "run_date", "source_decision_date", "model_protocol_version", "model_code_sha",
+        "pipeline_run_date", "pipeline_run_id", "pipeline_run_attempt",
+        "execution_source_code_sha", "execution_lineage_verified", "price_source", "price_session",
         "p_tail", "base_rate", "edge", "target_w_voo", "action_reason", "target_source",
         "dry_run", "accuracy_gate_passed", "accuracy_gate_reason", "publish_mode", "final_pass",
         "raw_val_auc", "px_voo", "px_ief", "nav",
@@ -350,40 +403,35 @@ class SignalLog:
                         existing[column] = None
                 existing[self.COLUMNS].to_csv(path, index=False)
 
-    def _last_date(self) -> Optional[str]:
-        """Return the date string of the most-recent signal log entry, or None."""
-        if not os.path.exists(self.path):
-            return None
-        try:
-            df = pd.read_csv(self.path)
-            if df.empty or "date" not in df.columns:
-                return None
-            last = df["date"].dropna().iloc[-1] if not df["date"].dropna().empty else None
-            return str(last) if last is not None else None
-        except Exception:
-            return None
-
     def append(self, record: Dict[str, Any]) -> None:
-        # FIX (Finding #17, 2026-04): idempotency guard.
-        # The signal log is append-only with no prior deduplication check.
-        # When the pipeline runs twice on the same calendar day (e.g. a manual
-        # workflow_dispatch after the scheduled run, or a DST-transition double-fire),
-        # two entries for the same date are written. If a trade had been executed,
-        # the trade log would similarly double-count it and downstream analytics
-        # (P&L, win-rate, Sharpe) would be corrupted.
-        # Guard: if the last logged entry already has today's date, skip this append.
-        # Re-runs are still visible in pipeline logs (stdout); only the log file is
-        # protected from duplication.
-        new_date = str(record.get("source_decision_date") or record.get("date", ""))
-        last_date = self._last_date()
-        if last_date is not None and new_date and new_date == last_date:
-            print(
-                f"[SignalLog] Skipping duplicate entry for date={new_date} "
-                "(pipeline already ran today — idempotency guard)."
-            )
-            return
-        with open(self.path, "a", newline="") as f:
-            csv.DictWriter(f, fieldnames=self.COLUMNS, extrasaction="ignore").writerow(record)
+        # A same-session rerun is a new provenance revision, not a second signal
+        # and not a reason to retain the older SHA/run identity.  Replace all rows
+        # for that completed session, then sort the tape chronologically.
+        new_record = dict(record)
+        decision = _canonical_iso_date(
+            new_record.get("source_decision_date") or new_record.get("date"),
+            "signal source_decision_date",
+        )
+        new_record["date"] = decision
+        new_record["source_decision_date"] = decision
+        existing = pd.read_csv(self.path)
+        if not existing.empty:
+            existing_dates = pd.to_datetime(
+                existing["source_decision_date"].fillna(existing["date"]),
+                errors="coerce",
+            ).dt.date.astype("string")
+            existing = existing.loc[existing_dates != decision].copy()
+        output = pd.concat(
+            [existing, pd.DataFrame([new_record], columns=self.COLUMNS)],
+            ignore_index=True,
+        )
+        output["_decision_order"] = pd.to_datetime(
+            output["source_decision_date"].fillna(output["date"]), errors="coerce"
+        )
+        output = output.sort_values(
+            ["_decision_order", "run_date"], kind="stable", na_position="first"
+        ).drop(columns="_decision_order")
+        output[self.COLUMNS].to_csv(self.path, index=False)
 
 
 def _read_json(path: str) -> Dict[str, Any]:
@@ -597,6 +645,122 @@ def compute_target_weight(
     return w_voo, f"{direction} (edge={edge:+.3f} → w_voo={w_voo:.3f})"
 
 
+def load_completed_session_prices(
+    cfg: BotConfig, session: str
+) -> Dict[str, float]:
+    """Load exact, observed Part 0 closes for the governed session."""
+    meta = _read_json(cfg.part0_meta_path)
+    if meta.get("market_calendar") != "XNYS":
+        raise RuntimeError("Part 0 metadata does not declare the XNYS calendar")
+    if meta.get("market_values_are_raw_observations") is not True:
+        raise RuntimeError("Part 0 metadata does not guarantee raw market observations")
+    if _canonical_iso_date(meta.get("market_data_asof"), "Part 0 market_data_asof") != session:
+        raise RuntimeError(
+            "Part 0 market_data_asof does not match the governed bot session"
+        )
+
+    try:
+        close = pd.read_parquet(cfg.part0_close_path)
+        observed = pd.read_parquet(cfg.part0_observation_mask_path)
+    except Exception as exc:
+        raise RuntimeError(f"could not load verified Part 0 market inputs: {exc}") from exc
+
+    for label, frame in (("close prices", close), ("observation mask", observed)):
+        index = pd.to_datetime(frame.index, errors="coerce")
+        if index.isna().any():
+            raise RuntimeError(f"Part 0 {label} contain an invalid date index")
+        if index.tz is not None:
+            index = index.tz_convert(None)
+        frame.index = index.normalize()
+
+    expected = pd.Timestamp(session)
+    close_rows = close.loc[close.index == expected]
+    observed_rows = observed.loc[observed.index == expected]
+    if len(close_rows) != 1 or len(observed_rows) != 1:
+        raise RuntimeError(
+            f"Part 0 does not contain exactly one observed row for {session}"
+        )
+
+    prices: Dict[str, float] = {}
+    for ticker in (cfg.ticker_equity, cfg.ticker_bond):
+        if ticker not in close_rows.columns or ticker not in observed_rows.columns:
+            raise RuntimeError(f"Part 0 is missing required bot ticker {ticker}")
+        observed_flag = _safe_float(observed_rows.iloc[0][ticker], np.nan)
+        if observed_flag != 1.0:
+            raise RuntimeError(f"Part 0 {ticker} close for {session} was not observed")
+        price = _safe_float(close_rows.iloc[0][ticker], np.nan)
+        if not np.isfinite(price) or price <= 0:
+            raise RuntimeError(
+                f"Part 0 {ticker} close for {session} is invalid: {price!r}"
+            )
+        prices[ticker] = float(price)
+    return prices
+
+
+def load_verified_bot_context(
+    cfg: BotConfig,
+) -> Tuple[str, Dict[str, float], Dict[str, Any]]:
+    """Bind the paper bot to the exact Part 8 and Part 0 production lineage."""
+    session = _canonical_iso_date(
+        os.environ.get("PRICECALL_RUN_DATE_ET")
+        or latest_completed_xnys_session().date().isoformat(),
+        "expected completed XNYS session",
+    )
+    instructions = _read_json(cfg.part8_instructions_path)
+    if instructions.get("lineage_verified") is not True:
+        raise RuntimeError("Part 8 instructions are not lineage-verified")
+    if instructions.get("allocation_source") != "v1_fusion_allocations":
+        raise RuntimeError("Part 8 instructions do not use the governed Part 3 allocation")
+    if _identity_text(instructions.get("protocol_version")) != PROTOCOL_VERSION:
+        raise RuntimeError("Part 8 protocol does not match the bot protocol")
+    for label in ("decision_date", "source_decision_date", "pipeline_run_date"):
+        actual = _canonical_iso_date(instructions.get(label), f"Part 8 {label}")
+        if actual != session:
+            raise RuntimeError(
+                f"bot lineage date mismatch: Part 8 {label}={actual}, expected={session}"
+            )
+
+    identities = {
+        "source_code_sha": (
+            _identity_text(os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA")),
+            _identity_text(instructions.get("source_code_sha")),
+        ),
+        "pipeline_run_id": (
+            _identity_text(os.environ.get("GITHUB_RUN_ID")),
+            _identity_text(instructions.get("pipeline_run_id")),
+        ),
+        "pipeline_run_attempt": (
+            _identity_text(os.environ.get("GITHUB_RUN_ATTEMPT")),
+            _identity_text(instructions.get("pipeline_run_attempt")),
+        ),
+    }
+    for label, (expected, actual) in identities.items():
+        if expected and actual != expected:
+            raise RuntimeError(
+                f"bot lineage {label} mismatch: actual={actual or 'missing'}, "
+                f"expected={expected}"
+            )
+
+    prices = load_completed_session_prices(cfg, session)
+    lineage = {
+        "protocol_version": PROTOCOL_VERSION,
+        "pipeline_run_date": session,
+        "pipeline_run_id": identities["pipeline_run_id"][0]
+        or identities["pipeline_run_id"][1]
+        or None,
+        "pipeline_run_attempt": identities["pipeline_run_attempt"][0]
+        or identities["pipeline_run_attempt"][1]
+        or None,
+        "source_code_sha": identities["source_code_sha"][0]
+        or identities["source_code_sha"][1]
+        or None,
+        "execution_lineage_verified": True,
+        "price_source": "artifacts_part0/close_prices.parquet",
+        "price_session": session,
+    }
+    return session, prices, lineage
+
+
 def _latest_completed_close(series: pd.Series) -> float:
     values = pd.to_numeric(series, errors="coerce").dropna()
     if values.empty:
@@ -607,10 +771,12 @@ def _latest_completed_close(series: pd.Series) -> float:
 
 
 def fetch_prices(tickers: List[str], use_prior_day: bool = True) -> Dict[str, float]:
+    """Legacy diagnostic fetch; production uses ``load_completed_session_prices``."""
     prices: Dict[str, float] = {}
     try:
-        end = date.today()
-        start = end - timedelta(days=10)
+        completed = latest_completed_xnys_session().date()
+        end = completed + timedelta(days=1)
+        start = completed - timedelta(days=10)
         raw = yf.download(tickers, start=str(start), end=str(end), progress=False, auto_adjust=True)
         close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
         for t in tickers:
@@ -703,8 +869,12 @@ def run_daily(cfg: BotConfig = CFG) -> int:
         root_dir=str(root),
         part2_summary_path=_abs_path(cfg.part2_summary_path),
         part2_tape_path=_abs_path(cfg.part2_tape_path),
+        part0_close_path=_abs_path(cfg.part0_close_path),
+        part0_observation_mask_path=_abs_path(cfg.part0_observation_mask_path),
+        part0_meta_path=_abs_path(cfg.part0_meta_path),
         part7_current_target_path=_abs_path(cfg.part7_current_target_path),
         part7_weights_tape_path=_abs_path(cfg.part7_weights_tape_path),
+        part8_instructions_path=_abs_path(cfg.part8_instructions_path),
         part9_report_path=_abs_path(cfg.part9_report_path),
         bot_dir=_abs_path(cfg.bot_dir),
         starting_capital=cfg.starting_capital,
@@ -728,10 +898,18 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     )
     os.makedirs(cfg.bot_dir, exist_ok=True)
 
-    today = date.today().isoformat()
+    run_date = date.today().isoformat()
     print("=" * 70)
-    print(f"PART 10 — DAILY TRADING BOT | {today}")
+    print(f"PART 10 — DAILY TRADING BOT | {run_date}")
     print("=" * 70)
+
+    # Validate every upstream identity and the exact observed price row before
+    # constructors migrate or otherwise touch persistent bot ledgers.
+    try:
+        decision_date, prices, execution_lineage = load_verified_bot_context(cfg)
+    except Exception as exc:
+        print(f"[Bot] ERROR: verified execution context unavailable ({exc})")
+        return 1
 
     state_path = os.path.join(cfg.bot_dir, "portfolio_state.json")
     trade_log = TradeLog(os.path.join(cfg.bot_dir, "trade_log.csv"))
@@ -752,7 +930,6 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     else:
         print("[Bot] No saved state found — will initialize after gate decision")
 
-    prices = fetch_prices([cfg.ticker_equity, cfg.ticker_bond], use_prior_day=cfg.use_prior_day_close)
     px_voo = prices.get(cfg.ticker_equity, np.nan)
     px_ief = prices.get(cfg.ticker_bond, np.nan)
     if not np.isfinite(px_voo) or not np.isfinite(px_ief):
@@ -765,6 +942,31 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     publish_mode = str(signal.get("publish_mode", "UNKNOWN"))
     final_pass = bool(signal.get("final_pass", False))
     edge = base_rate - p_tail
+
+    try:
+        signal_date = _canonical_iso_date(
+            signal.get("source_decision_date"), "bot signal source_decision_date"
+        )
+    except RuntimeError as exc:
+        print(f"[Bot] ERROR: {exc}")
+        return 1
+    if signal_date != decision_date:
+        print(
+            f"[Bot] ERROR: signal session {signal_date} does not match "
+            f"execution session {decision_date}"
+        )
+        return 1
+    if _identity_text(signal.get("model_protocol_version")) != PROTOCOL_VERSION:
+        print("[Bot] ERROR: signal protocol does not match the execution protocol")
+        return 1
+    signal_sha = _identity_text(signal.get("model_code_sha"))
+    execution_sha = _identity_text(execution_lineage.get("source_code_sha"))
+    if execution_sha and signal_sha != execution_sha:
+        print(
+            f"[Bot] ERROR: signal source SHA {signal_sha or 'missing'} does not "
+            f"match execution source SHA {execution_sha}"
+        )
+        return 1
 
     gate_passed, gate_reason = check_accuracy_gate(cfg)
     dry_run = not gate_passed
@@ -793,28 +995,36 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     current_nav = portfolio.nav(px_voo, px_ief)
     if (not portfolio.is_stopped and portfolio._initialized and current_nav <= cfg.stop_loss_floor):
         print(f"[Bot] Passive stop-loss check: NAV=${current_nav:.2f} ≤ floor=${cfg.stop_loss_floor:.2f}")
-        portfolio._trigger_stop_loss(px_voo, px_ief, today)
+        portfolio._trigger_stop_loss(px_voo, px_ief, decision_date)
 
     trade_record = portfolio.rebalance(
         target_w_voo=target_w_voo,
         px_voo=px_voo,
         px_ief=px_ief,
-        decision_date=today,
+        decision_date=decision_date,
         signal=p_tail,
         action_reason=action_reason,
         dry_run=(dry_run or portfolio.is_stopped),
         target_source=target_src,
     )
     if trade_record:
+        trade_record.update(execution_lineage)
         trade_log.append(trade_record)
 
     post_nav = portfolio.nav(px_voo, px_ief)
     signal_log.append({
-        "date": str(signal.get("source_decision_date") or today),
-        "run_date": today,
-        "source_decision_date": str(signal.get("source_decision_date") or today),
+        "date": decision_date,
+        "run_date": run_date,
+        "source_decision_date": decision_date,
         "model_protocol_version": signal.get("model_protocol_version"),
         "model_code_sha": signal.get("model_code_sha"),
+        "pipeline_run_date": execution_lineage["pipeline_run_date"],
+        "pipeline_run_id": execution_lineage["pipeline_run_id"],
+        "pipeline_run_attempt": execution_lineage["pipeline_run_attempt"],
+        "execution_source_code_sha": execution_lineage["source_code_sha"],
+        "execution_lineage_verified": True,
+        "price_source": execution_lineage["price_source"],
+        "price_session": execution_lineage["price_session"],
         "p_tail": round(p_tail, 6),
         "base_rate": round(base_rate, 6),
         "edge": round(edge, 6),
@@ -833,21 +1043,25 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     })
 
     state = portfolio.summary(px_voo, px_ief)
-    state["last_updated"] = today
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+    state.update(execution_lineage)
+    state["decision_date"] = decision_date
+    state["last_updated"] = run_date
+    state["px_voo"] = round(float(px_voo), 4)
+    state["px_ief"] = round(float(px_ief), 4)
+    write_json_strict(state_path, state)
 
     perf = compute_performance(trade_log.load(), cfg)
-    perf["as_of_date"] = today
+    perf.update(execution_lineage)
+    perf["decision_date"] = decision_date
+    perf["as_of_date"] = run_date
     perf_path = os.path.join(cfg.bot_dir, "performance_report.json")
-    with open(perf_path, "w", encoding="utf-8") as f:
-        json.dump(perf, f, indent=2)
+    write_json_strict(perf_path, perf)
 
     w_voo, w_ief = portfolio.weights(px_voo, px_ief)
     print("\n" + "=" * 70)
     print("PORTFOLIO SUMMARY")
     print("=" * 70)
-    print(f"  Date:              {today}")
+    print(f"  Decision session:  {decision_date}")
     print(f"  NAV:               ${post_nav:.2f} ({(post_nav - cfg.starting_capital) / cfg.starting_capital:+.2%})")
     print(f"  Stop-loss floor:   ${cfg.stop_loss_floor:.2f} (${post_nav - cfg.stop_loss_floor:.2f} buffer)")
     print(f"  Current weights:   VOO {w_voo:.1%} / IEF {w_ief:.1%}")
@@ -870,8 +1084,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
-
-
-
-
+    raise SystemExit(main())
