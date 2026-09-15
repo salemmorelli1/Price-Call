@@ -81,8 +81,8 @@
       "sha256": "a92cba314c3181b04fb020a69a4b809f7fdc345f495760e60c563767cf9348d2"
     },
     "artifacts_part8/execution_cost_tape.csv": {
-      "bytes": 588,
-      "sha256": "08a393f165ac322479d4a4f26b4412358a456a4dbfcfeebfe775b253bda67172"
+      "bytes": 2917,
+      "sha256": "81cffb546a796b111b5b09f14c2b361f55bedcd8e0bf56a3b7225e5b109fb672"
     },
     "artifacts_part8/execution_instructions.json": {
       "bytes": 1002,

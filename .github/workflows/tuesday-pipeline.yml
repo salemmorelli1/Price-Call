@@ -69,18 +69,16 @@ jobs:
       #   artifacts_part3/prediction_log.csv  — Part 3 live prediction history
       #   artifacts_part9/live_attribution_report.json — Part 9 live stats
       #
-      # Strategy: `git fetch` then `git checkout origin/HEAD -- <path>`.
-      # Falls back silently if the file doesn't exist on the remote yet
-      # (first-ever run). Uses `|| true` so a missing remote file is not fatal.
+      # Strategy: `git fetch` then `git checkout origin/<branch> -- <path>`.
+      # This is a mature publication branch: a missing accumulating ledger is
+      # fatal because silently starting over would erase the audit history.
       - name: Restore accumulating artifacts from remote
         run: |
           git fetch origin "${GITHUB_REF_NAME}" --quiet
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part3/prediction_log.csv \
-            2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
+            artifacts_part3/prediction_log.csv
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part9/live_attribution_report.json \
-            2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+            artifacts_part9/live_attribution_report.json
           # FIX (BUG-4, Audit 2026-05-11 — Quant-Guild Part 23):
           # execution_cost_tape.csv is a daily-accumulating artifact (Part 8
           # read-then-append). If the previous run's push was partial or the
@@ -89,12 +87,12 @@ jobs:
           # restoring it from origin (same as prediction_log) guarantees Part 8
           # always appends to the full committed history.
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part8/execution_cost_tape.csv \
-            2>/dev/null || echo "execution_cost_tape.csv not on remote yet — starting fresh."
+            artifacts_part8/execution_cost_tape.csv
           # Also restore signal_log.csv (Part 10 trading bot accumulates this daily).
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part10_bot/signal_log.csv \
-            2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
+            artifacts_part10_bot/signal_log.csv
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part10_bot/trade_log.csv
           # FIX (F-5, Quant-Guild Part 32 Audit):
           # v1_final_production_governance.csv is a daily-accumulating artifact:
           # Part 3 appends one row per run with dedup-on-Date logic at L1659.
@@ -103,8 +101,12 @@ jobs:
           # This restore is the same pattern as prediction_log.csv (already fixed
           # in Audit 2026-04-21). The governance CSV was inadvertently omitted.
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part3_v1/v1_final_production_governance.csv \
-            2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
+            artifacts_part3_v1/v1_final_production_governance.csv
+
+      - name: Snapshot accumulating ledger row counts
+        run: >-
+          python artifact_integrity.py --root .
+          --write-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       # ── Gate key consistency guard ─────────────────────────────────────
       # REQUIRED: the gate step writes exactly one output key (currently
@@ -182,6 +184,12 @@ jobs:
       - name: Run pipeline
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
         run: python run_tuesday_prediction.py --force --direct
+
+      - name: Verify accumulating ledger preservation
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: >-
+          python artifact_integrity.py --root .
+          --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Record successful production session
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
