@@ -1,3 +1,3 @@
 Date,sleeve,weight,is_alpha,alpha_state,model_protocol_version,model_code_sha,pipeline_run_id,pipeline_run_attempt,source_decision_date
-2026-09-11,VOO,0.6,0,SHADOW,causal-integrity-v3,a69123c9fb15815e249945dfe5882a0cad29a460,34723082396,1,2026-09-11
-2026-09-11,IEF,0.4,0,SHADOW,causal-integrity-v3,a69123c9fb15815e249945dfe5882a0cad29a460,34723082396,1,2026-09-11
+2026-09-14,VOO,0.6,0,SHADOW,causal-integrity-v3,6fc3f6a5952c85b7d577d3a6064ec53c75013c00,34908981925,1,2026-09-14
+2026-09-14,IEF,0.4,0,SHADOW,causal-integrity-v3,6fc3f6a5952c85b7d577d3a6064ec53c75013c00,34908981925,1,2026-09-14
