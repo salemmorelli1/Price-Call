@@ -1,10 +1,10 @@
 {
   "date_min_data": "2010-09-09",
-  "date_max_data": "2026-09-14",
-  "n_data": 4027,
-  "n_X_live": 3992,
-  "n_y_reg_revealed": 4026,
-  "n_reg_train": 3991,
+  "date_max_data": "2026-09-15",
+  "n_data": 4028,
+  "n_X_live": 3993,
+  "n_y_reg_revealed": 4027,
+  "n_reg_train": 3992,
   "n_rows_lost_join": 1,
   "missing_frac": {
     "VOO": 0.0,
@@ -45,5 +45,5 @@
   },
   "data_freshness_ok": true,
   "freshness_calendar": "XNYS",
-  "expected_completed_market_session": "2026-09-14"
+  "expected_completed_market_session": "2026-09-15"
 }
