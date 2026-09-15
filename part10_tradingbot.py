@@ -114,10 +114,19 @@ def _safe_float(x: Any, default: float = np.nan) -> float:
 
 
 def _canonical_iso_date(value: Any, label: str) -> str:
-    parsed = pd.to_datetime(value, errors="coerce")
+    parsed = pd.to_datetime(value, errors="coerce", format="mixed")
     if pd.isna(parsed):
         raise RuntimeError(f"{label} is missing or is not a valid date: {value!r}")
     return pd.Timestamp(parsed).date().isoformat()
+
+
+def _parse_mixed_date_series(values: pd.Series, label: str) -> pd.Series:
+    """Parse legitimate legacy/current date formats and reject corruption."""
+    parsed = pd.to_datetime(values, errors="coerce", format="mixed")
+    if parsed.isna().any():
+        bad_values = values.loc[parsed.isna()].astype(str).unique().tolist()
+        raise RuntimeError(f"{label} contains invalid dates: {bad_values[:5]}")
+    return parsed
 
 
 def _identity_text(value: Any) -> str:
@@ -376,9 +385,9 @@ class TradeLog:
             decision = _canonical_iso_date(
                 record.get("decision_date"), "trade decision_date"
             )
-            existing_dates = pd.to_datetime(
-                existing["decision_date"], errors="coerce"
-            ).dt.date.astype("string")
+            existing_dates = _parse_mixed_date_series(
+                existing["decision_date"], "trade log decision_date"
+            ).dt.strftime("%Y-%m-%d")
             if bool((existing_dates == decision).any()):
                 raise RuntimeError(
                     f"trade log already contains a rebalance for {decision}; "
@@ -392,7 +401,9 @@ class TradeLog:
             return pd.DataFrame(columns=self.COLUMNS)
         df = pd.read_csv(self.path)
         if "decision_date" in df.columns:
-            df["decision_date"] = pd.to_datetime(df["decision_date"], errors="coerce")
+            df["decision_date"] = _parse_mixed_date_series(
+                df["decision_date"], "trade log decision_date"
+            )
         return df
 
 
@@ -433,18 +444,32 @@ class SignalLog:
         new_record["source_decision_date"] = decision
         existing = pd.read_csv(self.path)
         if not existing.empty:
-            existing_dates = pd.to_datetime(
-                existing["source_decision_date"].fillna(existing["date"]),
-                errors="coerce",
-            ).dt.date.astype("string")
-            existing = existing.loc[existing_dates != decision].copy()
+            existing_date_values = existing["source_decision_date"].fillna(
+                existing["date"]
+            )
+            existing_dates = _parse_mixed_date_series(
+                existing_date_values, "signal log source_decision_date"
+            ).dt.strftime("%Y-%m-%d")
+            existing = existing.loc[existing_dates.ne(decision)].copy()
         output = pd.concat(
             [existing, pd.DataFrame([new_record], columns=self.COLUMNS)],
             ignore_index=True,
         )
-        output["_decision_order"] = pd.to_datetime(
-            output["source_decision_date"].fillna(output["date"]), errors="coerce"
+        order_values = output["source_decision_date"].fillna(output["date"])
+        output["_decision_order"] = _parse_mixed_date_series(
+            order_values, "signal log source_decision_date"
         )
+        output["date"] = _parse_mixed_date_series(
+            output["date"], "signal log date"
+        ).dt.strftime("%Y-%m-%d")
+        source_present = output["source_decision_date"].notna()
+        if source_present.any():
+            output.loc[source_present, "source_decision_date"] = (
+                _parse_mixed_date_series(
+                    output.loc[source_present, "source_decision_date"],
+                    "signal log source_decision_date",
+                ).dt.strftime("%Y-%m-%d")
+            )
         output = output.sort_values(
             ["_decision_order", "run_date"], kind="stable", na_position="first"
         ).drop(columns="_decision_order")
@@ -455,7 +480,10 @@ class SignalLog:
         output["execution_lineage_verified"] = output[
             "execution_lineage_verified"
         ].map(_canonical_csv_flag)
-        output[self.COLUMNS].to_csv(self.path, index=False)
+        target = Path(self.path)
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        output[self.COLUMNS].to_csv(temporary, index=False)
+        temporary.replace(target)
 
 
 def _read_json(path: str) -> Dict[str, Any]:
@@ -475,7 +503,9 @@ def _latest_row_from_csv(path: str) -> Optional[pd.Series]:
             date_col = c
             break
     if date_col is not None:
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df[date_col] = pd.to_datetime(
+            df[date_col], errors="coerce", format="mixed"
+        )
         df = df.dropna(subset=[date_col]).sort_values(date_col)
         if df.empty:
             return None

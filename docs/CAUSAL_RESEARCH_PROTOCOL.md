@@ -76,8 +76,9 @@ A delayed GitHub scheduler run is allowed to execute; later duplicate runs skip 
 after the date marker has been committed. Pull or merge failures are fatal and may
 not be hidden with `|| true`.
 
-Backfill may run only on weekdays at or after 16:20 Eastern. Manual dispatch does not
-bypass this settlement gate. Failure to regenerate Part 9 is fatal. Both workflows
+Scheduled backfill triggers run on weekdays after the settlement boundary. Manual
+dispatch uses the same latest-completed-XNYS-session gate and cannot admit an
+unsettled close. Failure to regenerate Part 9 is fatal. Both workflows
 synchronize before computation, abort if the branch changes during computation, build
 the SHA-256 manifest after all outputs, push without conflict-merging, and explicitly
 dispatch the verified Pages deployment. Pages has no independent push trigger, so a code
@@ -90,8 +91,9 @@ requires both `requirements-bnn.txt` and `PRICECALL_ENABLE_BNN=1`.
 Core dependencies have bounded major versions; CI runs on `main`, pull requests, and
 hardening branches and validates production modules as well as tests.
 
-## Deferred issue
+## Credential posture
 
-The public FRED credential finding is intentionally **not changed in this release**
-at the repository owner's request. It remains unresolved and should be rotated and
-removed from source in a separate security change.
+Current source contains no embedded FRED credential. `point_in_time_macro.py` reads
+`FRED_API_KEY` only from the runtime environment, and GitHub Actions supplies it from
+the repository secret. Any credential exposed by earlier history should remain
+revoked; source cleanup does not invalidate a previously disclosed key.

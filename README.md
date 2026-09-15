@@ -16,8 +16,8 @@ At a high level, the pipeline:
 4. produces the daily predictive tape, **using Part 6 regime labels as the canonical regime source** (internal GMM as fallback for unknown dates),
 5. builds alpha sleeve support,
 6. constructs target portfolio weights, **using Part 6 regime labels carried through from Part 2's tape**,
-7. estimates execution costs and trade instructions,
-8. applies governance and fusion logic, **with per-regime Platt scaling calibrated on Part 6 labels**,
+7. applies governance and fusion logic, **with per-regime Platt scaling calibrated on Part 6 labels**,
+8. estimates execution costs and emits paper-only instructions from the governed allocation,
 9. evaluates live realized performance,
 10. runs a gated paper-trading bot.
 
@@ -39,7 +39,7 @@ The system is designed to remain conservative:
 - `part7_portfolio_construction.py`
 - `part8_execution_model.py`
 - `part9_live_attribution.py`
-- `part10_tradingbot.py` or `part10_trading_bot.py`
+- `part10_tradingbot.py`
 
 ### Operational runners
 - `run_tuesday_prediction.py` — canonical daily runner
@@ -95,7 +95,7 @@ Nine findings addressed across four source files:
 | 1 | CRITICAL | `part6_regime_engine.py` | `_select_features()` drops features with > 50% NaN before fitting. Prevents `hy_spread_fred` (80.8% NaN) from truncating HMM training to 782 rows. |
 | 2 | CRITICAL | `part1_builder.py`, `part2_predictor.py` | Part 1 writes `regime_labels_p6.parquet` from Part 6's HMM output. Part 2 loads it and uses Part 6 labels as the canonical `current_regime`, falling back to its internal GMM only for "unknown" dates. Part 7 receives Part 6 labels through Part 2's tape unchanged. |
 | 3 | CRITICAL | `part2_predictor.py` | `conditional_active_ir` gate deferred until `CONDITIONAL_ACTIVE_IR_MIN_N = 10` defense events observed (was 3). With n=4 events the annualized IR of -4.82 had near-zero statistical power, permanently blocking `NORMAL` mode. |
-| 4 | IMPORTANT | `part6_regime_engine.py` | `fit()` now applies `ffill().bfill()` matching `predict()`. Eliminates scaler/HMM training on a different distribution than inference. |
+| 4 | IMPORTANT | `part6_regime_engine.py` | `fit()` and `predict()` use causal forward fill only. Backward fill is prohibited because it would import future releases. |
 | 5 | IMPORTANT | *(architectural, mitigated by Finding 1+2 fixes)* | Part 3 Platt scaling gains full-history regime coverage once Part 6 trains on all 4073 rows. |
 | 6 | IMPORTANT | `part2a21_alpha.py` | `overlay_hard_veto` decomposed into `overlay_dist_veto` and `overlay_failclosed_veto`. Live row now reported as `fail_closed_live_veto` not `overlay_hard_veto`. Sub-rates added to summary JSON. |
 | 7 | MEDIUM | `part6_regime_engine.py` | `regime_map` integer keys explicitly converted to strings before `json.dump`. Contract documented in comments. |
@@ -108,7 +108,7 @@ Create and activate a virtual environment, then install dependencies:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/Scripts/activate  # Git Bash on Windows
 pip install --upgrade pip
 pip install -r requirements-lock.txt
 ```
@@ -174,7 +174,8 @@ versus the rowwise causal prevalence forecast.
 - FRED history uses earliest ALFRED releases and their actual availability dates;
   revised-history fallbacks are labeled and force research governance to fail closed.
 - A separate `point_in_time_macro.py` adapter rebuilds the macro-dependent feature
-  file before regime fitting, without changing the deferred credential-bearing source.
+  file before regime fitting. Its FRED credential comes only from `FRED_API_KEY` in
+  the runtime environment or GitHub Actions secret.
 - The VIX3M fallback uses Cboe's daily index history, records its download hash and
   latest observation, and never invents a decision date without matching core prices.
 - Prediction target dates use the XNYS exchange calendar rather than weekday-only offsets.

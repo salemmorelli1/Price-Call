@@ -4,12 +4,15 @@ from pathlib import Path
 import pytest
 
 from artifact_integrity import (
+    ACCUMULATING_CSV_FILES,
     PROTOCOL_VERSION,
     REQUIRED_PUBLISHED_FILES,
     build_run_manifest,
     read_json_strict,
+    validate_ledger_preservation,
     validate_status_markers,
     verify_run_manifest,
+    write_ledger_baseline,
     write_json_strict,
 )
 
@@ -73,6 +76,34 @@ def test_workflows_use_locked_dependencies_and_retain_research_bundle():
     assert "cache: pip" not in ci
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in production
     assert "retention-days: 90" in production
+
+
+def test_workflows_fail_closed_and_guard_accumulating_ledgers():
+    for workflow in ("tuesday-pipeline.yml", "daily-backfill.yml"):
+        text = Path(".github/workflows", workflow).read_text(encoding="utf-8")
+        assert "starting fresh" not in text
+        assert "--write-ledger-baseline" in text
+        assert "--verify-ledger-baseline" in text
+        assert "artifacts_part10_bot/trade_log.csv" in text
+
+
+def test_ledger_baseline_detects_history_shrink(tmp_path):
+    for rel in ACCUMULATING_CSV_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("Date,value\n2026-09-10,1\n2026-09-11,2\n", encoding="utf-8")
+    baseline = tmp_path / "runner" / "ledger-baseline.json"
+    write_ledger_baseline(tmp_path, baseline)
+    assert validate_ledger_preservation(tmp_path, baseline) == []
+
+    shrunk = tmp_path / "artifacts_part8" / "execution_cost_tape.csv"
+    shrunk.write_text("Date,value\n2026-09-11,2\n", encoding="utf-8")
+    failures = validate_ledger_preservation(tmp_path, baseline)
+
+    assert failures == [
+        "accumulating ledger shrank: artifacts_part8/execution_cost_tape.csv "
+        "rows_before=2 rows_after=1"
+    ]
 
 
 def test_dashboard_snapshot_excludes_legacy_evidence(tmp_path):

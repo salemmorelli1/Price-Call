@@ -167,8 +167,8 @@ def test_prediction_upsert_appends_new_date_without_mixed_date_types(tmp_path, m
 
     path = tmp_path / "prediction_log.csv"
     pd.DataFrame([{
-        "decision_date": "2026-09-04",
-        "target_date": "2026-09-08",
+        "decision_date": "2026-09-04 00:00:00",
+        "target_date": "2026-09-08T00:00:00",
         "model_protocol_version": PROTOCOL_VERSION,
         "evidence_eligible": 0,
     }]).to_csv(path, index=False)

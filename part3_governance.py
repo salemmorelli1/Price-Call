@@ -801,6 +801,56 @@ def _count_realized_predlog_rows(predlog_df: pd.DataFrame) -> int:
     return int(current_evidence_mask(predlog_df, require_realized=True).sum())
 
 
+def _upsert_governance_history(path: Path, new_rows: pd.DataFrame) -> pd.DataFrame:
+    """Atomically upsert governance rows while preserving every prior cohort."""
+    try:
+        incoming = new_rows.copy()
+        if "Date" not in incoming.columns:
+            raise ValueError("new governance rows lack Date")
+        if "model_protocol_version" not in incoming.columns:
+            incoming["model_protocol_version"] = PROTOCOL_VERSION
+
+        if path.exists():
+            existing = pd.read_csv(path)
+            if "Date" not in existing.columns:
+                raise ValueError("existing governance history lacks Date")
+            if "model_protocol_version" not in existing.columns:
+                existing["model_protocol_version"] = LEGACY_PROTOCOL_VERSION
+            existing["model_protocol_version"] = existing[
+                "model_protocol_version"
+            ].fillna(LEGACY_PROTOCOL_VERSION).astype(str)
+            combined = pd.concat([existing, incoming], ignore_index=True)
+        else:
+            combined = incoming
+
+        dates = pd.to_datetime(combined["Date"], errors="coerce", format="mixed")
+        if dates.isna().any():
+            bad_values = combined.loc[dates.isna(), "Date"].astype(str).unique().tolist()
+            raise ValueError(f"invalid Date values: {bad_values[:5]}")
+        combined["Date"] = dates.dt.strftime("%Y-%m-%d")
+        combined["model_protocol_version"] = combined[
+            "model_protocol_version"
+        ].fillna(LEGACY_PROTOCOL_VERSION).astype(str)
+        combined = (
+            combined.assign(_date_order=dates)
+            .sort_values(["_date_order", "model_protocol_version"], kind="stable")
+            .drop_duplicates(
+                subset=["Date", "model_protocol_version"], keep="last"
+            )
+            .drop(columns="_date_order")
+            .reset_index(drop=True)
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"could not safely preserve the governance history at {path}: {exc}"
+        ) from exc
+
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    combined.to_csv(temporary, index=False)
+    temporary.replace(path)
+    return combined
+
+
 def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, target_date: pd.Timestamp,
                            voo_call: Optional[float], ief_call: Optional[float],
                            publish_mode: str, final_pass: int, alpha_status: Dict[str, Any],
@@ -989,7 +1039,7 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
 
     if "decision_date" in predlog_df.columns:
         parsed_decision_dates = pd.to_datetime(
-            predlog_df["decision_date"], errors="coerce"
+            predlog_df["decision_date"], errors="coerce", format="mixed"
         )
         invalid_decision_dates = parsed_decision_dates.isna()
         if invalid_decision_dates.any():
@@ -1025,7 +1075,9 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         predlog_df = pd.concat([predlog_df, pd.DataFrame([_row_for_update])], ignore_index=True)
 
     current_row_mask = (
-        pd.to_datetime(predlog_df["decision_date"], errors="coerce").eq(row["decision_date"])
+        pd.to_datetime(
+            predlog_df["decision_date"], errors="coerce", format="mixed"
+        ).eq(row["decision_date"])
         & predlog_df["model_protocol_version"].astype(str).eq(PROTOCOL_VERSION)
     )
     if int(current_row_mask.sum()) != 1:
@@ -1051,7 +1103,9 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
     for date_column in ("decision_date", "target_date"):
         if date_column not in predlog_df.columns:
             continue
-        parsed = pd.to_datetime(predlog_df[date_column], errors="coerce")
+        parsed = pd.to_datetime(
+            predlog_df[date_column], errors="coerce", format="mixed"
+        )
         invalid = parsed.isna()
         if invalid.any():
             bad_values = predlog_df.loc[invalid, date_column].astype(str).unique().tolist()
@@ -1060,7 +1114,9 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             )
         predlog_df[date_column] = parsed.dt.strftime("%Y-%m-%d")
 
-    decision_order = pd.to_datetime(predlog_df["decision_date"], errors="raise")
+    decision_order = pd.to_datetime(
+        predlog_df["decision_date"], errors="raise", format="mixed"
+    )
     predlog_df = (
         predlog_df.assign(_decision_order=decision_order)
         .sort_values("_decision_order", kind="stable")
@@ -1068,7 +1124,9 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         .reset_index(drop=True)
     )
     realized_rows = _count_realized_predlog_rows(predlog_df)
-    predlog_df.to_csv(predlog_path, index=False)
+    temporary = predlog_path.with_suffix(predlog_path.suffix + ".tmp")
+    predlog_df.to_csv(temporary, index=False)
+    temporary.replace(predlog_path)
     return predlog_df, realized_rows
 
 
@@ -2317,33 +2375,9 @@ def main(cfg: Part3Config = CFG) -> None:
 
     prod_tape.to_csv(tape_out, index=False)
 
-    # FIX (Finding #19): Governance CSV now accumulates a time-series history
-    # instead of overwriting on each run. We append the new row and deduplicate
-    # on Date, keeping the most-recent entry for each date so re-runs are
-    # idempotent. This provides a complete audit trail of governance state
-    # changes (e.g. when fail-closed was entered, when alpha advanced tiers).
-    if gov_out.exists():
-        try:
-            _existing_gov = pd.read_csv(gov_out)
-            _existing_gov["Date"] = pd.to_datetime(_existing_gov["Date"], errors="coerce")
-            if "model_protocol_version" not in _existing_gov.columns:
-                _existing_gov["model_protocol_version"] = LEGACY_PROTOCOL_VERSION
-            _existing_gov["model_protocol_version"] = _existing_gov[
-                "model_protocol_version"
-            ].fillna(LEGACY_PROTOCOL_VERSION).astype(str)
-            gov_df_combined = pd.concat([_existing_gov, gov_df], ignore_index=True)
-            gov_df_combined["Date"] = pd.to_datetime(gov_df_combined["Date"], errors="coerce")
-            gov_df_combined = (
-                gov_df_combined
-                .sort_values(["Date", "model_protocol_version"])
-                .drop_duplicates(subset=["Date", "model_protocol_version"], keep="last")
-                .reset_index(drop=True)
-            )
-            gov_df_combined.to_csv(gov_out, index=False)
-        except Exception:
-            gov_df.to_csv(gov_out, index=False)
-    else:
-        gov_df.to_csv(gov_out, index=False)
+    # Governance is an accumulating audit ledger.  A malformed or mixed-format
+    # historical row must fail the run rather than trigger a one-row overwrite.
+    _upsert_governance_history(gov_out, gov_df)
 
     alloc_df.to_csv(alloc_out, index=False)
 

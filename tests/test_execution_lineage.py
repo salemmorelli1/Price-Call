@@ -245,8 +245,8 @@ def test_execution_cost_upsert_sorts_and_replaces_same_session(tmp_path):
     path = tmp_path / "execution_cost_tape.csv"
     pd.DataFrame([
         {"Date": "2026-09-10", "built_at": "2026-09-10T22:00:00Z", "value": 1},
-        {"Date": "2026-08-20", "built_at": "2026-08-20T22:00:00Z", "value": 2},
-        {"Date": "2026-09-11", "built_at": "2026-09-11T21:00:00Z", "value": 3},
+        {"Date": "2026-08-20 00:00:00", "built_at": "2026-08-20T22:00:00Z", "value": 2},
+        {"Date": "2026-09-11T00:00:00", "built_at": "2026-09-11T21:00:00Z", "value": 3},
     ]).to_csv(path, index=False)
 
     output = _upsert_execution_cost_record(
@@ -258,6 +258,25 @@ def test_execution_cost_upsert_sorts_and_replaces_same_session(tmp_path):
         "2026-08-20", "2026-09-10", "2026-09-11"
     ]
     assert output.iloc[-1]["value"] == 4
+    assert output["Date"].tolist() == [
+        "2026-08-20", "2026-09-10", "2026-09-11"
+    ]
+
+
+def test_execution_cost_upsert_rejects_invalid_history_without_rewriting(tmp_path):
+    from part8_execution_model import _upsert_execution_cost_record
+
+    path = tmp_path / "execution_cost_tape.csv"
+    path.write_text("Date,value\nnot-a-date,1\n", encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(RuntimeError, match="invalid Date"):
+        _upsert_execution_cost_record(
+            path,
+            {"Date": SESSION, "built_at": "2026-09-11T23:00:00Z", "value": 2},
+        )
+
+    assert path.read_bytes() == original
 
 
 def test_part10_uses_exact_observed_part0_session(tmp_path, monkeypatch):
@@ -348,6 +367,82 @@ def test_signal_log_replaces_same_session_revision_and_sorts(tmp_path):
     assert output["source_decision_date"].tolist() == ["2026-09-10", SESSION]
     assert str(output.iloc[-1]["pipeline_run_id"]) == RUN_ID
     assert output.iloc[-1]["p_tail"] == pytest.approx(0.20)
+
+
+def test_signal_log_preserves_mixed_format_legacy_dates(tmp_path):
+    from part10_tradingbot import SignalLog
+
+    path = tmp_path / "signal_log.csv"
+    log = SignalLog(str(path))
+    legacy = pd.DataFrame(
+        [
+            {"date": "2026-06-17 00:00:00", "p_tail": 0.21},
+            {"date": "2026-09-10", "p_tail": 0.22},
+        ],
+        columns=log.COLUMNS,
+    )
+    legacy.to_csv(path, index=False)
+
+    log.append(
+        {
+            "date": SESSION,
+            "run_date": "2026-09-12",
+            "source_decision_date": SESSION,
+            "pipeline_run_id": RUN_ID,
+            "p_tail": 0.20,
+        }
+    )
+
+    output = pd.read_csv(path)
+    assert output["date"].tolist() == ["2026-06-17", "2026-09-10", SESSION]
+    assert output["p_tail"].tolist() == pytest.approx([0.21, 0.22, 0.20])
+
+
+def test_governance_history_rejects_corruption_without_overwrite(tmp_path):
+    from part3_governance import _upsert_governance_history
+
+    path = tmp_path / "governance.csv"
+    path.write_text(
+        "Date,model_protocol_version,state\nnot-a-date,legacy,old\n",
+        encoding="utf-8",
+    )
+    original = path.read_bytes()
+    incoming = pd.DataFrame([{
+        "Date": SESSION,
+        "model_protocol_version": PROTOCOL_VERSION,
+        "state": "new",
+    }])
+
+    with pytest.raises(RuntimeError, match="invalid Date"):
+        _upsert_governance_history(path, incoming)
+
+    assert path.read_bytes() == original
+
+
+def test_governance_history_preserves_mixed_date_cohorts(tmp_path):
+    from part3_governance import _upsert_governance_history
+
+    path = tmp_path / "governance.csv"
+    pd.DataFrame([
+        {"Date": "2026-06-17 00:00:00", "state": "legacy"},
+        {
+            "Date": "2026-09-10",
+            "model_protocol_version": PROTOCOL_VERSION,
+            "state": "prior",
+        },
+    ]).to_csv(path, index=False)
+
+    output = _upsert_governance_history(
+        path,
+        pd.DataFrame([{
+            "Date": SESSION,
+            "model_protocol_version": PROTOCOL_VERSION,
+            "state": "new",
+        }]),
+    )
+
+    assert output["Date"].tolist() == ["2026-06-17", "2026-09-10", SESSION]
+    assert output["state"].tolist() == ["legacy", "prior", "new"]
 
 
 def test_signal_log_schema_migration_canonicalizes_lineage_flag(tmp_path):

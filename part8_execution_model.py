@@ -1245,18 +1245,31 @@ def load_verified_execution_context(
 
 
 def _upsert_execution_cost_record(path: str | Path, record: Dict) -> pd.DataFrame:
-    """Upsert one session record and keep the execution tape chronological."""
+    """Upsert one session record without discarding historical audit rows."""
     target = Path(path)
     new_row = pd.DataFrame([record])
     if target.is_file():
         try:
             existing = pd.read_csv(target)
-            if "Date" in existing.columns:
-                existing_dates = pd.to_datetime(existing["Date"], errors="coerce")
-                decision = _canonical_iso_date(record.get("Date"), "execution Date")
-                existing = existing.loc[
-                    existing_dates.dt.date.astype("string") != decision
-                ].copy()
+            if "Date" not in existing.columns:
+                raise ValueError("existing execution-cost tape lacks Date")
+            # pandas 2+ applies a single inferred format to a Series.  The
+            # historical tape contains both YYYY-MM-DD and legacy
+            # YYYY-MM-DD HH:MM:SS values, so default parsing turns the legacy
+            # rows into NaT.  A nullable Boolean filter then drops every NaT
+            # row silently.  Parse mixed formats explicitly and reject genuine
+            # corruption before modifying the file.
+            existing_dates = pd.to_datetime(
+                existing["Date"], errors="coerce", format="mixed"
+            )
+            if existing_dates.isna().any():
+                bad_values = existing.loc[
+                    existing_dates.isna(), "Date"
+                ].astype(str).unique().tolist()
+                raise ValueError(f"invalid Date values: {bad_values[:5]}")
+            decision = _canonical_iso_date(record.get("Date"), "execution Date")
+            same_session = existing_dates.dt.strftime("%Y-%m-%d").eq(decision)
+            existing = existing.loc[~same_session].copy()
             output = pd.concat([existing, new_row], ignore_index=True)
         except Exception as exc:
             raise RuntimeError(
@@ -1264,15 +1277,26 @@ def _upsert_execution_cost_record(path: str | Path, record: Dict) -> pd.DataFram
             ) from exc
     else:
         output = new_row
-    if "Date" in output.columns:
-        output["_order_date"] = pd.to_datetime(output["Date"], errors="coerce")
-        order = ["_order_date"]
-        if "built_at" in output.columns:
-            order.append("built_at")
-        output = output.sort_values(
-            order, kind="stable", na_position="first"
-        ).drop(columns="_order_date").reset_index(drop=True)
-    output.to_csv(target, index=False)
+    if "Date" not in output.columns:
+        raise RuntimeError("execution-cost record lacks Date")
+    output["_order_date"] = pd.to_datetime(
+        output["Date"], errors="coerce", format="mixed"
+    )
+    if output["_order_date"].isna().any():
+        bad_values = output.loc[
+            output["_order_date"].isna(), "Date"
+        ].astype(str).unique().tolist()
+        raise RuntimeError(f"execution-cost tape contains invalid Date values: {bad_values[:5]}")
+    output["Date"] = output["_order_date"].dt.strftime("%Y-%m-%d")
+    order = ["_order_date"]
+    if "built_at" in output.columns:
+        order.append("built_at")
+    output = output.sort_values(order, kind="stable").drop(
+        columns="_order_date"
+    ).reset_index(drop=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    output.to_csv(temporary, index=False)
+    temporary.replace(target)
     return output
 
 

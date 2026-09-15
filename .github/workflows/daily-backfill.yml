@@ -57,11 +57,9 @@ jobs:
         run: |
           git fetch origin "${GITHUB_REF_NAME}" --quiet
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part3/prediction_log.csv \
-            2>/dev/null || echo "prediction_log.csv not on remote yet — starting fresh."
+            artifacts_part3/prediction_log.csv
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part9/live_attribution_report.json \
-            2>/dev/null || echo "live_attribution_report.json not on remote yet — starting fresh."
+            artifacts_part9/live_attribution_report.json
           # FIX (BUG-1, Audit 2026-05-11 — Quant-Guild Part 24):
           # tuesday-pipeline.yml received this fix (BUG-4, Part 23) but daily-backfill.yml
           # was not updated in sync. Both workflows share concurrency group pricecall-production
@@ -75,11 +73,11 @@ jobs:
           # signal_log.csv:          Part 10 trading bot accumulates trade signals daily.
           # Both must be restored from origin before any run touches them.
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part8/execution_cost_tape.csv \
-            2>/dev/null || echo "execution_cost_tape.csv not on remote yet — starting fresh."
+            artifacts_part8/execution_cost_tape.csv
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part10_bot/signal_log.csv \
-            2>/dev/null || echo "signal_log.csv not on remote yet — starting fresh."
+            artifacts_part10_bot/signal_log.csv
+          git checkout "origin/${GITHUB_REF_NAME}" -- \
+            artifacts_part10_bot/trade_log.csv
           # FIX (F-5, Quant-Guild Part 32 Audit):
           # v1_final_production_governance.csv is a daily-accumulating artifact:
           # Part 3 appends one row per run with dedup-on-Date logic at L1659.
@@ -88,8 +86,12 @@ jobs:
           # This restore is the same pattern as prediction_log.csv (already fixed
           # in Audit 2026-04-21). The governance CSV was inadvertently omitted.
           git checkout "origin/${GITHUB_REF_NAME}" -- \
-            artifacts_part3_v1/v1_final_production_governance.csv \
-            2>/dev/null || echo "v1_final_production_governance.csv not on remote yet — starting fresh."
+            artifacts_part3_v1/v1_final_production_governance.csv
+
+      - name: Snapshot accumulating ledger row counts
+        run: >-
+          python artifact_integrity.py --root .
+          --write-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Check for an unprocessed completed XNYS session
         id: gate
@@ -112,6 +114,12 @@ jobs:
       - name: Run backfill
         if: steps.gate.outputs.run == 'true'
         run: python backfill_realized.py
+
+      - name: Verify accumulating ledger preservation
+        if: steps.gate.outputs.run == 'true'
+        run: >-
+          python artifact_integrity.py --root .
+          --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Record successful backfill date
         if: steps.gate.outputs.run == 'true'
@@ -156,9 +164,8 @@ jobs:
           # Safety properties:
           #   - Idempotent: if the eligible current-protocol count is already exact,
           #     the file is identical to origin and git diff shows no change.
-          #   - Failure-safe: if artifacts_part3_v1/part3_summary.json does not exist
-          #     on the runner (e.g., Part 3 never ran this cycle), git add -f on a
-          #     missing path emits a warning and continues due to the || true guard.
+          #   - Failure-safe: the earlier publication validator requires
+          #     artifacts_part3_v1/part3_summary.json before this step can run.
           #   - Scope-limited: backfill_realized.py only patches live_realized_dates,
           #     prediction_log_realized_rows, and prediction_log_realized_pct. No
           #     governance, alpha state, or publish_mode fields are touched.  [FIX F1/S55]

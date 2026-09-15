@@ -48,6 +48,17 @@ REQUIRED_PUBLISHED_FILES = (
     "index.html",
 )
 
+# These CSVs are append/upsert audit ledgers.  A production or backfill run may
+# replace the row for its own completed session or add a newer row, but it must
+# never silently discard older rows.
+ACCUMULATING_CSV_FILES = (
+    "artifacts_part3/prediction_log.csv",
+    "artifacts_part3_v1/v1_final_production_governance.csv",
+    "artifacts_part8/execution_cost_tape.csv",
+    "artifacts_part10_bot/signal_log.csv",
+    "artifacts_part10_bot/trade_log.csv",
+)
+
 
 def json_safe(value: Any) -> Any:
     """Convert common scientific values into strict, portable JSON values."""
@@ -283,10 +294,82 @@ def _latest_csv_rows(path: Path, date_column: str) -> pd.DataFrame:
     frame = pd.read_csv(path)
     if frame.empty or date_column not in frame.columns:
         return pd.DataFrame()
-    dates = pd.to_datetime(frame[date_column], errors="coerce")
+    # pandas 2+ infers one strict format for an entire Series.  Historical
+    # ledgers legitimately contain both date-only and midnight-timestamp text,
+    # so the default parser can turn valid older rows into NaT.  Explicit mixed
+    # parsing keeps those rows visible to lineage validation.
+    dates = pd.to_datetime(frame[date_column], errors="coerce", format="mixed")
+    raw = frame[date_column]
+    invalid = dates.isna() & raw.notna() & raw.astype(str).str.strip().ne("")
+    if invalid.any():
+        bad_values = raw.loc[invalid].astype(str).unique().tolist()
+        raise ValueError(
+            f"{path} contains invalid {date_column} values: {bad_values[:5]}"
+        )
     if not dates.notna().any():
         return pd.DataFrame()
     return frame.loc[dates == dates.max()].copy()
+
+
+def ledger_row_counts(root: str | Path) -> dict[str, int]:
+    """Read every accumulating CSV and return its data-row count."""
+    root_path = Path(root)
+    counts: dict[str, int] = {}
+    for rel in ACCUMULATING_CSV_FILES:
+        path = root_path / rel
+        if not path.is_file():
+            raise FileNotFoundError(f"accumulating ledger is missing: {rel}")
+        try:
+            counts[rel] = int(len(pd.read_csv(path)))
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            raise ValueError(f"could not count accumulating ledger {rel}: {exc}") from exc
+    return counts
+
+
+def write_ledger_baseline(root: str | Path, baseline_path: str | Path) -> Path:
+    """Snapshot pre-run row counts outside the publication tree."""
+    target = Path(baseline_path)
+    write_json_strict(
+        target,
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "files": ledger_row_counts(root),
+        },
+    )
+    return target
+
+
+def validate_ledger_preservation(
+    root: str | Path,
+    baseline_path: str | Path,
+) -> list[str]:
+    """Reject a run that shrank any accumulating audit ledger."""
+    try:
+        baseline = read_json_strict(baseline_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [f"ledger baseline could not be read: {exc}"]
+    if baseline.get("protocol_version") != PROTOCOL_VERSION:
+        return ["ledger baseline protocol_version does not match the running code"]
+    expected = baseline.get("files")
+    if not isinstance(expected, dict):
+        return ["ledger baseline lacks a files mapping"]
+    try:
+        current = ledger_row_counts(root)
+    except (OSError, ValueError) as exc:
+        return [str(exc)]
+
+    failures: list[str] = []
+    for rel in ACCUMULATING_CSV_FILES:
+        before = expected.get(rel)
+        if not isinstance(before, int) or before < 0:
+            failures.append(f"ledger baseline lacks a valid row count for {rel}")
+            continue
+        after = current[rel]
+        if after < before:
+            failures.append(
+                f"accumulating ledger shrank: {rel} rows_before={before} rows_after={after}"
+            )
+    return failures
 
 
 def validate_execution_lineage(root: str | Path) -> list[str]:
@@ -680,8 +763,24 @@ def main() -> int:
     parser.add_argument("--write-backfill-status", action="store_true")
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--verify-run-inputs", action="store_true")
+    ledger_group = parser.add_mutually_exclusive_group()
+    ledger_group.add_argument("--write-ledger-baseline")
+    ledger_group.add_argument("--verify-ledger-baseline")
     args = parser.parse_args()
     root = Path(args.root).resolve()
+    if args.write_ledger_baseline:
+        write_ledger_baseline(root, args.write_ledger_baseline)
+        return 0
+    if args.verify_ledger_baseline:
+        ledger_failures = validate_ledger_preservation(
+            root, args.verify_ledger_baseline
+        )
+        if ledger_failures:
+            raise SystemExit(
+                "Accumulating-ledger preservation failed:\n"
+                + "\n".join(ledger_failures)
+            )
+        return 0
     if args.write_pipeline_status:
         write_pipeline_status(root)
     if args.write_backfill_status:
