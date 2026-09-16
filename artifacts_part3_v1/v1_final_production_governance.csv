@@ -33,3 +33,4 @@ Date,publish_mode,final_pass,quality_ok,drift_ok,trial_gate_open,fused_gate_open
 2026-09-11,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.051919,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v3,causal-integrity-v3,0.0,0.0,0.0
 2026-09-14,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.0,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v3,causal-integrity-v3,0.0,0.0,0.0
 2026-09-15,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.0,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v3,causal-integrity-v3,0.0,0.0,0.0
+2026-09-16,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.0,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v3,causal-integrity-v3,0.0,0.0,0.0
