@@ -1,8 +1,8 @@
 {
   "files": {
     "artifacts_dashboard/dashboard_snapshot.json": {
-      "bytes": 3646,
-      "sha256": "85b1fce5cfad63378e6b63734d9d2cc90e46566dbb959eba094052650c0fbe3f"
+      "bytes": 3862,
+      "sha256": "27d257415e8445959418f1495a295a45c6d607400e8486603c474c855bbad502"
     },
     "artifacts_part0/part0_meta.json": {
       "bytes": 22422,
@@ -49,8 +49,8 @@
       "sha256": "84fd681a4ada77820935566bc00a019be6d15ac1f2ab27f8a7f388b193ad24e1"
     },
     "artifacts_part3/prediction_log.csv": {
-      "bytes": 38622,
-      "sha256": "77a125c10a0f574b0e526f69c99d21dc25c1e4d353bd2a4cd5ddd2de461b285f"
+      "bytes": 39085,
+      "sha256": "2d7390ccb45f4384f10519fc700ba62da8c4cfd7f700fe5bfc8b1488b3ba6b9d"
     },
     "artifacts_part3_v1/part3_summary.json": {
       "bytes": 3730,
@@ -94,23 +94,23 @@
     },
     "artifacts_part9/backfill_run_date.txt": {
       "bytes": 11,
-      "sha256": "b8cc1f088a750f30828cb08b8514ae80c3619f9cbaf7d3995e2fbb5b8ef4c958"
+      "sha256": "4f8c9d0e139177bb9285999cec9b8759093ec504788a7539148b48254616eee6"
     },
     "artifacts_part9/backfill_status.json": {
       "bytes": 295,
-      "sha256": "feb369520083be99e596a95bee86ee4ac670f413e6e7784041de42899dd8bf75"
+      "sha256": "45c344565ea61f660973c0e6a71bb1a57421cd3ba8a1b0b1b28c1930a24348fb"
     },
     "artifacts_part9/live_attribution_report.json": {
-      "bytes": 2741,
-      "sha256": "d1498178f39fe3bcd2a01ef2e9dd450dbe4aeb66945e2297a7984e615e7009bd"
+      "bytes": 2058,
+      "sha256": "3d80d16a7ad2a53a41ea54742df69a75fa30af544c43dfd98299ca3c60389046"
     },
     "index.html": {
-      "bytes": 92047,
-      "sha256": "f1cf29efb1c7fd72f9fb2fe8d1a5bcc8087e3e19ebfaa1f2be8140b9e0430897"
+      "bytes": 92059,
+      "sha256": "e31d81f10e3031d0b219c040b05772669459867f0daa0c5f55f6d8f7c29bd3e6"
     }
   },
-  "generated_at_utc": "2026-09-16T23:56:43.699568+00:00",
-  "github_run_id": "35161390930",
+  "generated_at_utc": "2026-09-17T22:59:00.301756+00:00",
+  "github_run_id": "35284582986",
   "protocol_version": "causal-integrity-v3",
-  "source_code_sha": "62e2924ef43094cdd8fffe4b835d96d2a9ed7a31"
+  "source_code_sha": "9df09c844a353027ba3399e4aa0bd677ca33658f"
 }
