@@ -87,6 +87,13 @@ def test_workflows_fail_closed_and_guard_accumulating_ledgers():
         assert "artifacts_part10_bot/trade_log.csv" in text
 
 
+def test_repository_enforces_cross_platform_manifest_line_endings():
+    attributes = Path(".gitattributes").read_text(encoding="utf-8")
+    assert "* text=auto eol=lf" in attributes.splitlines()
+    for pattern in ("*.parquet binary", "*.pkl binary", "*.pdf binary"):
+        assert pattern in attributes.splitlines()
+
+
 def test_ledger_baseline_detects_history_shrink(tmp_path):
     for rel in ACCUMULATING_CSV_FILES:
         path = tmp_path / rel
@@ -291,6 +298,21 @@ def test_manifest_detects_a_post_generation_change(tmp_path):
     assert verify_run_manifest(tmp_path) == []
     (tmp_path / "index.html").write_text("changed", encoding="utf-8")
     assert any("index.html" in failure for failure in verify_run_manifest(tmp_path))
+
+
+def test_manifest_accepts_equivalent_crlf_checkout(tmp_path):
+    paths = []
+    for rel in REQUIRED_PUBLISHED_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"first\nsecond\n")
+        paths.append(path)
+    write_json_strict(tmp_path / "artifacts_manifest.json", build_run_manifest(tmp_path))
+
+    for path in paths:
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert verify_run_manifest(tmp_path) == []
 
 
 def test_manifest_reports_a_post_generation_deletion(tmp_path):

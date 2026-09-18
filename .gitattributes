@@ -1,0 +1,7 @@
+# Published artifact hashes must be identical on Linux and Windows checkouts.
+* text=auto eol=lf
+
+# Keep opaque research/document formats byte-for-byte binary.
+*.parquet binary
+*.pkl binary
+*.pdf binary
