@@ -561,7 +561,9 @@ def sync_html(root: Path) -> None:
     if "</body>" not in html:
         raise ValueError("index.html is missing </body>; refusing to publish a partial page")
     html = html.replace("</body>", _DASHBOARD_BINDING + "\n</body>", 1)
-    path.write_text(html, encoding="utf-8")
+    # Write encoded bytes so Windows cannot translate the repository's
+    # canonical LF line endings to CRLF during deterministic regeneration.
+    path.write_bytes(html.encode("utf-8"))
 
 
 def main() -> int:

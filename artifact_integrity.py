@@ -83,13 +83,17 @@ def json_safe(value: Any) -> Any:
 
 
 def write_json_strict(path: str | Path, payload: Any) -> None:
-    """Atomically write RFC-compliant JSON (NaN and Infinity are rejected)."""
+    """Atomically write RFC-compliant JSON with platform-independent LF bytes."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_suffix(target.suffix + ".tmp")
-    with temp.open("w", encoding="utf-8") as handle:
-        json.dump(json_safe(payload), handle, indent=2, sort_keys=True, allow_nan=False)
-        handle.write("\n")
+    content = json.dumps(
+        json_safe(payload),
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    ) + "\n"
+    temp.write_bytes(content.encode("utf-8"))
     temp.replace(target)
 
 
