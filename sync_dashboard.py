@@ -42,6 +42,25 @@ def _number(value: Any) -> float | None:
     return value if pd.notna(value) else None
 
 
+def _parse_date_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Parse one ledger date column without dropping malformed provenance."""
+    if column not in frame.columns:
+        return pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
+    raw = frame[column]
+    parsed = pd.to_datetime(
+        raw,
+        errors="coerce",
+        format="mixed",
+        utc=True,
+    ).dt.tz_localize(None)
+    present = raw.notna() & raw.astype("string").str.strip().ne("")
+    invalid = present & parsed.isna()
+    if invalid.any():
+        examples = raw.loc[invalid].astype(str).head(3).tolist()
+        raise ValueError(f"invalid {column} value(s) in dashboard ledger: {examples}")
+    return parsed
+
+
 def _latest_record(path: Path, date_columns: tuple[str, ...]) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -53,7 +72,7 @@ def _latest_record(path: Path, date_columns: tuple[str, ...]) -> dict[str, Any]:
         if column not in frame.columns:
             continue
         key = f"_dashboard_order_{index}"
-        frame[key] = pd.to_datetime(frame[column], errors="coerce")
+        frame[key] = _parse_date_column(frame, column)
         ordering_columns.append(key)
     if ordering_columns:
         valid = frame[ordering_columns].notna().any(axis=1)
@@ -74,7 +93,7 @@ def _csv_size(path: Path) -> int:
 def _date_text(value: Any) -> str | None:
     if value is None or value == "":
         return None
-    parsed = pd.to_datetime(value, errors="coerce")
+    parsed = pd.to_datetime(value, errors="coerce", format="mixed")
     return None if pd.isna(parsed) else parsed.date().isoformat()
 
 
@@ -372,12 +391,8 @@ def _signal_records(path: Path) -> list[dict[str, Any]]:
     frame = pd.read_csv(path)
     if frame.empty:
         return []
-    run_date = (
-        pd.to_datetime(frame["run_date"], errors="coerce")
-        if "run_date" in frame.columns
-        else pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
-    )
-    source_date = pd.to_datetime(frame.get("date"), errors="coerce")
+    run_date = _parse_date_column(frame, "run_date")
+    source_date = _parse_date_column(frame, "date")
     recorded = run_date.fillna(source_date)
     frame["date"] = recorded.dt.date.astype("string")
     frame["target_voo"] = pd.to_numeric(
@@ -385,8 +400,13 @@ def _signal_records(path: Path) -> list[dict[str, Any]]:
     )
     if "evidence" not in frame.columns:
         frame["evidence"] = float("nan")
-    frame = frame.loc[recorded.notna()].assign(_recorded=recorded[recorded.notna()])
-    frame = frame.sort_values("_recorded").drop(columns="_recorded")
+    frame = frame.loc[recorded.notna()].assign(
+        _recorded=recorded[recorded.notna()],
+        _source_date=source_date[recorded.notna()],
+    )
+    frame = frame.sort_values(
+        ["_recorded", "_source_date"], kind="stable", na_position="first"
+    ).drop(columns=["_recorded", "_source_date"])
     keep = ["date", "p_tail", "base_rate", "target_voo", "raw_val_auc", "evidence"]
     return json_safe(
         frame[[column for column in keep if column in frame.columns]].to_dict(orient="records")
@@ -456,12 +476,23 @@ _DASHBOARD_BINDING = r'''
       tableValue('Paper target', s.latest_signal.target_voo == null ? '—' : `VOO ${(100*s.latest_signal.target_voo).toFixed(0)}% / IEF ${(100*(1-s.latest_signal.target_voo)).toFixed(0)}%`);
       tableValue('Raw validation AUC', fmt(s.latest_signal.raw_validation_auc, 4));
       tableValue('Execution result', s.final_pass ? 'Paper-only gate cleared' : `No action · ${s.latest_signal.action_reason || 'gate closed'}`);
+      const heroValue = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
+      heroValue('hero-tail-probability', pct(s.latest_signal.p_tail));
+      heroValue('hero-base-rate', pct(s.latest_signal.base_rate));
+      heroValue('hero-gate-state', s.final_pass ? 'GATE OPEN' : 'FAIL-CLOSED');
+      heroValue('hero-voo-weight', s.weights.voo == null ? '—' : `${(100 * Number(s.weights.voo)).toFixed(0)}%`);
+      heroValue('hero-ief-weight', s.weights.ief == null ? '—' : `${(100 * Number(s.weights.ief)).toFixed(0)}%`);
+      heroValue('hero-evidence', `${s.evidence.eligible_realized} / ${s.evidence.minimum}`);
+      const heroGate = document.querySelector('.gate-node');
+      if (heroGate) heroGate.classList.toggle('closed', !s.final_pass);
       metric('Live evidence', `${s.evidence.eligible_realized} / ${s.evidence.minimum}`, `${s.evidence.progress_pct}% of current gate`);
       metric('Live maturity', `${s.evidence.eligible_realized} / ${s.evidence.minimum}`, s.live_health);
       metric('Operator status', s.operator_validation.status, `AUC p=${fmt(s.metrics.backtest_auc_p_value)}`);
       metric('Signals logged', String(s.latest_signal.signal_count), `through ${s.lineage.latest_signal_run_date || '—'}`);
       const maturity = document.querySelector('.maturity-ring strong');
       if (maturity) maturity.textContent = `${s.evidence.eligible_realized} / ${s.evidence.minimum}`;
+      const maturityRing = document.querySelector('.maturity-ring');
+      if (maturityRing) maturityRing.style.setProperty('--maturity-angle', `${Math.min(100, Math.max(0, Number(s.evidence.progress_pct) || 0)) * 3.6}deg`);
       const promotion = [...document.querySelectorAll('.card')].find(x => x.querySelector('.kicker')?.textContent.trim() === 'Promotion gate');
       if (promotion) {
         const display = promotion.querySelector('.display');
@@ -475,7 +506,19 @@ _DASHBOARD_BINDING = r'''
       if (botPlot && window.Plotly) Plotly.relayout(botPlot, {'annotations[0].text': `${s.evidence.eligible_realized} / ${s.evidence.minimum} current cohort`});
       document.documentElement.dataset.snapshotProtocol = s.protocol_version;
     })
-    .catch(error => { document.documentElement.dataset.snapshotError = error.message; });
+    .catch(error => {
+      document.documentElement.dataset.snapshotError = error.message;
+      const ticket = document.querySelector('.forecast-ticket');
+      if (ticket) ticket.innerHTML = '<b>Verified snapshot unavailable</b><br>FAIL-CLOSED · published state could not be loaded.';
+      const status = document.getElementById('snapshot-status');
+      if (status) status.textContent = 'FAIL-CLOSED · verified dashboard snapshot unavailable';
+      const mode = document.getElementById('snapshot-mode');
+      if (mode) { mode.textContent = 'Snapshot unavailable'; mode.classList.add('fail'); }
+      const gate = document.getElementById('hero-gate-state');
+      if (gate) gate.textContent = 'FAIL-CLOSED';
+      const gateNode = document.querySelector('.gate-node');
+      if (gateNode) gateNode.classList.add('closed');
+    });
 })();
 </script>
 '''.strip()
@@ -487,7 +530,8 @@ def sync_html(root: Path) -> None:
     pred_rows = _records(root / "artifacts_part3" / "prediction_log.csv", [
         "target_date", "px_voo_call_1d", "px_voo_realized", "px_ief_call_1d",
         "px_ief_realized", "p_final_cal", "publish_mode", "latest_alpha_state",
-        "hit_direction", "model_protocol_version", "evidence_eligible",
+        "base_rate", "tail_threshold", "hit_direction", "model_protocol_version",
+        "evidence_eligible",
     ])
     bot_rows = _signal_records(root / "artifacts_part10_bot" / "signal_log.csv")
     if not pred_rows:
@@ -500,18 +544,14 @@ def sync_html(root: Path) -> None:
     )
     if row_replacements != 1:
         raise ValueError("index.html is missing the expected 'const rows=' data binding")
-    # Signal history is optional during a first paper-only run.  If no signal
-    # ledger exists, retain the already-published history rather than replacing
-    # it with an empty array that the existing chart code cannot annotate.
-    if bot_rows:
-        html, bot_replacements = re.subn(
-            r"const botRows=.*?;\n",
-            f"const botRows={json.dumps(bot_rows, separators=(',', ':'))};\n",
-            html,
-            count=1,
-        )
-        if bot_replacements != 1:
-            raise ValueError("index.html is missing the expected 'const botRows=' data binding")
+    html, bot_replacements = re.subn(
+        r"const botRows=.*?;\n",
+        f"const botRows={json.dumps(bot_rows, separators=(',', ':'))};\n",
+        html,
+        count=1,
+    )
+    if bot_replacements != 1:
+        raise ValueError("index.html is missing the expected 'const botRows=' data binding")
     html = re.sub(
         r"\s*<script id=\"pricecall-verified-snapshot\">.*?</script>\s*",
         "\n",

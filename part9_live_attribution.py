@@ -329,6 +329,27 @@ def t_stat_sign_accuracy(
     }
 
 
+def _require_causal_base_rates(frame: pd.DataFrame, *, context: str) -> np.ndarray:
+    """Return finite rowwise causal base rates or fail closed.
+
+    Current-protocol observations must retain the prevalence estimate that was
+    available at each decision date. Substituting a fixed value for a missing
+    row changes both the Brier null and the forecast decision threshold.
+    """
+    if "base_rate" not in frame.columns:
+        raise RuntimeError(f"{context} is missing the row-level causal base_rate field.")
+
+    values = pd.to_numeric(frame["base_rate"], errors="coerce").to_numpy(dtype=float)
+    invalid = ~np.isfinite(values) | (values < 0.0) | (values > 1.0)
+    if invalid.any():
+        bad_rows = frame.index[invalid].tolist()[:5]
+        raise RuntimeError(
+            f"{context} contains invalid row-level causal base_rate values "
+            f"at rows {bad_rows}."
+        )
+    return values
+
+
 def diebold_mariano_test(
     errors_model: np.ndarray,
     errors_benchmark: np.ndarray,
@@ -714,7 +735,7 @@ def generate_live_report(cfg: Part9Config) -> Dict:
 
     live_stats = {}
     req_cols = {"p_final_cal", "px_voo_t", "px_ief_t", voo_real_col, ief_real_col}
-    if req_cols.issubset(set(realized.columns)):
+    if not realized.empty and req_cols.issubset(set(realized.columns)):
         # FIX (Finding B, Audit 2026-04): Part 1 uses a rolling 63-day 20th-percentile
         # quantile as the tail label threshold, not a fixed value.  Each prediction_log
         # row carries the dynamic threshold that was active when Part 1 built the label
@@ -729,12 +750,11 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         if thr_series.isna().any():
             raise RuntimeError("Current-protocol evidence contains a non-numeric tail_threshold value.")
 
-        br_series = pd.to_numeric(
-            realized.get("base_rate", pd.Series([0.20] * len(realized), index=realized.index)),
-            errors="coerce",
-        ).fillna(0.20)
-        br_values = br_series.to_numpy(dtype=float)
-        base_rate = float(br_values[-1]) if len(br_values) else 0.20
+        br_values = _require_causal_base_rates(
+            realized,
+            context="Current-protocol evidence",
+        )
+        base_rate = float(br_values[-1])
         pred_p_raw = pd.to_numeric(realized["p_final_cal"], errors="coerce").values
         # FIX (Finding 14, Audit 2026-04-21): use the Platt-recalibrated probability
         # p_regime_recal (written by Part 3) when it is available and well-populated.
@@ -831,7 +851,10 @@ def generate_live_report(cfg: Part9Config) -> Dict:
             tape_real = tape[tape.get("y_avail", 1) == 1].dropna(subset=["p_final_cal", "y_rel_tail_voo_vs_ief"])
             if len(tape_real) >= 2:
                 if "base_rate" in tape_real.columns:
-                    base_rate_bt = pd.to_numeric(tape_real["base_rate"], errors="coerce").fillna(0.20).values
+                    base_rate_bt = _require_causal_base_rates(
+                        tape_real,
+                        context="Backtest evidence",
+                    )
                     report["backtest_baseline_contract"] = "per-row causal training-window prevalence"
                 else:
                     base_rate_bt = float(tape_real["y_rel_tail_voo_vs_ief"].mean())

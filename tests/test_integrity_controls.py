@@ -87,6 +87,13 @@ def test_workflows_fail_closed_and_guard_accumulating_ledgers():
         assert "artifacts_part10_bot/trade_log.csv" in text
 
 
+def test_repository_enforces_cross_platform_manifest_line_endings():
+    attributes = Path(".gitattributes").read_text(encoding="utf-8")
+    assert "* text=auto eol=lf" in attributes.splitlines()
+    for pattern in ("*.parquet binary", "*.pkl binary", "*.pdf binary"):
+        assert pattern in attributes.splitlines()
+
+
 def test_ledger_baseline_detects_history_shrink(tmp_path):
     for rel in ACCUMULATING_CSV_FILES:
         path = tmp_path / rel
@@ -214,6 +221,7 @@ def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
     pd.DataFrame([{
         "target_date": "2026-09-03",
         "px_voo_call_1d": 100.0,
+        "base_rate": 0.197,
         "model_protocol_version": PROTOCOL_VERSION,
         "evidence_eligible": 1,
     }]).to_csv(tmp_path / "artifacts_part3" / "prediction_log.csv", index=False)
@@ -225,10 +233,44 @@ def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
     sync_html(tmp_path)
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert '"target_date":"2026-09-03"' in html
-    assert 'const botRows=[{"date":"legacy"}]' in html
+    assert '"base_rate":0.197' in html
+    assert "const botRows=[];" in html
     assert 'id="pricecall-verified-snapshot"' in html
     assert "AUC p-value" in html
     assert "operator_validation.status" in html
+    assert "Verified snapshot unavailable" in html
+
+
+def test_dashboard_date_parsing_accepts_mixed_formats_and_rejects_bad_values(tmp_path):
+    import pandas as pd
+
+    from sync_dashboard import _latest_record
+
+    path = tmp_path / "signal_log.csv"
+    pd.DataFrame([
+        {"run_date": "2026-09-10 00:00:00", "p_tail": 0.30},
+        {"run_date": "2026-09-11T00:00:00Z", "p_tail": 0.20},
+    ]).to_csv(path, index=False)
+    assert _latest_record(path, ("run_date",))["p_tail"] == pytest.approx(0.20)
+
+    pd.DataFrame([{"run_date": "not-a-date", "p_tail": 0.10}]).to_csv(
+        path,
+        index=False,
+    )
+    with pytest.raises(ValueError, match="invalid run_date"):
+        _latest_record(path, ("run_date",))
+
+
+def test_dashboard_graphic_matches_tail_risk_decision_objective():
+    html = Path("index.html").read_text(encoding="utf-8")
+
+    assert "VOO versus IEF tail-risk decision pipeline" in html
+    assert 'id="hero-tail-probability"' in html
+    assert 'id="hero-gate-state"' in html
+    assert "rows.map(r=>r.base_rate)" in html
+    assert "rows.map(()=>0.207)" not in html
+    assert "orbital" not in html
+    assert "No verified paper-signal history is available." in html
 
 
 def test_dashboard_html_sync_refuses_empty_prediction_ledger(tmp_path):
@@ -291,6 +333,35 @@ def test_manifest_detects_a_post_generation_change(tmp_path):
     assert verify_run_manifest(tmp_path) == []
     (tmp_path / "index.html").write_text("changed", encoding="utf-8")
     assert any("index.html" in failure for failure in verify_run_manifest(tmp_path))
+
+
+def test_manifest_accepts_equivalent_crlf_checkout(tmp_path):
+    paths = []
+    for rel in REQUIRED_PUBLISHED_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"first\nsecond\n")
+        paths.append(path)
+    write_json_strict(tmp_path / "artifacts_manifest.json", build_run_manifest(tmp_path))
+
+    for path in paths:
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert verify_run_manifest(tmp_path) == []
+
+
+def test_manifest_build_preserves_metadata_when_published_files_are_unchanged(tmp_path):
+    for rel in REQUIRED_PUBLISHED_FILES:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("stable\n", encoding="utf-8")
+    first = build_run_manifest(tmp_path)
+    first["generated_at_utc"] = "2026-09-22T00:00:00+00:00"
+    first["source_code_sha"] = "tested-code-sha"
+    first["github_run_id"] = "12345"
+    write_json_strict(tmp_path / "artifacts_manifest.json", first)
+
+    assert build_run_manifest(tmp_path) == first
 
 
 def test_manifest_reports_a_post_generation_deletion(tmp_path):
