@@ -241,6 +241,33 @@ def test_dashboard_html_sync_updates_ledger_and_binds_snapshot(tmp_path):
     assert "Verified snapshot unavailable" in html
 
 
+def test_dashboard_html_sync_writes_canonical_lf_bytes(tmp_path):
+    import pandas as pd
+
+    from sync_dashboard import sync_html
+
+    (tmp_path / "artifacts_part3").mkdir()
+    pd.DataFrame([{
+        "target_date": "2026-09-03",
+        "px_voo_call_1d": 100.0,
+        "base_rate": 0.197,
+        "model_protocol_version": PROTOCOL_VERSION,
+        "evidence_eligible": 1,
+    }]).to_csv(tmp_path / "artifacts_part3" / "prediction_log.csv", index=False)
+    index = tmp_path / "index.html"
+    index.write_bytes(
+        b"<html>\r\n<body><script>\r\n"
+        b"const rows=[];\r\nconst botRows=[];\r\n"
+        b"</script></body></html>\r\n"
+    )
+
+    sync_html(tmp_path)
+
+    content = index.read_bytes()
+    assert b"\r\n" not in content
+    assert content.endswith(b"\n")
+
+
 def test_dashboard_date_parsing_accepts_mixed_formats_and_rejects_bad_values(tmp_path):
     import pandas as pd
 
@@ -348,6 +375,17 @@ def test_manifest_accepts_equivalent_crlf_checkout(tmp_path):
         path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
 
     assert verify_run_manifest(tmp_path) == []
+
+
+def test_strict_json_writer_emits_canonical_lf_bytes(tmp_path):
+    path = tmp_path / "nested" / "artifact.json"
+
+    write_json_strict(path, {"value": 1, "nested": {"ok": True}})
+
+    content = path.read_bytes()
+    assert b"\r\n" not in content
+    assert content.endswith(b"\n")
+    assert read_json_strict(path) == {"nested": {"ok": True}, "value": 1}
 
 
 def test_manifest_build_preserves_metadata_when_published_files_are_unchanged(tmp_path):
