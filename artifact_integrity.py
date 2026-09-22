@@ -59,6 +59,8 @@ ACCUMULATING_CSV_FILES = (
     "artifacts_part10_bot/trade_log.csv",
 )
 
+MANIFEST_TEXT_SUFFIXES = frozenset({".csv", ".html", ".json", ".txt"})
+
 
 def json_safe(value: Any) -> Any:
     """Convert common scientific values into strict, portable JSON values."""
@@ -104,6 +106,18 @@ def sha256_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def manifest_file_record(path: str | Path) -> dict[str, Any]:
+    """Fingerprint canonical Git text, independent of checkout line endings."""
+    target = Path(path)
+    if target.suffix.lower() not in MANIFEST_TEXT_SUFFIXES:
+        return {"sha256": sha256_file(target), "bytes": target.stat().st_size}
+    content = target.read_bytes().replace(b"\r\n", b"\n")
+    return {
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "bytes": len(content),
+    }
 
 
 def current_evidence_mask(frame: pd.DataFrame, *, require_realized: bool = False) -> pd.Series:
@@ -715,9 +729,24 @@ def build_run_manifest(root: str | Path) -> dict[str, Any]:
     for rel in REQUIRED_PUBLISHED_FILES:
         path = root_path / rel
         files[rel] = (
-            {"sha256": sha256_file(path), "bytes": path.stat().st_size}
+            manifest_file_record(path)
             if path.is_file() else {"missing": True}
         )
+    previous_path = root_path / "artifacts_manifest.json"
+    if previous_path.is_file():
+        try:
+            previous = read_json_strict(previous_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            previous = None
+        if (
+            isinstance(previous, dict)
+            and previous.get("protocol_version") == PROTOCOL_VERSION
+            and previous.get("files") == files
+        ):
+            # Verification must not rewrite provenance or dirty a clean checkout
+            # when the complete published byte set is unchanged.
+            return previous
+
     return {
         "protocol_version": PROTOCOL_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -749,9 +778,10 @@ def verify_run_manifest(root: str | Path) -> list[str]:
         if not path.is_file():
             failures.append(f"published file is missing after manifest generation: {rel}")
             continue
-        if entry.get("bytes") != path.stat().st_size:
+        actual = manifest_file_record(path)
+        if entry.get("bytes") != actual["bytes"]:
             failures.append(f"manifest byte count differs for {rel}")
-        if entry.get("sha256") != sha256_file(path):
+        if entry.get("sha256") != actual["sha256"]:
             failures.append(f"manifest SHA-256 differs for {rel}")
     return failures
 

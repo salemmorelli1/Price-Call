@@ -105,12 +105,12 @@
       "sha256": "b7f782c1758edc9450bd78f73e6bc5b167556ff5e188c65f27157499b9318947"
     },
     "index.html": {
-      "bytes": 93447,
-      "sha256": "9c835ae2e42a5456c1b4cd8f13ce0bf7cdcd0d0ca94f286dcf02728cc3413948"
+      "bytes": 101109,
+      "sha256": "7fca8f72adb66293cbca67043e210d280e0e84dedcfb6c4ff67c491be783bb2c"
     }
   },
-  "generated_at_utc": "2026-09-22T00:05:22.068680+00:00",
-  "github_run_id": "35668338734",
+  "generated_at_utc": "2026-09-22T03:45:29.353510+00:00",
+  "github_run_id": null,
   "protocol_version": "causal-integrity-v3",
-  "source_code_sha": "7ba3a4769a01198350ff72572761f338a3187aab"
+  "source_code_sha": "7b3fe53f00aac07eccdd324a748715d83e6b5e28"
 }

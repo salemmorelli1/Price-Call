@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def test_causal_base_rate_uses_only_supplied_history():
@@ -57,6 +58,107 @@ def test_rowwise_base_rate_controls_brier_null():
     causal_base = np.linspace(0.1, 0.5, len(y))
     stats = t_stat_sign_accuracy(y, p, causal_base)
     assert np.isclose(stats["brier_null"], np.mean((y - causal_base) ** 2))
+
+
+def test_current_protocol_base_rates_must_be_complete_and_bounded():
+    from part9_live_attribution import _require_causal_base_rates
+
+    valid = pd.DataFrame({"base_rate": [0.18, 0.21, 0.24]}, index=[4, 5, 6])
+    np.testing.assert_allclose(
+        _require_causal_base_rates(valid, context="test cohort"),
+        [0.18, 0.21, 0.24],
+    )
+
+    with pytest.raises(RuntimeError, match="missing.*base_rate"):
+        _require_causal_base_rates(pd.DataFrame({"p": [0.2]}), context="test cohort")
+    with pytest.raises(RuntimeError, match=r"rows \[5\]"):
+        _require_causal_base_rates(
+            pd.DataFrame({"base_rate": [0.18, np.nan]}, index=[4, 5]),
+            context="test cohort",
+        )
+    with pytest.raises(RuntimeError, match="invalid.*base_rate"):
+        _require_causal_base_rates(
+            pd.DataFrame({"base_rate": [1.01]}),
+            context="test cohort",
+        )
+
+
+def test_live_report_handles_an_empty_current_evidence_cohort(tmp_path):
+    from artifact_integrity import PROTOCOL_VERSION
+    from part9_live_attribution import Part9Config, generate_live_report
+
+    prediction_log = tmp_path / "prediction_log.csv"
+    pd.DataFrame([{
+        "decision_date": "2026-09-21",
+        "model_protocol_version": PROTOCOL_VERSION,
+        "evidence_eligible": 1,
+        "px_voo_realized": np.nan,
+        "px_ief_realized": np.nan,
+        "px_voo_t": 600.0,
+        "px_ief_t": 100.0,
+        "p_final_cal": 0.20,
+        "base_rate": 0.19,
+        "tail_threshold": -0.01,
+    }]).to_csv(prediction_log, index=False)
+    cfg = Part9Config(
+        predlog_path=str(prediction_log),
+        part2_tape_path=str(tmp_path / "missing-tape.csv"),
+        part6_dir=str(tmp_path / "missing-part6"),
+        out_dir=str(tmp_path / "part9"),
+        part8_cost_path=str(tmp_path / "missing-costs.csv"),
+        part1_dir=str(tmp_path / "missing-part1"),
+    )
+
+    report = generate_live_report(cfg)
+
+    assert report["n_live_realized"] == 0
+    assert report["health_status"] == "IMMATURE"
+    assert "classification_stats_live" not in report
+
+
+def test_regime_platt_auc_validation_failure_excludes_regime(tmp_path, monkeypatch):
+    import sklearn.metrics
+
+    import part3_governance
+
+    if not part3_governance.HAVE_PLATT:
+        pytest.skip("optional Platt dependencies are unavailable")
+
+    dates = pd.date_range("2025-01-02", periods=120, freq="B")
+    labels = (np.arange(len(dates)) % 2).astype(float)
+    defense = pd.DataFrame({
+        "Date": dates,
+        "p_final_cal": np.where(labels == 1.0, 0.65, 0.35),
+    })
+    label_frame = pd.DataFrame(
+        {"y_rel_tail_voo_vs_ief": labels},
+        index=dates,
+    )
+    regime_frame = pd.DataFrame({"regime_label": "risk_on"}, index=dates)
+    label_path = tmp_path / "labels.parquet"
+    regime_path = tmp_path / "regimes.parquet"
+    label_path.touch()
+    regime_path.touch()
+
+    def fake_read_parquet(path, *args, **kwargs):
+        del args, kwargs
+        return label_frame.copy() if path == label_path else regime_frame.copy()
+
+    def fail_auc(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("forced AUC validation failure")
+
+    monkeypatch.setattr(pd, "read_parquet", fake_read_parquet)
+    monkeypatch.setattr(sklearn.metrics, "roc_auc_score", fail_auc)
+
+    params = part3_governance._fit_regime_platt_scaling(
+        defense,
+        label_path,
+        regime_path,
+    )
+
+    assert "risk_on" not in params
+    assert "_global" in params
 
 
 def test_one_positive_never_creates_auc_significance():

@@ -1289,10 +1289,11 @@ def _fit_regime_platt_scaling(
 
     Design notes
     ————————————
-    • Platt scaling has only 2 parameters per regime — extremely stable even at 200 rows.
-    • We fit on the full historical revealed tape (not a held-out set) because:
-        (a) the 2-parameter model cannot meaningfully overfit to 400+ observations, and
-        (b) using held-out data would discard ~3/4 of the already-small calibration set.
+    • Platt scaling has only 2 parameters per regime, but every fit is still
+      evaluated on the final 25% of that regime in chronological order.
+    • A regime-specific fit is retained only when its slope is non-degenerate,
+      it improves chronological-holdout Brier loss, and its full-period AUC
+      passes the prespecified one-sided significance gate.
     • If HAVE_PLATT is False (scipy/sklearn not available), returns empty dict and the
       caller falls back to raw p_final_cal transparently.
     """
@@ -1470,6 +1471,7 @@ def _fit_regime_platt_scaling(
             #
             # Implementation: inline DeLong (HM approximation). Uses the same y and p
             # arrays already computed above.
+            _p3_validation_error: Optional[str] = None
             try:
                 from sklearn.metrics import roc_auc_score as _p3_roc_auc
                 _p3_y = sub["y_rel_tail_voo_vs_ief"].astype(float).values
@@ -1497,16 +1499,27 @@ def _fit_regime_platt_scaling(
                 else:
                     _p3_p_val = float("nan")
                     _platt_auc_warning = True
-            except Exception:
+            except Exception as exc:
                 _p3_auc = float("nan")
                 _p3_p_val = float("nan")
-                _platt_auc_warning = False   # on error, permissive (retain existing behavior)
+                _platt_auc_warning = True
+                _p3_validation_error = str(exc)
+                print(
+                    f"[Part 3] Platt({regime:12s}) AUC validation failed: {exc}. "
+                    "Failing closed and excluding the regime-specific calibrator."
+                )
 
             if _platt_auc_warning:
+                _p3_gate_reason = (
+                    f"VALIDATION ERROR ({_p3_validation_error})"
+                    if _p3_validation_error
+                    else "INSIGNIFICANT OR INSUFFICIENT"
+                )
                 print(
                     f"[Part 3] Platt({regime:12s}): a={a:.4f}  b={b:.4f}  n={len(sub)} "
-                    f"AUC={_p3_auc:.4f} DeLong p={_p3_p_val:.4f} >= 0.10 "
-                    f"-- INSIGNIFICANT: EXCLUDED. _global fallback or passthrough will apply."
+                    f"AUC={_p3_auc:.4f} DeLong p={_p3_p_val:.4f} "
+                    f"-- {_p3_gate_reason}: EXCLUDED. "
+                    f"_global fallback or passthrough will apply."
                     f"  [S50 F4 fix]"
                 )
                 params_n[regime] = len(sub)   # track n for diagnostics only
