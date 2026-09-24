@@ -63,6 +63,18 @@ def test_first_60_only_score_and_exclude_legacy_and_future_observations():
         assert first[key] == more[key]
 
 
+def test_csv_roundtrip_with_legacy_nulls_keeps_current_flags(tmp_path):
+    rows = _paper_rows(2)
+    legacy = rows.iloc[[0]].copy()
+    legacy["model_protocol_version"] = "causal-integrity-v3"
+    legacy["evidence_prospective"] = np.nan
+    path = tmp_path / "prediction_log.csv"
+    pd.concat([legacy, rows], ignore_index=True).to_csv(path, index=False)
+    report = evaluate(pd.read_csv(path))
+    assert report["eligible_realized"] == 2
+    assert report["status"] == "awaiting_60_outcomes"
+
+
 @pytest.mark.parametrize("change", ["late", "wrong_target", "wrong_realization", "duplicate"])
 def test_prospective_holdout_rejects_broken_evidence(change):
     rows = _paper_rows(1)
