@@ -1,14 +1,14 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": true,
+  "data_freshness_ok": false,
   "decision_date": "2026-09-23T00:00:00",
-  "deployment_mode": "DEFENSE_ONLY",
+  "deployment_mode": "NO_ACTION_STALE",
   "evidence": {
-    "cohort": "causal-integrity-v3",
+    "cohort": "causal-integrity-v4",
     "eligible_realized": 0,
     "inference_eligible": false,
-    "legacy_realized_excluded": 28,
+    "legacy_realized_excluded": 40,
     "minimum": 60,
     "n_negative": 0,
     "n_positive": 0,
@@ -29,32 +29,32 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-09-23",
-    "backfill_run_id": "35931510552",
-    "backfill_source_code_sha": "f2d8896366bfbb212e8e69ceca647541fcf54ec2",
+    "backfill_run_date": "2026-09-24",
+    "backfill_run_id": "36071978818",
+    "backfill_source_code_sha": "574aa36f8324b6bf44e57025dca68bbd23ed417b",
     "execution_decision_date": "2026-09-23",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
     "execution_pipeline_run_date": "2026-09-23",
     "execution_pipeline_run_id": "35950967494",
     "execution_source_code_sha": "53ccb6caf4c0c3c9b7ef2626e04df65c01d6af23",
-    "expected_completed_market_session": "2026-09-23",
+    "expected_completed_market_session": "2026-09-24",
     "latest_prediction_target_date": "2026-09-24",
     "latest_signal_run_date": "2026-09-24",
     "latest_signal_source_decision_date": "2026-09-23",
     "market_data_asof": "2026-09-23",
-    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "message": "The dashboard is serving the last successful production snapshot (market 2026-09-23, model 2026-09-23); the latest completed XNYS session is 2026-09-24. Backfill updates do not make the forecast current.",
     "model_data_asof": "2026-09-23",
     "pipeline_run_date": "2026-09-23",
     "pipeline_run_id": "35950967494",
     "pipeline_source_code_sha": "53ccb6caf4c0c3c9b7ef2626e04df65c01d6af23",
-    "prediction_tape_paused": false,
+    "prediction_tape_paused": true,
     "publication_component_ages": {
-      "decision": 0,
-      "execution": 0,
-      "market_data": 0,
-      "model_data": 0,
-      "pipeline": 0
+      "decision": 1,
+      "execution": 1,
+      "market_data": 1,
+      "model_data": 1,
+      "pipeline": 1
     },
     "publication_component_dates": {
       "decision": "2026-09-23",
@@ -63,7 +63,7 @@
       "model_data": "2026-09-23",
       "pipeline": "2026-09-23"
     },
-    "publication_session_age": 0,
+    "publication_session_age": 1,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
@@ -88,9 +88,12 @@
     "auc_p_value_max": 0.1,
     "brier_skill_min": 0.005,
     "historical_evidence_ok": false,
+    "independent_validation_ok": false,
+    "independent_validation_status": "not_assessed",
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
+      "published production is 1 completed XNYS session(s) behind (expected 2026-09-24)",
       "point-in-time macro coverage is incomplete"
     ],
     "status": "NOT_VALIDATED"
@@ -102,8 +105,8 @@
     "object": "next-day VOO-minus-IEF return spread",
     "upper_quantile": 0.95
   },
-  "protocol_version": "causal-integrity-v3",
-  "publication_freshness_ok": true,
+  "protocol_version": "causal-integrity-v4",
+  "publication_freshness_ok": false,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "high_vol",
   "source_data_freshness_ok": true,
