@@ -346,6 +346,31 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
     assert quality["IEF"]["verified_archive_source_run_id"] == "35796548754"
 
 
+def test_part0_ignores_expected_pre_inception_gaps(monkeypatch):
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23"]), name="Date"
+    )
+    columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
+    raw = pd.DataFrame(
+        [[None, 90.0], [101.0, 91.0], [102.0, 92.0]],
+        index=sessions, columns=columns,
+    )
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", lambda *args, **kwargs: raw)
+    monkeypatch.setattr(
+        part0, "_recover_verified_historical_core_closes",
+        lambda *args: pytest.fail("archive consulted for a pre-inception gap"),
+    )
+    cfg = part0.Part0Config(
+        start="2026-09-21", end="2026-09-23", equity_tickers=("VOO", "IEF"),
+        vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
+    )
+    close, _, _ = part0.download_market_data(cfg)
+    assert close.index.min() == pd.Timestamp("2026-09-22")
+
+
 def test_completed_session_input_validator_rejects_non_session_row(tmp_path, monkeypatch):
     from artifact_integrity import validate_completed_session_inputs, write_json_strict
     import market_calendar

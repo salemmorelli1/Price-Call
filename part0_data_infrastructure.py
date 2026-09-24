@@ -611,7 +611,15 @@ def download_market_data(cfg: Part0Config):
                 quality[ticker] = entry
                 print(f"[Part 0]   {ticker} paired retry recovered {int(recovered.sum())} row(s)")
 
-    if any(ticker in close and close[ticker].isna().any() for ticker in cfg.core_tickers):
+    # VOO did not exist at cfg.start; only gaps *after* its first observation
+    # need archive recovery.  Do not inspect the archive on ordinary runs.
+    outstanding_core_gaps = [
+        ticker for ticker in cfg.core_tickers
+        if ticker in close
+        and close[ticker].first_valid_index() is not None
+        and close.loc[close[ticker].first_valid_index():, ticker].isna().any()
+    ]
+    if outstanding_core_gaps:
         _recover_verified_historical_core_closes(cfg, close, quality)
 
     core = [t for t in cfg.core_tickers if t in close.columns]
