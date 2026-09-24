@@ -269,7 +269,10 @@ def test_current_evidence_counter_excludes_legacy_rows():
     assert _count_realized_predlog_rows(frame) == 1
 
 
-def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monkeypatch):
+@pytest.mark.parametrize("existing_eligible", [0, 1])
+def test_prediction_upsert_replaces_stale_numeric_run_provenance(
+    tmp_path, monkeypatch, existing_eligible
+):
     from artifact_integrity import PROTOCOL_VERSION
     from part3_governance import _upsert_prediction_log
 
@@ -281,7 +284,7 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
         "model_code_sha": "old",
         "px_voo_realized": 100.0,
         "px_ief_realized": 90.0,
-        "evidence_eligible": 0,
+        "evidence_eligible": existing_eligible,
     }]).to_csv(path, index=False)
     monkeypatch.setenv("PRICECALL_CODE_SHA", "new-code-sha")
     monkeypatch.setenv("GITHUB_RUN_ID", "33890824408")
@@ -300,7 +303,9 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
         "eligibility": tmp_path / "eligibility.csv",
         "summary_json": tmp_path / "summary.json",
     }
-    frame, _ = _upsert_prediction_log(
+    if existing_eligible:
+        original = path.read_bytes()
+    args = (
         path,
         pd.Timestamp("2026-09-04"),
         pd.Timestamp("2026-09-08"),
@@ -324,6 +329,12 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
             "tail_event_definition": "rowwise_trailing_63_observation_20th_percentile_shifted_1",
         },
     )
+    if existing_eligible:
+        with pytest.raises(RuntimeError, match="eligible paper forecast is immutable"):
+            _upsert_prediction_log(*args)
+        assert path.read_bytes() == original
+        return
+    frame, _ = _upsert_prediction_log(*args)
     row = frame.loc[frame["model_protocol_version"].eq(PROTOCOL_VERSION)].iloc[-1]
     assert row["pipeline_run_id"] == "33890824408"
     assert row["model_code_sha"] == "new-code-sha"
@@ -409,7 +420,7 @@ def test_shared_evidence_mask_excludes_prior_protocol_and_ineligible_rows():
     from artifact_integrity import PROTOCOL_VERSION, current_evidence_mask
 
     frame = pd.DataFrame({
-        "model_protocol_version": ["causal-integrity-v2", PROTOCOL_VERSION, PROTOCOL_VERSION],
+        "model_protocol_version": ["causal-integrity-v3", PROTOCOL_VERSION, PROTOCOL_VERSION],
         "evidence_eligible": [1, 0, 1],
         "px_voo_realized": [100.0, 101.0, 102.0],
         "px_ief_realized": [90.0, 91.0, 92.0],
@@ -431,3 +442,40 @@ def test_non_vintage_macro_history_forces_fail_closed():
         "conditional_active_ir_tmean": np.nan,
     }
     assert _should_fail_closed(summary, Part2Gen53Config()) is True
+
+
+def test_new_macro_method_stays_paper_only_until_independent_validation():
+    from part2_predictor import Part2Gen53Config, _should_fail_closed
+
+    summary = {
+        "historical_evidence_ok": True,
+        "independent_validation_ok": False,
+        "part1_data_freshness_ok": True,
+        "macro_point_in_time_ok": True,
+        "suspicious_perf_flag": False,
+        "drift_alarm_rate": 0.0,
+        "calibration_gate_on_rate": 1.0,
+        "conditional_active_ir_tmean": np.nan,
+    }
+    assert _should_fail_closed(summary, Part2Gen53Config()) is True
+
+
+def test_only_prospective_main_branch_forecasts_are_eligible(monkeypatch):
+    from datetime import datetime, timezone
+
+    from part3_governance import _prospective_evidence_status
+
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    issued, eligible = _prospective_evidence_status(
+        "2026-09-25", now=datetime(2026, 9, 24, 21, tzinfo=timezone.utc)
+    )
+    assert issued == "2026-09-24T21:00:00+00:00"
+    assert eligible is True
+    with pytest.raises(RuntimeError, match="target session closed"):
+        _prospective_evidence_status(
+            "2026-09-25", now=datetime(2026, 9, 25, 21, tzinfo=timezone.utc)
+        )
+    monkeypatch.setenv("GITHUB_REF_NAME", "codex/pit-macro-replay-v1")
+    assert not _prospective_evidence_status(
+        "2026-09-25", now=datetime(2026, 9, 24, 21, tzinfo=timezone.utc)
+    )[1]

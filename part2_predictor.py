@@ -2470,6 +2470,7 @@ def _should_fail_closed(summary: Dict[str, object], cfg) -> bool:
         # without requiring publish_mode=FAIL_CLOSED_NEUTRAL.
         bool(summary.get("suspicious_perf_flag", False))
         or (not bool(summary.get("historical_evidence_ok", False)))
+        or (not bool(summary.get("independent_validation_ok", False)))
         or (not bool(summary.get("part1_data_freshness_ok", False)))
         or (not bool(summary.get("macro_point_in_time_ok", False)))
         or (np.isfinite(summary.get("drift_alarm_rate", np.nan)) and float(summary.get("drift_alarm_rate")) > drift_limit)
@@ -3514,6 +3515,10 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         historical_brier_skill,
         cfg,
     )
+    # The already-examined historical holdout cannot validate a new macro
+    # method independently. This stays closed until a separately audited
+    # prospective study is complete; it does not inhibit paper forecasts.
+    independent_validation_ok = False
     part1_data_freshness_ok = bool(part1_meta.get("data_freshness_ok", False))
     macro_point_in_time_ok = bool(part0_meta.get("historical_point_in_time_complete", False))
     # FIX (Audit 2026-05-07 — Circular Deadlock):
@@ -3795,6 +3800,14 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "historical_auc_p_max": float(cfg.HISTORICAL_AUC_P_MAX),
         "historical_brier_skill_min": float(cfg.HISTORICAL_BRIER_SKILL_MIN),
         "historical_evidence_ok": historical_evidence_ok,
+        # The 2020–2026 evaluation has already guided debugging. It remains a
+        # descriptive backtest, never an independent promotion test for v4.
+        # Freeze the method and collect a genuinely prospective holdout before
+        # a separate audited promotion decision. Daily paper evidence can grow
+        # while this publication gate stays closed.
+        "independent_validation_ok": independent_validation_ok,
+        "independent_validation_status": "prospective_holdout_pending",
+        "prospective_holdout_not_before": "2026-09-24",
         "part1_data_freshness_ok": part1_data_freshness_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
         "fred_vintage_policy": part0_meta.get("fred_vintage_policy"),
@@ -3804,6 +3817,7 @@ def build_part2_gen53(cfg: Part2Gen53Config) -> Dict[str, object]:
         "predictive_quality_ok": predictive_quality_ok,
         "final_pass": bool(
             historical_evidence_ok and
+            independent_validation_ok and
             part1_data_freshness_ok and
             macro_point_in_time_ok and
             # FIX (Finding A, Audit 2026-04-21):

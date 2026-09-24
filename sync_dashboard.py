@@ -240,6 +240,8 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         )
     if not macro_point_in_time_ok:
         validation_reasons.append("point-in-time macro coverage is incomplete")
+    if part2.get("independent_validation_ok") is False:
+        validation_reasons.append("prospective independent validation is pending")
     if not final_pass and not validation_reasons:
         validation_reasons.append("the complete governance gate did not pass")
     ticker_ages = part1.get("ticker_age_business_days_raw", {}) or {}
@@ -329,6 +331,8 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             "status": "VALIDATED" if final_pass else "NOT_VALIDATED",
             "reasons": validation_reasons,
             "historical_evidence_ok": bool(part2.get("historical_evidence_ok", False)),
+            "independent_validation_ok": bool(part2.get("independent_validation_ok", False)),
+            "independent_validation_status": part2.get("independent_validation_status", "not_assessed"),
             "auc_p_value_max": auc_p_max,
             "brier_skill_min": brier_skill_min,
         },

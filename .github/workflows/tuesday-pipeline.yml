@@ -191,6 +191,10 @@ jobs:
           python artifact_integrity.py --root .
           --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
+      - name: Evaluate fixed prospective paper cohort
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python evaluate_prospective_cohort.py --root .
+
       - name: Record successful production session
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
         run: |
@@ -261,10 +265,17 @@ jobs:
             artifacts_part1/*.parquet
             artifacts_part1/part1_meta.json
             artifacts_part1/part1_diagnostics.json
+            artifacts_part2_g532/predictions/part2_g532_summary.json
+            artifacts_part2_g532/predictions/g532_final_consensus_tape.csv
             artifacts_part2a_alpha/
             artifacts_part2b_xgb/
             artifacts_part2c_bnn/
             artifacts_part6/
+            artifacts_part3/prediction_log.csv
+            artifacts_part3_v1/part3_summary.json
+            artifacts_part7/current_target_weights.json
+            artifacts_part9/live_attribution_report.json
+            artifacts_dashboard/dashboard_snapshot.json
             artifacts_manifest.json
             artifacts_part10_bot/pipeline_status.json
           if-no-files-found: error
@@ -275,7 +286,7 @@ jobs:
       # The source commit is rechecked before committing. A concurrent branch
       # change aborts this run instead of conflict-merging mixed-run artifacts.
       - name: Commit and push artifacts
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -329,7 +340,7 @@ jobs:
           git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Deploy the committed dashboard
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"

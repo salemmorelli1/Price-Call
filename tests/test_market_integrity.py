@@ -254,7 +254,9 @@ def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
 @pytest.mark.parametrize(
     "failure",
     [None, "invalid_manifest", "unverified", "backfill_disagrees",
-     "current_session", "latest_missing", "price_scale_mismatch"],
+     "current_session", "latest_missing", "price_scale_mismatch",
+     "earlier_verified", "no_earlier_provenance", "legacy_protocol",
+     "pre_inception"],
 )
 def test_part0_only_recovers_corroborated_historical_core_closes(
     tmp_path, monkeypatch, failure
@@ -262,29 +264,35 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
     import artifact_integrity
     import part0_data_infrastructure as part0
 
-    sessions = pd.DatetimeIndex(
-        pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23"]), name="Date"
-    )
+    dates = ["2026-09-21", "2026-09-22", "2026-09-23"]
+    if failure == "pre_inception":
+        dates.insert(0, "2026-09-18")
+    sessions = pd.DatetimeIndex(pd.to_datetime(dates), name="Date")
     columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
-    raw = pd.DataFrame(
-        [[99.0 if failure == "price_scale_mismatch" else 100.0, 90.0],
-         [None, None],
-         [None if failure == "latest_missing" else 102.0, 92.0]],
-        index=sessions, columns=columns,
-    )
+    prices = [[99.0 if failure == "price_scale_mismatch" else 100.0, 90.0],
+              [None, None],
+              [None if failure == "latest_missing" else 102.0, 92.0]]
+    if failure == "pre_inception":
+        prices.insert(0, [None, 89.0])
+    raw = pd.DataFrame(prices, index=sessions, columns=columns)
     status_dir = tmp_path / "artifacts_part10_bot"
     meta_dir = tmp_path / "artifacts_part0"
     log_dir = tmp_path / "artifacts_part3"
     for directory in (status_dir, meta_dir, log_dir):
         directory.mkdir()
+    previous_snapshot = failure in {"earlier_verified", "no_earlier_provenance"}
+    protocol = (
+        "causal-integrity-v3" if failure in {"earlier_verified", "legacy_protocol"}
+        else artifact_integrity.PROTOCOL_VERSION
+    )
     status = {
         "result": "verified" if failure != "unverified" else "failed",
-        "protocol_version": artifact_integrity.PROTOCOL_VERSION,
-        "market_data_asof": "2026-09-22" if failure != "current_session" else "2026-09-23",
-        "expected_completed_market_session": "2026-09-22" if failure != "current_session" else "2026-09-23",
+        "protocol_version": protocol,
+        "market_data_asof": "2026-09-23" if previous_snapshot or failure == "current_session" else "2026-09-22",
+        "expected_completed_market_session": "2026-09-23" if previous_snapshot or failure == "current_session" else "2026-09-22",
         "github_run_id": "35796548754",
         "github_run_attempt": "1",
-        "source_code_sha": "source-commit",
+        "source_code_sha": "later-commit" if previous_snapshot else "source-commit",
     }
     (status_dir / "pipeline_status.json").write_text(json.dumps(status))
     (meta_dir / "part0_meta.json").write_text(json.dumps({
@@ -294,6 +302,12 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
             "VOO": status["market_data_asof"],
             "IEF": status["market_data_asof"],
         },
+        "data_quality": {
+            ticker: {
+                "verified_archive_recovered_dates": ["2026-09-22"],
+                "verified_archive_source_run_id": "35796548754",
+            } for ticker in ("VOO", "IEF")
+        } if failure == "earlier_verified" else {},
     }))
     with (log_dir / "prediction_log.csv").open("w", newline="") as handle:
         fields = [
@@ -310,14 +324,14 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
             "px_voo_t": 100, "px_ief_t": 90,
             "px_voo_realized": 105 if failure == "backfill_disagrees" else 101,
             "px_ief_realized": 91,
-            "model_protocol_version": artifact_integrity.PROTOCOL_VERSION,
+            "model_protocol_version": protocol,
         })
         writer.writerow({
             "decision_date": "2026-09-22", "target_date": "2026-09-23",
             "px_voo_t": 101, "px_ief_t": 91,
             "pipeline_run_id": "35796548754.0", "pipeline_run_attempt": "1.0",
             "model_code_sha": "source-commit",
-            "model_protocol_version": artifact_integrity.PROTOCOL_VERSION,
+            "model_protocol_version": protocol,
         })
 
     monkeypatch.setattr(part0, "_resolve_project_root", lambda cfg: tmp_path)
@@ -332,7 +346,7 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
         start="2026-09-21", end="2026-09-23", equity_tickers=("VOO", "IEF"),
         vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
     )
-    if failure is not None:
+    if failure not in (None, "earlier_verified", "legacy_protocol", "pre_inception"):
         with pytest.raises(
             RuntimeError,
             match="2026-09-23" if failure == "latest_missing" else "2026-09-22",
