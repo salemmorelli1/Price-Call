@@ -31,6 +31,7 @@ def _colab_init(extra_packages=None):
 
 
 
+import csv
 import hashlib
 import json
 import os
@@ -38,6 +39,7 @@ import time
 import warnings
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -241,6 +243,121 @@ def _series_on_calendar(
         return pd.Series(index=calendar, dtype=float, name=ticker)
     frame = frame[~frame.index.duplicated(keep="last")]
     return frame[ticker].reindex(calendar)
+
+
+def _recover_verified_historical_core_closes(
+    cfg: Part0Config,
+    close: pd.DataFrame,
+    quality: Dict[str, Dict[str, object]],
+) -> None:
+    """Replay one historical session's previously verified *observed* closes.
+
+    Yahoo occasionally omits a bar in subsequent downloads even though the
+    previous production run and its independent realized-price backfill stored
+    that bar.  Accept only the exact prior verified session, with an intact
+    published manifest, matching production lineage, agreeing anchor/backfill
+    observations, and a matching adjacent-session price scale.  Never recover
+    the latest session or synthesize a close.  All other gaps still fail below.
+    """
+    root = _resolve_project_root(cfg)
+    status_path = root / "artifacts_part10_bot" / "pipeline_status.json"
+    meta_path = root / "artifacts_part0" / "part0_meta.json"
+    log_path = root / "artifacts_part3" / "prediction_log.csv"
+    if not all(path.is_file() for path in (status_path, meta_path, log_path)):
+        return
+
+    try:
+        from artifact_integrity import PROTOCOL_VERSION, verify_run_manifest
+
+        failures = verify_run_manifest(root)
+        if failures:
+            raise ValueError(f"published manifest is invalid: {failures[0]}")
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        session = pd.Timestamp(status["market_data_asof"])
+        session_date = session.date().isoformat()
+        if (
+            status.get("result") != "verified"
+            or status.get("protocol_version") != PROTOCOL_VERSION
+            or status.get("expected_completed_market_session") != session_date
+            or meta.get("market_data_asof") != session_date
+            or meta.get("market_values_are_raw_observations") is not True
+            or session not in close.index
+            or session >= close.index.max()
+        ):
+            raise ValueError("previous verified session or raw-observation provenance is absent")
+
+        previous = close.index[close.index.get_loc(session) - 1]
+        if previous >= session:
+            raise ValueError("no preceding exchange session for price-scale check")
+        last_raw = meta.get("last_raw_observation_by_ticker", {})
+        if any(last_raw.get(ticker) != session_date for ticker in cfg.core_tickers):
+            raise ValueError("prior snapshot did not observe both core closes on that session")
+
+        with log_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+
+        def _run_number(value: str) -> Decimal:
+            number = Decimal(str(value))
+            if not number.is_finite() or number != number.to_integral_value():
+                raise ValueError("non-integral run provenance")
+            return number
+
+        source_run = _run_number(status["github_run_id"])
+        source_attempt = _run_number(status["github_run_attempt"])
+        matching = [
+            row for row in rows
+            if row.get("decision_date") == session_date
+            and _run_number(row.get("pipeline_run_id", "")) == source_run
+            and _run_number(row.get("pipeline_run_attempt", "")) == source_attempt
+            and row.get("model_code_sha") == status.get("source_code_sha")
+            and row.get("model_protocol_version") == PROTOCOL_VERSION
+        ]
+        realized = [
+            row for row in rows
+            if row.get("decision_date") == previous.date().isoformat()
+            and row.get("target_date") == session_date
+            and row.get("realized_target_date") == session_date
+            and row.get("model_protocol_version") == PROTOCOL_VERSION
+        ]
+        if len(matching) != 1 or len(realized) != 1:
+            raise ValueError("unique matching anchor and realized observations are absent")
+
+        # Validate the complete pair before mutating either ticker's price.
+        recovered = {}
+        for ticker in cfg.core_tickers:
+            if ticker not in close.columns:
+                continue
+            name = ticker.lower()
+            anchor = float(matching[0][f"px_{name}_t"])
+            backfilled = float(realized[0][f"px_{name}_realized"])
+            prior_anchor = float(realized[0][f"px_{name}_t"])
+            prior_download = float(close.at[previous, ticker])
+            if not all(np.isfinite(value) and value > 0 for value in (
+                anchor, backfilled, prior_anchor, prior_download
+            )) or not np.isclose(anchor, backfilled, rtol=1e-7, atol=1e-6):
+                raise ValueError(f"{ticker} archived anchor and realized close disagree")
+            if not np.isclose(prior_anchor, prior_download, rtol=1e-4, atol=1e-6):
+                raise ValueError(f"{ticker} archived and current price scales disagree")
+            observed = close.at[session, ticker]
+            if pd.notna(observed):
+                if not np.isclose(float(observed), anchor, rtol=1e-4, atol=1e-6):
+                    raise ValueError(f"{ticker} archived and current closes disagree")
+            else:
+                recovered[ticker] = anchor
+
+        for ticker, price in recovered.items():
+            close.at[session, ticker] = price
+            entry = dict(quality.get(ticker, {}))
+            entry["verified_archive_recovered_dates"] = [session_date]
+            entry["verified_archive_source_run_id"] = str(source_run)
+            entry["missing_after_retry"] = float(close[ticker].isna().mean())
+            quality[ticker] = entry
+            print(f"[Part 0]   {ticker} recovered observed {session_date} close "
+                  f"from verified production run {source_run}")
+    except (OSError, ValueError, TypeError, KeyError, IndexError, InvalidOperation,
+            csv.Error) as exc:
+        print(f"[Part 0] Verified historical close recovery unavailable: {exc}")
 
 
 def download_market_data(cfg: Part0Config):
@@ -494,6 +611,17 @@ def download_market_data(cfg: Part0Config):
                 quality[ticker] = entry
                 print(f"[Part 0]   {ticker} paired retry recovered {int(recovered.sum())} row(s)")
 
+    # VOO did not exist at cfg.start; only gaps *after* its first observation
+    # need archive recovery.  Do not inspect the archive on ordinary runs.
+    outstanding_core_gaps = [
+        ticker for ticker in cfg.core_tickers
+        if ticker in close
+        and close[ticker].first_valid_index() is not None
+        and close.loc[close[ticker].first_valid_index():, ticker].isna().any()
+    ]
+    if outstanding_core_gaps:
+        _recover_verified_historical_core_closes(cfg, close, quality)
+
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
         raise RuntimeError(
@@ -527,7 +655,8 @@ def download_market_data(cfg: Part0Config):
             for ticker in bad_post
         }
         raise RuntimeError(
-            "Part 0 core tickers still have NaN after individual raw-data retries. "
+            "Part 0 core tickers still have NaN after raw-data retries and "
+            "verified historical-close recovery. "
             f"common_start={common_start.date()} | Post-retry missingness: {bad_post} "
             f"| First missing XNYS dates: {missing_dates}"
         )
