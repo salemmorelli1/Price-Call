@@ -1,3 +1,5 @@
+import csv
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -247,6 +249,101 @@ def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
 
     with pytest.raises(RuntimeError, match="disagrees with existing VOO"):
         part0.download_market_data(cfg)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [None, "invalid_manifest", "unverified", "backfill_disagrees",
+     "current_session", "latest_missing", "price_scale_mismatch"],
+)
+def test_part0_only_recovers_corroborated_historical_core_closes(
+    tmp_path, monkeypatch, failure
+):
+    import artifact_integrity
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23"]), name="Date"
+    )
+    columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
+    raw = pd.DataFrame(
+        [[99.0 if failure == "price_scale_mismatch" else 100.0, 90.0],
+         [None, None],
+         [None if failure == "latest_missing" else 102.0, 92.0]],
+        index=sessions, columns=columns,
+    )
+    status_dir = tmp_path / "artifacts_part10_bot"
+    meta_dir = tmp_path / "artifacts_part0"
+    log_dir = tmp_path / "artifacts_part3"
+    for directory in (status_dir, meta_dir, log_dir):
+        directory.mkdir()
+    status = {
+        "result": "verified" if failure != "unverified" else "failed",
+        "protocol_version": artifact_integrity.PROTOCOL_VERSION,
+        "market_data_asof": "2026-09-22" if failure != "current_session" else "2026-09-23",
+        "expected_completed_market_session": "2026-09-22" if failure != "current_session" else "2026-09-23",
+        "github_run_id": "35796548754",
+        "github_run_attempt": "1",
+        "source_code_sha": "source-commit",
+    }
+    (status_dir / "pipeline_status.json").write_text(json.dumps(status))
+    (meta_dir / "part0_meta.json").write_text(json.dumps({
+        "market_data_asof": status["market_data_asof"],
+        "market_values_are_raw_observations": True,
+        "last_raw_observation_by_ticker": {
+            "VOO": status["market_data_asof"],
+            "IEF": status["market_data_asof"],
+        },
+    }))
+    with (log_dir / "prediction_log.csv").open("w", newline="") as handle:
+        fields = [
+            "decision_date", "target_date", "realized_target_date",
+            "px_voo_t", "px_ief_t", "px_voo_realized", "px_ief_realized",
+            "pipeline_run_id", "pipeline_run_attempt", "model_code_sha",
+            "model_protocol_version",
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow({
+            "decision_date": "2026-09-21", "target_date": "2026-09-22",
+            "realized_target_date": "2026-09-22",
+            "px_voo_t": 100, "px_ief_t": 90,
+            "px_voo_realized": 105 if failure == "backfill_disagrees" else 101,
+            "px_ief_realized": 91,
+            "model_protocol_version": artifact_integrity.PROTOCOL_VERSION,
+        })
+        writer.writerow({
+            "decision_date": "2026-09-22", "target_date": "2026-09-23",
+            "px_voo_t": 101, "px_ief_t": 91,
+            "pipeline_run_id": "35796548754.0", "pipeline_run_attempt": "1.0",
+            "model_code_sha": "source-commit",
+            "model_protocol_version": artifact_integrity.PROTOCOL_VERSION,
+        })
+
+    monkeypatch.setattr(part0, "_resolve_project_root", lambda cfg: tmp_path)
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", lambda *args, **kwargs: raw)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
+    monkeypatch.setattr(
+        artifact_integrity, "verify_run_manifest",
+        lambda root: ["manifest SHA-256 differs"] if failure == "invalid_manifest" else [],
+    )
+    cfg = part0.Part0Config(
+        start="2026-09-21", end="2026-09-23", equity_tickers=("VOO", "IEF"),
+        vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
+    )
+    if failure is not None:
+        with pytest.raises(
+            RuntimeError,
+            match="2026-09-23" if failure == "latest_missing" else "2026-09-22",
+        ):
+            part0.download_market_data(cfg)
+        return
+
+    close, _, quality = part0.download_market_data(cfg)
+    assert close.loc[pd.Timestamp("2026-09-22"), ["VOO", "IEF"]].tolist() == [101, 91]
+    assert quality["VOO"]["verified_archive_recovered_dates"] == ["2026-09-22"]
+    assert quality["IEF"]["verified_archive_source_run_id"] == "35796548754"
 
 
 def test_completed_session_input_validator_rejects_non_session_row(tmp_path, monkeypatch):
