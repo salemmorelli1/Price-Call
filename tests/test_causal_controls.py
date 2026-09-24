@@ -269,7 +269,10 @@ def test_current_evidence_counter_excludes_legacy_rows():
     assert _count_realized_predlog_rows(frame) == 1
 
 
-def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monkeypatch):
+@pytest.mark.parametrize("existing_eligible", [0, 1])
+def test_prediction_upsert_replaces_stale_numeric_run_provenance(
+    tmp_path, monkeypatch, existing_eligible
+):
     from artifact_integrity import PROTOCOL_VERSION
     from part3_governance import _upsert_prediction_log
 
@@ -281,7 +284,7 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
         "model_code_sha": "old",
         "px_voo_realized": 100.0,
         "px_ief_realized": 90.0,
-        "evidence_eligible": 0,
+        "evidence_eligible": existing_eligible,
     }]).to_csv(path, index=False)
     monkeypatch.setenv("PRICECALL_CODE_SHA", "new-code-sha")
     monkeypatch.setenv("GITHUB_RUN_ID", "33890824408")
@@ -300,7 +303,9 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
         "eligibility": tmp_path / "eligibility.csv",
         "summary_json": tmp_path / "summary.json",
     }
-    frame, _ = _upsert_prediction_log(
+    if existing_eligible:
+        original = path.read_bytes()
+    args = (
         path,
         pd.Timestamp("2026-09-04"),
         pd.Timestamp("2026-09-08"),
@@ -324,6 +329,12 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(tmp_path, monke
             "tail_event_definition": "rowwise_trailing_63_observation_20th_percentile_shifted_1",
         },
     )
+    if existing_eligible:
+        with pytest.raises(RuntimeError, match="eligible paper forecast is immutable"):
+            _upsert_prediction_log(*args)
+        assert path.read_bytes() == original
+        return
+    frame, _ = _upsert_prediction_log(*args)
     row = frame.loc[frame["model_protocol_version"].eq(PROTOCOL_VERSION)].iloc[-1]
     assert row["pipeline_run_id"] == "33890824408"
     assert row["model_code_sha"] == "new-code-sha"

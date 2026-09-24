@@ -80,6 +80,17 @@ until a separate review assesses the prospective series. Eligible paper forecast
 can accumulate while the publication and allocation gates stay closed; 60 is only
 the minimum for live inference, not an automatic release rule.
 
+`python evaluate_prospective_cohort.py --root .` checks issuance, the next
+exchange session, realized price provenance, and the first 60 eligible v4
+outcomes. It uses the already specified `p_final_cal` probability (the Part 2
+base probability), each row's causal baseline, and the same one-sided DeLong
+AUC p <= 0.10 and Brier skill >= 0.005 thresholds. The first 60 are fixed
+before scoring; later outcomes cannot change that confirmatory result. Part 9's
+blended/recalibrated live metrics remain descriptive. Even a passing report
+requires a separate review of integrity and the historical gate before any
+allocation permission changes. An already eligible forecast cannot be replaced
+by a manual rerun of its decision session.
+
 Only a main-branch production forecast issued before its target close can qualify.
 Research replays on feature branches retain their diagnostic artifacts in GitHub
 Actions, but cannot commit artifacts or deploy Pages.

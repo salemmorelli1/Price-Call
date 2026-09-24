@@ -4,9 +4,6 @@ name: Daily Production Run
 # data-settlement boundary. Runs are serialized, and a committed XNYS-session
 # marker makes duplicate DST/catch-up triggers idempotent.
 on:
-  # Temporary research replay trigger; removed after branch verification.
-  push:
-    branches: ["codex/pit-macro-replay-v1"]
   schedule:
     - cron: "45 20 * * 1-5"  # 4:45 PM EDT (UTC-4, summer)
     - cron: "45 21 * * 1-5"  # 4:45 PM EST (UTC-5, winter)
@@ -172,10 +169,7 @@ jobs:
           session_date = latest_completed_xnys_session().date().isoformat()
           marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          if os.environ.get("GITHUB_REF_NAME") == "codex/pit-macro-replay-v1":
-              should_run = True
-              reason = f"isolated research replay for completed_session={session_date}"
-          elif event == "workflow_dispatch":
+          if event == "workflow_dispatch":
               should_run = True
               reason = f"manual dispatch for completed_session={session_date}"
           else:
@@ -196,6 +190,10 @@ jobs:
         run: >-
           python artifact_integrity.py --root .
           --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
+
+      - name: Evaluate fixed prospective paper cohort
+        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        run: python evaluate_prospective_cohort.py --root .
 
       - name: Record successful production session
         if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'

@@ -1079,6 +1079,11 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
                     f"{pd.Timestamp(decision_date).date()}."
                 )
             idx = predlog_df.index[mask][0]
+            if _boolish(predlog_df.at[idx, "evidence_eligible"], 0):
+                raise RuntimeError(
+                    "An issued eligible paper forecast is immutable; refusing to "
+                    f"replace the {pd.Timestamp(decision_date).date()} evidence row."
+                )
             for key, value in _row_for_update.items():
                 try:
                     predlog_df.at[idx, key] = value
