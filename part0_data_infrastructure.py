@@ -479,6 +479,18 @@ def download_market_data(cfg: Part0Config):
                 ]
                 entry["paired_retry_start"] = paired_start.date().isoformat()
                 entry["missing_after_retry"] = float(close[ticker].isna().mean())
+                first_valid = close[ticker].first_valid_index()
+                years_history = (
+                    (bidx.max() - first_valid).days / 365.25
+                    if first_valid is not None else 0.0
+                )
+                entry["first_valid_date"] = (
+                    first_valid.date().isoformat() if first_valid is not None else None
+                )
+                entry["years_history"] = round(years_history, 2)
+                entry["usable_for_model"] = bool(
+                    first_valid is not None and years_history >= cfg.min_history_years
+                )
                 quality[ticker] = entry
                 print(f"[Part 0]   {ticker} paired retry recovered {int(recovered.sum())} row(s)")
 

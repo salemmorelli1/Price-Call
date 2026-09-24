@@ -169,7 +169,7 @@ def test_part0_recovers_core_closes_with_short_paired_request(monkeypatch):
         [["VOO", "IEF"], ["Close", "Volume"]]
     )
     bulk = pd.DataFrame(
-        [[100.0, 10.0, 90.0, 9.0], [None] * 4, [None] * 4],
+        [[None, 10.0, 90.0, 9.0], [None] * 4, [None] * 4],
         index=sessions,
         columns=bulk_columns,
     )
@@ -209,11 +209,13 @@ def test_part0_recovers_core_closes_with_short_paired_request(monkeypatch):
     assert calls[-1][1]["end"] == "2026-09-24"
     assert close.loc[pd.Timestamp("2026-09-23"), ["VOO", "IEF"]].tolist() == [102.0, 92.0]
     assert volume.loc[pd.Timestamp("2026-09-23"), ["VOO", "IEF"]].tolist() == [12.0, 11.0]
-    assert quality["VOO"]["paired_retry_recovered_rows"] == 2
+    assert quality["VOO"]["paired_retry_recovered_rows"] == 3
     assert quality["IEF"]["paired_retry_recovered_rows"] == 2
     assert quality["VOO"]["paired_retry_recovered_dates"] == [
-        "2026-09-22", "2026-09-23"
+        "2026-09-21", "2026-09-22", "2026-09-23"
     ]
+    assert quality["VOO"]["first_valid_date"] == "2026-09-21"
+    assert quality["VOO"]["usable_for_model"] is True
 
 
 def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
