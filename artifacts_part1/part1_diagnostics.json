@@ -1,18 +1,18 @@
 {
   "date_min_data": "2010-09-09",
-  "date_max_data": "2026-09-22",
-  "n_data": 4033,
-  "n_X_live": 3998,
-  "n_y_reg_revealed": 4032,
-  "n_reg_train": 3997,
+  "date_max_data": "2026-09-23",
+  "n_data": 4034,
+  "n_X_live": 3999,
+  "n_y_reg_revealed": 4033,
+  "n_reg_train": 3998,
   "n_rows_lost_join": 1,
   "missing_frac": {
     "VOO": 0.0,
     "IEF": 0.0,
-    "JNK": 0.0,
-    "RSP": 0.0,
+    "JNK": 0.00024789291026276647,
+    "RSP": 0.00024789291026276647,
     "QQQ": 0.0,
-    "^VIX": 0.0,
+    "^VIX": 0.00024789291026276647,
     "^VIX3M": 0.0
   },
   "max_equal_close_run": {
@@ -45,5 +45,5 @@
   },
   "data_freshness_ok": true,
   "freshness_calendar": "XNYS",
-  "expected_completed_market_session": "2026-09-22"
+  "expected_completed_market_session": "2026-09-23"
 }
