@@ -350,6 +350,28 @@ def _require_causal_base_rates(frame: pd.DataFrame, *, context: str) -> np.ndarr
     return values
 
 
+def _realized_log_spread(
+    frame: pd.DataFrame, voo_real_col: str, ief_real_col: str
+) -> np.ndarray:
+    """Recreate Part 1's one-session log-return spread from observed closes."""
+    prices = {
+        name: pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float)
+        for name in ("px_voo_t", "px_ief_t", voo_real_col, ief_real_col)
+    }
+    invalid = np.zeros(len(frame), dtype=bool)
+    for values in prices.values():
+        invalid |= ~np.isfinite(values) | (values <= 0)
+    if invalid.any():
+        raise RuntimeError(
+            "Current-protocol evidence contains invalid anchor or realized prices "
+            f"at rows {frame.index[invalid].tolist()[:5]}."
+        )
+    return (
+        np.log(prices[voo_real_col] / prices["px_voo_t"])
+        - np.log(prices[ief_real_col] / prices["px_ief_t"])
+    )
+
+
 def diebold_mariano_test(
     errors_model: np.ndarray,
     errors_benchmark: np.ndarray,
@@ -747,8 +769,8 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         if "tail_threshold" not in realized.columns:
             raise RuntimeError("Current-protocol evidence is missing the row-level tail_threshold field.")
         thr_series = pd.to_numeric(realized["tail_threshold"], errors="coerce")
-        if thr_series.isna().any():
-            raise RuntimeError("Current-protocol evidence contains a non-numeric tail_threshold value.")
+        if not np.isfinite(thr_series.to_numpy(dtype=float)).all():
+            raise RuntimeError("Current-protocol evidence contains a non-finite tail_threshold value.")
 
         br_values = _require_causal_base_rates(
             realized,
@@ -772,13 +794,16 @@ def generate_live_report(cfg: Part9Config) -> Dict:
                 pred_p = pred_p_raw
         else:
             pred_p = pred_p_raw
+        log_spread_real = _realized_log_spread(realized, voo_real_col, ief_real_col)
+        # Simple returns remain appropriate for the descriptive active-return
+        # calculation.  Part 1's event label and its threshold use log returns.
         spread_real = (
             pd.to_numeric(realized[voo_real_col], errors="coerce").values / pd.to_numeric(realized["px_voo_t"], errors="coerce").values - 1.0
         ) - (
             pd.to_numeric(realized[ief_real_col], errors="coerce").values / pd.to_numeric(realized["px_ief_t"], errors="coerce").values - 1.0
         )
-        # FIX (Finding B): per-row threshold applied element-wise
-        y_live = (spread_real < thr_series.values).astype(float)
+        # Match Part 1 exactly: the row-level threshold is a log-return spread.
+        y_live = (log_spread_real < thr_series.values).astype(float)
         m = np.isfinite(pred_p) & np.isfinite(y_live) & np.isfinite(br_values)
         if m.sum() >= 2:
             live_stats = t_stat_sign_accuracy(y_live[m], pred_p[m], br_values[m])

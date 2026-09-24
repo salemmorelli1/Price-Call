@@ -85,8 +85,8 @@ def test_part0_rejects_missing_core_close_instead_of_synthesizing_it(monkeypatch
     )
     calls = []
 
-    def fake_download(**kwargs):
-        calls.append(kwargs)
+    def fake_download(*args, **kwargs):
+        calls.append((args, kwargs))
         return raw
 
     monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
@@ -102,9 +102,10 @@ def test_part0_rejects_missing_core_close_instead_of_synthesizing_it(monkeypatch
     )
     with pytest.raises(RuntimeError, match="core tickers still have NaN") as error:
         part0.download_market_data(cfg)
-    assert calls[0]["end"] == "2026-09-05"
-    assert len(calls) == 4
-    assert all(call.get("threads") is False for call in calls[1:])
+    assert calls[0][1]["end"] == "2026-09-05"
+    assert len(calls) == 5
+    assert all(call[1].get("threads") is False for call in calls[1:4])
+    assert calls[-1][0] == (["VOO", "IEF"],)
     assert "2026-09-04" in str(error.value)
 
 
@@ -156,6 +157,94 @@ def test_part0_recovers_partial_core_gap_from_raw_individual_retry(monkeypatch):
     assert calls[1]["tickers"] == ["VOO"]
     assert calls[1]["threads"] is False
     assert quality["VOO"]["individual_retry_recovered_rows"] == 1
+
+
+def test_part0_recovers_core_closes_with_short_paired_request(monkeypatch):
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23"]), name="Date"
+    )
+    bulk_columns = pd.MultiIndex.from_product(
+        [["VOO", "IEF"], ["Close", "Volume"]]
+    )
+    bulk = pd.DataFrame(
+        [[100.0, 10.0, 90.0, 9.0], [None] * 4, [None] * 4],
+        index=sessions,
+        columns=bulk_columns,
+    )
+    paired_columns = pd.MultiIndex.from_product(
+        [["Close", "Volume"], ["VOO", "IEF"]]
+    )
+    paired = pd.DataFrame(
+        [[100.0, 90.0, 10.0, 9.0],
+         [101.0, 91.0, 11.0, 10.0],
+         [102.0, 92.0, 12.0, 11.0]],
+        index=sessions,
+        columns=paired_columns,
+    )
+    calls = []
+
+    def fake_download(*args, **kwargs):
+        calls.append((args, kwargs))
+        return paired if len(calls) == 8 else bulk
+
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", fake_download)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
+    cfg = part0.Part0Config(
+        start="2026-09-21",
+        end="2026-09-23",
+        equity_tickers=("VOO", "IEF"),
+        vix_tickers=(),
+        core_tickers=("VOO", "IEF"),
+        min_history_years=0.0,
+    )
+
+    close, volume, quality = part0.download_market_data(cfg)
+
+    assert len(calls) == 8  # bulk, three per ticker, then one paired request
+    assert calls[-1][0] == (["VOO", "IEF"],)
+    assert calls[-1][1]["start"] == "2026-09-21"
+    assert calls[-1][1]["end"] == "2026-09-24"
+    assert close.loc[pd.Timestamp("2026-09-23"), ["VOO", "IEF"]].tolist() == [102.0, 92.0]
+    assert volume.loc[pd.Timestamp("2026-09-23"), ["VOO", "IEF"]].tolist() == [12.0, 11.0]
+    assert quality["VOO"]["paired_retry_recovered_rows"] == 2
+    assert quality["IEF"]["paired_retry_recovered_rows"] == 2
+    assert quality["VOO"]["paired_retry_recovered_dates"] == [
+        "2026-09-22", "2026-09-23"
+    ]
+
+
+def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(["2026-09-21", "2026-09-22"]), name="Date"
+    )
+    columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
+    bulk = pd.DataFrame([[100.0, 90.0], [None, None]], index=sessions, columns=columns)
+    paired = pd.DataFrame([[105.0, 90.0], [101.0, 91.0]], index=sessions, columns=columns)
+    calls = []
+
+    def fake_download(*args, **kwargs):
+        calls.append((args, kwargs))
+        return paired if len(calls) == 8 else bulk
+
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", fake_download)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
+    cfg = part0.Part0Config(
+        start="2026-09-21",
+        end="2026-09-22",
+        equity_tickers=("VOO", "IEF"),
+        vix_tickers=(),
+        core_tickers=("VOO", "IEF"),
+        min_history_years=0.0,
+    )
+
+    with pytest.raises(RuntimeError, match="disagrees with existing VOO"):
+        part0.download_market_data(cfg)
 
 
 def test_completed_session_input_validator_rejects_non_session_row(tmp_path, monkeypatch):

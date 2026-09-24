@@ -116,6 +116,75 @@ def test_live_report_handles_an_empty_current_evidence_cohort(tmp_path):
     assert "classification_stats_live" not in report
 
 
+def test_live_tail_labels_match_part1_log_returns(tmp_path, monkeypatch):
+    from artifact_integrity import PROTOCOL_VERSION
+    import part9_live_attribution as part9
+
+    # Simple-return spread is -0.0100 on the first row, but the Part 1
+    # log-return spread is about -0.009852: only the second row is an event.
+    prediction_log = tmp_path / "prediction_log.csv"
+    pd.DataFrame([
+        {
+            "decision_date": "2026-09-21",
+            "model_protocol_version": PROTOCOL_VERSION,
+            "evidence_eligible": 1,
+            "px_voo_t": 100.0, "px_ief_t": 100.0,
+            "px_voo_realized": 101.0, "px_ief_realized": 102.0,
+            "p_final_cal": 0.20, "base_rate": 0.20,
+            "tail_threshold": -0.0099,
+        },
+        {
+            "decision_date": "2026-09-22",
+            "model_protocol_version": PROTOCOL_VERSION,
+            "evidence_eligible": 1,
+            "px_voo_t": 100.0, "px_ief_t": 100.0,
+            "px_voo_realized": 99.0, "px_ief_realized": 100.0,
+            "p_final_cal": 0.80, "base_rate": 0.20,
+            "tail_threshold": -0.0099,
+        },
+    ]).to_csv(prediction_log, index=False)
+    original_stats = part9.t_stat_sign_accuracy
+    monkeypatch.setattr(
+        part9, "t_stat_sign_accuracy",
+        lambda *args, **kwargs: original_stats(*args, n_perm=20, **kwargs),
+    )
+    cfg = part9.Part9Config(
+        predlog_path=str(prediction_log),
+        part2_tape_path=str(tmp_path / "missing-tape.csv"),
+        part6_dir=str(tmp_path / "missing-part6"),
+        out_dir=str(tmp_path / "part9"),
+        part8_cost_path=str(tmp_path / "missing-costs.csv"),
+        part1_dir=str(tmp_path / "missing-part1"),
+    )
+
+    report = part9.generate_live_report(cfg)
+
+    assert report["n_live_realized"] == 2
+    assert report["classification_stats_live"]["n_positive"] == 1
+    assert report["classification_stats_live"]["brier"] == pytest.approx(0.04)
+    assert report["classification_stats_live"]["inference_eligible"] is False
+
+
+def test_live_log_spread_fails_closed_on_invalid_prices():
+    from part9_live_attribution import _realized_log_spread
+
+    frame = pd.DataFrame({
+        "px_voo_t": [100.0, 0.0], "px_ief_t": [100.0, 100.0],
+        "px_voo_realized": [101.0, 101.0], "px_ief_realized": [102.0, 102.0],
+    }, index=[7, 8])
+    with pytest.raises(RuntimeError, match=r"rows \[8\]"):
+        _realized_log_spread(frame, "px_voo_realized", "px_ief_realized")
+
+
+def test_backfill_spread_diagnostic_uses_log_returns():
+    from backfill_realized import _log_return_spread
+
+    spread = _log_return_spread(101.0, 102.0, 100.0, 100.0)
+    assert spread == pytest.approx(np.log(1.01) - np.log(1.02))
+    assert spread > -0.0099  # simple-return spread would be -0.0100
+    assert np.isnan(_log_return_spread(101.0, 102.0, 0.0, 100.0))
+
+
 def test_regime_platt_auc_validation_failure_excludes_regime(tmp_path, monkeypatch):
     import sklearn.metrics
 
