@@ -305,10 +305,16 @@ def _recover_verified_historical_core_closes(
 
         # Earlier gaps remain verifiable when the prior production snapshot
         # itself records their recovery from a separately corroborated run.
+        first_valid = {
+            ticker: close[ticker].first_valid_index()
+            for ticker in cfg.core_tickers if ticker in close
+        }
         gaps = [
             day for day in close.index[1:-1]
             if day <= session and any(
-                ticker in close and pd.isna(close.at[day, ticker])
+                first_valid.get(ticker) is not None
+                and day >= first_valid[ticker]
+                and pd.isna(close.at[day, ticker])
                 for ticker in cfg.core_tickers
             )
         ]

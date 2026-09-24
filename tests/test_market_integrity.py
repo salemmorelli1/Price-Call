@@ -255,7 +255,8 @@ def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
     "failure",
     [None, "invalid_manifest", "unverified", "backfill_disagrees",
      "current_session", "latest_missing", "price_scale_mismatch",
-     "earlier_verified", "no_earlier_provenance", "legacy_protocol"],
+     "earlier_verified", "no_earlier_provenance", "legacy_protocol",
+     "pre_inception"],
 )
 def test_part0_only_recovers_corroborated_historical_core_closes(
     tmp_path, monkeypatch, failure
@@ -263,16 +264,17 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
     import artifact_integrity
     import part0_data_infrastructure as part0
 
-    sessions = pd.DatetimeIndex(
-        pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23"]), name="Date"
-    )
+    dates = ["2026-09-21", "2026-09-22", "2026-09-23"]
+    if failure == "pre_inception":
+        dates.insert(0, "2026-09-18")
+    sessions = pd.DatetimeIndex(pd.to_datetime(dates), name="Date")
     columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
-    raw = pd.DataFrame(
-        [[99.0 if failure == "price_scale_mismatch" else 100.0, 90.0],
-         [None, None],
-         [None if failure == "latest_missing" else 102.0, 92.0]],
-        index=sessions, columns=columns,
-    )
+    prices = [[99.0 if failure == "price_scale_mismatch" else 100.0, 90.0],
+              [None, None],
+              [None if failure == "latest_missing" else 102.0, 92.0]]
+    if failure == "pre_inception":
+        prices.insert(0, [None, 89.0])
+    raw = pd.DataFrame(prices, index=sessions, columns=columns)
     status_dir = tmp_path / "artifacts_part10_bot"
     meta_dir = tmp_path / "artifacts_part0"
     log_dir = tmp_path / "artifacts_part3"
@@ -344,7 +346,7 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
         start="2026-09-21", end="2026-09-23", equity_tickers=("VOO", "IEF"),
         vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
     )
-    if failure not in (None, "earlier_verified", "legacy_protocol"):
+    if failure not in (None, "earlier_verified", "legacy_protocol", "pre_inception"):
         with pytest.raises(
             RuntimeError,
             match="2026-09-23" if failure == "latest_missing" else "2026-09-22",
