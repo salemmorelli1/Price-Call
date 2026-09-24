@@ -4,6 +4,9 @@ name: Daily Production Run
 # data-settlement boundary. Runs are serialized, and a committed XNYS-session
 # marker makes duplicate DST/catch-up triggers idempotent.
 on:
+  # Temporary research replay trigger; removed after branch verification.
+  push:
+    branches: ["codex/pit-macro-replay-v1"]
   schedule:
     - cron: "45 20 * * 1-5"  # 4:45 PM EDT (UTC-4, summer)
     - cron: "45 21 * * 1-5"  # 4:45 PM EST (UTC-5, winter)
@@ -169,7 +172,10 @@ jobs:
           session_date = latest_completed_xnys_session().date().isoformat()
           marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          if event == "workflow_dispatch":
+          if os.environ.get("GITHUB_REF_NAME") == "codex/pit-macro-replay-v1":
+              should_run = True
+              reason = f"isolated research replay for completed_session={session_date}"
+          elif event == "workflow_dispatch":
               should_run = True
               reason = f"manual dispatch for completed_session={session_date}"
           else:
@@ -261,10 +267,17 @@ jobs:
             artifacts_part1/*.parquet
             artifacts_part1/part1_meta.json
             artifacts_part1/part1_diagnostics.json
+            artifacts_part2_g532/predictions/part2_g532_summary.json
+            artifacts_part2_g532/predictions/g532_final_consensus_tape.csv
             artifacts_part2a_alpha/
             artifacts_part2b_xgb/
             artifacts_part2c_bnn/
             artifacts_part6/
+            artifacts_part3/prediction_log.csv
+            artifacts_part3_v1/part3_summary.json
+            artifacts_part7/current_target_weights.json
+            artifacts_part9/live_attribution_report.json
+            artifacts_dashboard/dashboard_snapshot.json
             artifacts_manifest.json
             artifacts_part10_bot/pipeline_status.json
           if-no-files-found: error
@@ -275,7 +288,7 @@ jobs:
       # The source commit is rechecked before committing. A concurrent branch
       # change aborts this run instead of conflict-merging mixed-run artifacts.
       - name: Commit and push artifacts
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -329,7 +342,7 @@ jobs:
           git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Deploy the committed dashboard
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"

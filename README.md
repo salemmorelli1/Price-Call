@@ -176,8 +176,8 @@ versus the rowwise causal prevalence forecast.
 - Raw data freshness is recorded and participates in fail-closed governance.
 - Scheduled runs use idempotent date markers so delayed GitHub jobs still execute once.
 - PyTorch is removed from core dependencies; the BNN sleeve requires explicit opt-in.
-- FRED history uses earliest ALFRED releases and their actual availability dates;
-  revised-history fallbacks are labeled and force research governance to fail closed.
+- FRED history uses earliest retrieved ALFRED releases from the next session.
+  Pre-archive values remain missing; revised-history fallback is prohibited.
 - A separate `point_in_time_macro.py` adapter rebuilds the macro-dependent feature
   file before regime fitting. Its FRED credential comes only from `FRED_API_KEY` in
   the runtime environment or GitHub Actions secret.
@@ -186,8 +186,9 @@ versus the rowwise causal prevalence forecast.
 - Prediction target dates use the XNYS exchange calendar rather than weekday-only offsets.
 - Live evidence is versioned by methodology. Pre-integrity observations remain in the
   ledger as legacy rows but cannot satisfy the current 60-observation gate.
-- `causal-integrity-v3` requires AUC direction, DeLong uncertainty, and positive Brier
-  skill before historical evidence can clear.
+- `causal-integrity-v4` starts a fresh paper-evidence cohort. Historical AUC
+  direction, DeLong uncertainty, and Brier skill retain their thresholds, and
+  independent prospective validation remains pending before publication can clear.
 - AUC and balanced-accuracy significance flags require at least five observations
   from each class and use directional permutation p-values.
 - Fail-closed Part 8 output is an explicit `NO_ACTION_STALE_OR_UNCLEARED` artifact

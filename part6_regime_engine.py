@@ -44,7 +44,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from artifact_integrity import PROTOCOL_VERSION, write_json_strict
+from artifact_integrity import PROTOCOL_VERSION, read_json_strict, sha256_file, write_json_strict
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
@@ -226,6 +226,14 @@ def build_fomc_calendar(index: pd.DatetimeIndex) -> pd.DataFrame:
 
 def _load_part0_features(cfg: Part6Config) -> pd.DataFrame:
     parquet_path = os.path.join(cfg.part0_dir, "features_full.parquet")
+    meta_path = Path(cfg.part0_dir) / "part0_meta.json"
+    pit_meta = read_json_strict(meta_path) if meta_path.is_file() else {}
+    if pit_meta.get("point_in_time_adapter"):
+        if not os.path.isfile(parquet_path):
+            raise FileNotFoundError("point-in-time features parquet is missing; DuckDB fallback is unsafe")
+        expected_hash = pit_meta.get("features_file_sha256")
+        if not expected_hash or sha256_file(parquet_path) != expected_hash:
+            raise RuntimeError("point-in-time features parquet differs from Part 0 metadata")
     if os.path.exists(parquet_path):
         df = pd.read_parquet(parquet_path)
         if "Date" in df.columns:

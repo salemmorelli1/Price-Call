@@ -18,13 +18,18 @@ For a prediction stamped at time *t*:
 5. Event prevalence is estimated from the row's historical training and validation
    windows, never from the full realized tape.
 6. A signal produced for row *t* is paired with returns no earlier than row *t+1*.
-7. FRED values use their earliest ALFRED release and become visible only on the
-   corresponding real-time availability date. A revised-history fallback is labeled
-   non-point-in-time and cannot clear governance.
+7. FRED values use the earliest retrieved ALFRED release and become visible on
+   the first exchange session after that release date. ALFRED gives dates but not
+   intraday publication times, so same-day forecast use is disallowed. If the
+   archive begins after the model calendar, earlier dates remain missing. A failed
+   or unavailable series
+   remains missing and cannot clear governance; revised-history values are never
+   substituted into training features.
 
-The secret-free `point_in_time_macro.py` adapter runs after Part 0 and rebuilds both
-`macro_data.parquet` and `features_full.parquet` before the regime engine starts.
-This placement prevents the regime model from reading the revised-history feature file.
+The secret-free `point_in_time_macro.py` adapter runs after Part 0 and rebuilds
+`macro_data.parquet`, `features_full.parquet`, and any Part 0 DuckDB copies before
+the regime engine starts. The regime loader checks the feature-file hash and
+refuses a DuckDB fallback when the point-in-time parquet is missing.
 
 ## Calibration contract
 
@@ -59,10 +64,25 @@ directional significance flag remains false.
 
 ## Evidence cohort contract
 
-`causal-integrity-v3` is the live-evidence cohort for the corrected target definition.
-Earlier prediction-log rows are retained for reproducibility with `evidence_eligible=0`.
-Promotion counts only current-protocol rows produced with fresh, point-in-time inputs
-and an exact row-level tail threshold. Code SHA and workflow run ID are stored on each row.
+`causal-integrity-v4` is the new live-evidence cohort after removing revised macro
+history. All v3 rows, including the eleven realized v3 rows previously excluded for
+incomplete macro provenance, remain in the ledger and never count toward v4.
+Promotion counts only current-protocol rows produced on main with fresh, dated
+point-in-time inputs, an exact row-level tail threshold, and a recorded issuance
+time before the target session's close. Code SHA and workflow run ID are retained.
+
+The 2020–2026 historical holdout has already informed debugging and is descriptive
+for v4. The v4 method is frozen for a new prospective evaluation starting no earlier
+than 2026-09-24. Historical AUC p <= 0.10 and causal Brier skill >= 0.005 retain
+their numerical thresholds, but cannot promote v4 without an independently reviewed
+prospective holdout. The `independent_validation_ok` publication gate remains false
+until a separate review assesses the prospective series. Eligible paper forecasts
+can accumulate while the publication and allocation gates stay closed; 60 is only
+the minimum for live inference, not an automatic release rule.
+
+Only a main-branch production forecast issued before its target close can qualify.
+Research replays on feature branches retain their diagnostic artifacts in GitHub
+Actions, but cannot commit artifacts or deploy Pages.
 
 The event label, distributional overlay, prediction log, and live attribution all use
 the same backward-looking 63-observation 20th-percentile threshold shifted by one row.

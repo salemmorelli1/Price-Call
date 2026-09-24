@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 
-PROTOCOL_VERSION = "causal-integrity-v3"
+PROTOCOL_VERSION = "causal-integrity-v4"
 LEGACY_PROTOCOL_VERSION = "legacy-pre-causal-integrity-v3"
 
 REQUIRED_PUBLISHED_FILES = (
@@ -581,6 +581,10 @@ def validate_execution_lineage(root: str | Path) -> list[str]:
                 f"actual={actual or 'missing'} expected={expected_attempt or 'missing'}"
             )
 
+    # A code-only PR can carry the previous verified snapshot until a new
+    # production run publishes its replacement. Verify the snapshot against
+    # its own recorded protocol, without silently treating old rows as v4.
+    snapshot_protocol = _identity_text(status.get("protocol_version"))
     protocol_values: dict[str, Any] = {
         "pipeline status": status.get("protocol_version"),
         "Part 3 summary": part3.get("protocol_version"),
@@ -601,9 +605,10 @@ def validate_execution_lineage(root: str | Path) -> list[str]:
             "model_protocol_version"
         )
     for label, value in protocol_values.items():
-        if _identity_text(value) != PROTOCOL_VERSION:
+        if not snapshot_protocol or _identity_text(value) != snapshot_protocol:
             failures.append(
-                f"{label} protocol does not match {PROTOCOL_VERSION}: {value!r}"
+                f"{label} protocol does not match pipeline snapshot "
+                f"{snapshot_protocol or '<missing>'}: {value!r}"
             )
 
     if instructions.get("lineage_verified") is not True:
@@ -729,6 +734,10 @@ def validate_completed_session_inputs(root: str | Path) -> list[str]:
 
 def build_run_manifest(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
+    status = read_json_strict(root_path / "artifacts_part10_bot/pipeline_status.json")
+    snapshot_protocol = status.get("protocol_version")
+    if not isinstance(snapshot_protocol, str) or not snapshot_protocol:
+        raise ValueError("pipeline status lacks a protocol_version")
     files: dict[str, Any] = {}
     for rel in REQUIRED_PUBLISHED_FILES:
         path = root_path / rel
@@ -744,7 +753,7 @@ def build_run_manifest(root: str | Path) -> dict[str, Any]:
             previous = None
         if (
             isinstance(previous, dict)
-            and previous.get("protocol_version") == PROTOCOL_VERSION
+            and previous.get("protocol_version") == snapshot_protocol
             and previous.get("files") == files
         ):
             # Verification must not rewrite provenance or dirty a clean checkout
@@ -752,7 +761,7 @@ def build_run_manifest(root: str | Path) -> dict[str, Any]:
             return previous
 
     return {
-        "protocol_version": PROTOCOL_VERSION,
+        "protocol_version": snapshot_protocol,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_code_sha": os.environ.get("PRICECALL_CODE_SHA") or os.environ.get("GITHUB_SHA"),
         "github_run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -770,8 +779,12 @@ def verify_run_manifest(root: str | Path) -> list[str]:
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [f"artifacts_manifest.json: {exc}"]
     failures: list[str] = []
-    if manifest.get("protocol_version") != PROTOCOL_VERSION:
-        failures.append("manifest protocol_version does not match the running code")
+    try:
+        status = read_json_strict(root_path / "artifacts_part10_bot/pipeline_status.json")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [f"pipeline status could not be read for manifest verification: {exc}"]
+    if manifest.get("protocol_version") != status.get("protocol_version"):
+        failures.append("manifest protocol_version does not match the published pipeline snapshot")
     entries = manifest.get("files", {})
     for rel in REQUIRED_PUBLISHED_FILES:
         path = root_path / rel
@@ -824,6 +837,9 @@ def main() -> int:
             raise SystemExit("--status-only requires a status-writing flag")
         return 0
     if args.verify_run_inputs:
+        status = read_json_strict(root / "artifacts_part10_bot/pipeline_status.json")
+        if status.get("protocol_version") != PROTOCOL_VERSION:
+            raise SystemExit("This production run has not published artifacts for the running protocol")
         input_failures = validate_completed_session_inputs(root)
         if input_failures:
             raise SystemExit(

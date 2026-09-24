@@ -40,7 +40,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from market_calendar import next_xnys_session
+from market_calendar import _calendar, next_xnys_session
 
 from artifact_integrity import (
     LEGACY_PROTOCOL_VERSION,
@@ -801,6 +801,21 @@ def _count_realized_predlog_rows(predlog_df: pd.DataFrame) -> int:
     return int(current_evidence_mask(predlog_df, require_realized=True).sum())
 
 
+def _prospective_evidence_status(target_date: object, *, now: datetime | None = None) -> tuple[str, bool]:
+    """Admit only main-branch forecasts recorded before their target closes."""
+    issued = datetime.now(timezone.utc) if now is None else now
+    if issued.tzinfo is None:
+        raise ValueError("forecast issuance time must be timezone-aware")
+    issued = issued.astimezone(timezone.utc)
+    calendar = _calendar()
+    target = pd.Timestamp(target_date).normalize()
+    is_future = bool(calendar.is_session(target) and issued < calendar.session_close(target))
+    is_main = os.environ.get("GITHUB_REF_NAME") == "main"
+    if is_main and not is_future:
+        raise RuntimeError("Refusing to write a production forecast after its target session closed")
+    return issued.isoformat(), bool(is_main and is_future)
+
+
 def _upsert_governance_history(path: Path, new_rows: pd.DataFrame) -> pd.DataFrame:
     """Atomically upsert governance rows while preserving every prior cohort."""
     try:
@@ -882,6 +897,7 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
             "model_protocol_version", "model_code_sha", "pipeline_run_id",
             "pipeline_run_attempt", "prediction_revision_id",
             "evidence_cohort", "evidence_eligible", "data_freshness_ok", "provenance_complete",
+            "forecast_issued_at_utc", "evidence_prospective",
             "target_definition_id"
         ])
 
@@ -917,6 +933,7 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         str(pipeline_run_attempt or "0"),
     ])
     provenance_complete = bool(model_code_sha and pipeline_run_id and pipeline_run_attempt)
+    forecast_issued_at_utc, prospective = _prospective_evidence_status(target_date)
 
     row = {
         "decision_date": pd.Timestamp(decision_date).normalize(),
@@ -983,8 +1000,10 @@ def _upsert_prediction_log(predlog_path: Path, decision_date: pd.Timestamp, targ
         "prediction_revision_id": prediction_revision_id,
         "evidence_cohort": PROTOCOL_VERSION,
         "evidence_eligible": int(
-            data_freshness_ok and target_definition_ok and provenance_complete
+            data_freshness_ok and target_definition_ok and provenance_complete and prospective
         ),
+        "forecast_issued_at_utc": forecast_issued_at_utc,
+        "evidence_prospective": int(prospective),
         "data_freshness_ok": int(data_freshness_ok),
         "provenance_complete": int(provenance_complete),
         "target_definition_id": target_definition_id,

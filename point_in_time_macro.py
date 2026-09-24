@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replace revised FRED history with first-release ALFRED observations.
+"""Build macro features from releases available by each decision date.
 
 This adapter runs immediately after Part 0.  It deliberately obtains its API
 credential only from the environment and contains no embedded credential.
@@ -74,10 +74,9 @@ def get_series_releases_chunked(
 ) -> pd.DataFrame:
     """Fetch releases while isolating pre-history failures by window.
 
-    FRED can reject an ALFRED real-time window that predates a series even
-    though later windows are valid. Such leading failures are diagnostic, not
-    a reason to discard every successful later chunk. Once a usable chunk has
-    appeared, however, a request failure is a coverage gap and remains fatal.
+    ALFRED can reject a window before its archived history begins. Only that
+    specific error may precede a usable chunk; other API errors are fatal.
+    Missing pre-archive dates remain missing in the returned time series.
     """
     chunks: list[pd.DataFrame] = []
     diagnostics: list[dict[str, str | int]] = []
@@ -125,7 +124,11 @@ def get_series_releases_chunked(
                 "rows": int(len(chunk)),
             })
         except Exception as exc:
-            status = "coverage_error" if seen_usable else "prehistory_error"
+            prearchive = (
+                not seen_usable
+                and "series does not exist in ALFRED" in str(exc)
+            )
+            status = "prehistory_error" if prearchive else "coverage_error"
             detail = f"{type(exc).__name__}: {exc}"
             diagnostics.append({
                 "start": start,
@@ -134,12 +137,12 @@ def get_series_releases_chunked(
                 "rows": 0,
                 "error": detail,
             })
-            if seen_usable:
+            if not prearchive:
                 coverage_errors.append(f"{start}..{end}: {detail}")
 
     if coverage_errors:
         raise AlfredCoverageError(
-            f"ALFRED coverage failed after the first usable {series_id} chunk: "
+            f"ALFRED coverage failed for {series_id}: "
             + "; ".join(coverage_errors),
             diagnostics,
         )
@@ -161,7 +164,12 @@ def first_release_series(
     calendar: pd.DatetimeIndex,
     name: str,
 ) -> pd.Series:
-    """Return values indexed by when their first vintage became observable."""
+    """Use each first retrieved vintage from the next exchange session onward.
+
+    ALFRED supplies release dates without an intraday timestamp. Deferring a
+    value to the following session avoids assuming it existed by that day's
+    price-close decision cutoff.
+    """
     frame = pd.DataFrame(releases).copy()
     required = {"date", "realtime_start", "value"}
     if not required.issubset(frame.columns):
@@ -180,10 +188,18 @@ def first_release_series(
     # Several observations can be released together.  At a daily decision
     # frequency, the newest observation available that day is authoritative.
     series = series[~series.index.duplicated(keep="last")].sort_index()
-    # Preserve weekend/holiday releases while aligning them to the first later
-    # exchange session. Reindexing directly to sessions would discard them.
-    aligned_index = calendar.union(series.index).sort_values()
-    return series.reindex(aligned_index).ffill().reindex(calendar)
+    # A release on a closed day becomes available at the next session; a
+    # release on a trading day waits one session because its hour is unknown.
+    sessions = pd.DatetimeIndex(calendar).sort_values()
+    session_positions = sessions.searchsorted(series.index, side="right")
+    usable = session_positions < len(sessions)
+    available = pd.Series(
+        series.to_numpy()[usable],
+        index=sessions[session_positions[usable]],
+        name=name,
+    )
+    available = available[~available.index.duplicated(keep="last")].sort_index()
+    return available.reindex(sessions).ffill().reindex(calendar)
 
 
 def _atomic_parquet(frame: pd.DataFrame, path: Path) -> None:
@@ -192,18 +208,27 @@ def _atomic_parquet(frame: pd.DataFrame, path: Path) -> None:
     temporary.replace(path)
 
 
-def _fallback_series(
-    revised: pd.DataFrame,
-    calendar: pd.DatetimeIndex,
-    name: str,
-) -> pd.Series:
-    if name not in revised.columns:
-        return pd.Series(index=calendar, dtype=float, name=name)
-    series = pd.to_numeric(revised[name], errors="coerce")
-    series.index = pd.to_datetime(series.index, errors="coerce").normalize()
-    series = series[~series.index.duplicated(keep="last")].sort_index()
-    aligned_index = calendar.union(series.index).sort_values()
-    return series.reindex(aligned_index).ffill().reindex(calendar).rename(name)
+def _refresh_duckdb(db_path: Path, macro: pd.DataFrame, features: pd.DataFrame) -> None:
+    """Replace Part 0's initial revised tables when the optional DB exists."""
+    if not db_path.is_file():
+        return
+    import duckdb
+
+    con = duckdb.connect(str(db_path))
+    try:
+        con.execute("BEGIN TRANSACTION")
+        for table, frame in (("macro_data", macro), ("features_full", features)):
+            con.register("pit_frame", frame.reset_index())
+            try:
+                con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM pit_frame")
+            finally:
+                con.unregister("pit_frame")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
 
 
 def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
@@ -222,9 +247,6 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     close.index = pd.to_datetime(close.index, errors="coerce").normalize()
     close = close[~close.index.isna()].sort_index()
     calendar = pd.DatetimeIndex(close.index.unique(), name="Date")
-    revised = pd.read_parquet(macro_path) if macro_path.is_file() else pd.DataFrame(index=calendar)
-    revised.index = pd.to_datetime(revised.index, errors="coerce").normalize()
-
     fred = Fred(api_key=api_key)
     realtime_start = calendar.min() - pd.DateOffset(years=2)
     realtime_end = calendar.max()
@@ -232,6 +254,8 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     modes: dict[str, str] = {}
     errors: dict[str, str] = {}
     chunk_diagnostics: dict[str, Any] = {}
+    first_availability: dict[str, str | None] = {}
+    available_observations: dict[str, int] = {}
     for series_id, name in FRED_SERIES.items():
         try:
             releases = get_series_releases_chunked(
@@ -241,28 +265,33 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
                 realtime_end,
             )
             chunk_diagnostics[name] = releases.attrs.get("chunk_diagnostics", [])
-            continuous_start = pd.Timestamp(
-                releases.attrs.get("continuous_retrieval_start")
-            ).normalize()
-            if continuous_start > calendar.min():
-                raise ValueError(
-                    "first usable ALFRED window starts after the model calendar "
-                    f"({continuous_start.date()} > {calendar.min().date()})"
-                )
             series = first_release_series(releases, calendar, name)
-            modes[name] = "alfred_first_release_chunked"
+            if not series.notna().any():
+                raise ValueError(f"ALFRED has no releases by {calendar.max().date()} for {series_id}")
+            first_window = pd.Timestamp(releases.attrs["continuous_retrieval_start"])
+            modes[name] = (
+                "alfred_first_release_partial"
+                if first_window > calendar.min()
+                else "alfred_first_release_chunked"
+            )
         except Exception as exc:
             if isinstance(exc, AlfredCoverageError):
                 chunk_diagnostics[name] = exc.diagnostics
-            series = _fallback_series(revised, calendar, name)
-            modes[name] = "latest_revised_fallback" if series.notna().any() else "unavailable"
+            # No revised-history or previous-artifact substitution is safe for
+            # a backtest. A missing vintage stays missing and closes the gate.
+            series = pd.Series(index=calendar, dtype=float, name=name)
+            modes[name] = "unavailable"
             errors[name] = f"{type(exc).__name__}: {exc}"
+        first = series.first_valid_index()
+        first_availability[name] = first.date().isoformat() if first is not None else None
+        available_observations[name] = int(series.notna().sum())
         columns.append(series)
 
     macro = pd.concat(columns, axis=1).reindex(calendar)
     macro.index.name = "Date"
     complete = bool(modes) and all(
-        mode == "alfred_first_release_chunked" for mode in modes.values()
+        mode in {"alfred_first_release_chunked", "alfred_first_release_partial"}
+        for mode in modes.values()
     )
 
     # Part 6 consumes features_full.parquet, so rebuilding the macro file alone
@@ -271,24 +300,35 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     _atomic_parquet(macro, macro_path)
     features_path = output / "features_full.parquet"
     _atomic_parquet(features, features_path)
+    _refresh_duckdb(output / "market_data.duckdb", macro, features)
 
     meta = read_json_strict(meta_path)
     meta.update({
         "protocol_version": PROTOCOL_VERSION,
-        "fred_vintage_policy": "earliest ALFRED release, indexed by first availability date",
+        "fred_vintage_policy": (
+            "earliest retrieved ALFRED release, available at the next exchange session; "
+            "pre-archive dates missing, never revised-filled"
+        ),
         "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
         "fred_vintage_mode_by_series": modes,
         "fred_vintage_errors": errors,
         "fred_vintage_chunk_diagnostics": chunk_diagnostics,
+        "fred_first_availability_by_series": first_availability,
+        "fred_available_sessions_by_series": available_observations,
+        "fred_revised_fallback_count": 0,
+        "historical_point_in_time_policy": "no-revised-values; missing before archive",
         "historical_point_in_time_complete": complete,
         "point_in_time_adapter": "point_in_time_macro.py",
+        "features_checksum": part0._sha256_df(features),
         "macro_data_sha256": sha256_file(macro_path),
         "features_file_sha256": sha256_file(features_path),
     })
     write_json_strict(meta_path, meta)
     print(
         f"[Point-in-time macro] complete={complete} "
-        f"first_release={sum(mode == 'alfred_first_release_chunked' for mode in modes.values())}/{len(modes)}"
+        f"full={sum(mode == 'alfred_first_release_chunked' for mode in modes.values())} "
+        f"partial={sum(mode == 'alfred_first_release_partial' for mode in modes.values())} "
+        f"unavailable={sum(mode == 'unavailable' for mode in modes.values())}"
     )
     return meta
 
