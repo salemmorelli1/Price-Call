@@ -23,5 +23,8 @@ jobs:
       - run: ruff check --select E9,F63,F7,F82 .
       # python -m keeps the repository root on sys.path for the flat-module layout.
       - run: python -m pytest -q tests/
+      # A pull request runs on a feature ref; also test the production guard
+      # with the same ref name that the merged main workflow receives.
+      - run: GITHUB_REF_NAME=main python -m pytest -q tests/
       - run: python artifact_integrity.py --root .
       - run: python prepare_pages.py --root . --site _site

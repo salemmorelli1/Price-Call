@@ -276,6 +276,9 @@ def test_prediction_upsert_replaces_stale_numeric_run_provenance(
     from artifact_integrity import PROTOCOL_VERSION
     from part3_governance import _upsert_prediction_log
 
+    # Historical ledger fixtures exercise upsert behavior, not issuance on the
+    # production branch. Keep the real production deadline guard in place.
+    monkeypatch.setenv("GITHUB_REF_NAME", "codex/test-fixture")
     path = tmp_path / "prediction_log.csv"
     pd.DataFrame([{
         "decision_date": "2026-09-04",
@@ -347,6 +350,7 @@ def test_prediction_upsert_appends_new_date_without_mixed_date_types(tmp_path, m
     from artifact_integrity import PROTOCOL_VERSION
     from part3_governance import _upsert_prediction_log
 
+    monkeypatch.setenv("GITHUB_REF_NAME", "codex/test-fixture")
     path = tmp_path / "prediction_log.csv"
     pd.DataFrame([{
         "decision_date": "2026-09-04 00:00:00",
