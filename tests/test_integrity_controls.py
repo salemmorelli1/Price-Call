@@ -292,6 +292,9 @@ def test_dashboard_graphic_matches_tail_risk_decision_objective():
     html = Path("index.html").read_text(encoding="utf-8")
 
     assert "VOO versus IEF tail-risk decision pipeline" in html
+    assert "r<sub>VOO</sub> − r<sub>IEF</sub> &lt; θ<sub>t</sub>" in html
+    assert html.count("Price-call diagnostic") == 2
+    assert "TAIL EDGE" not in html
     assert 'id="hero-tail-probability"' in html
     assert 'id="hero-gate-state"' in html
     assert "rows.map(r=>r.base_rate)" in html

@@ -147,6 +147,15 @@ def _safe_float(x) -> float:
         return np.nan
 
 
+def _log_return_spread(voo_future, ief_future, voo_start, ief_start) -> float:
+    """Match the Part 1 VOO-minus-IEF log-return target definition."""
+    values = [_safe_float(v) for v in (voo_future, ief_future, voo_start, ief_start)]
+    if not all(np.isfinite(v) and v > 0 for v in values):
+        return np.nan
+    voo_f, ief_f, voo_t, ief_t = values
+    return float(np.log(voo_f / voo_t) - np.log(ief_f / ief_t))
+
+
 def _resolve_call_value(row: pd.Series, asset: str) -> float:
     asset = asset.lower()
     if asset == "voo":
@@ -283,13 +292,11 @@ def _compute_direction_hit(row: pd.Series) -> float:
     px_voo_real = _safe_float(row.get("px_voo_realized", row.get("voo_realized", np.nan)))
     px_ief_real = _safe_float(row.get("px_ief_realized", row.get("ief_realized", np.nan)))
 
-    if not all(np.isfinite(v) for v in [px_voo_t, px_ief_t, px_voo_call, px_ief_call, px_voo_real, px_ief_real]):
-        return np.nan
-    if px_voo_t == 0 or px_ief_t == 0:
+    pred_spread = _log_return_spread(px_voo_call, px_ief_call, px_voo_t, px_ief_t)
+    real_spread = _log_return_spread(px_voo_real, px_ief_real, px_voo_t, px_ief_t)
+    if not np.isfinite(pred_spread) or not np.isfinite(real_spread):
         return np.nan
 
-    pred_spread = (px_voo_call / px_voo_t - 1.0) - (px_ief_call / px_ief_t - 1.0)
-    real_spread = (px_voo_real / px_voo_t - 1.0) - (px_ief_real / px_ief_t - 1.0)
     return float(int(np.sign(pred_spread) == np.sign(real_spread)))
 
 
@@ -414,12 +421,13 @@ def main() -> int:
             if px_ief_call != 0:
                 df.at[idx, "ief_ape"] = abs(ief_err) / abs(px_ief_call)
 
-        if all(
-            np.isfinite(v)
-            for v in [px_voo_t, px_ief_t, px_voo_realized, px_ief_realized, px_voo_call, px_ief_call]
-        ) and px_voo_t != 0 and px_ief_t != 0:
-            real_spread = (px_voo_realized / px_voo_t - 1.0) - (px_ief_realized / px_ief_t - 1.0)
-            pred_spread = (px_voo_call / px_voo_t - 1.0) - (px_ief_call / px_ief_t - 1.0)
+        real_spread = _log_return_spread(
+            px_voo_realized, px_ief_realized, px_voo_t, px_ief_t
+        )
+        pred_spread = _log_return_spread(
+            px_voo_call, px_ief_call, px_voo_t, px_ief_t
+        )
+        if np.isfinite(real_spread) and np.isfinite(pred_spread):
             df.at[idx, "spread_err"] = real_spread - pred_spread
             df.at[idx, "hit_direction"] = float(int(np.sign(real_spread) == np.sign(pred_spread)))
         else:

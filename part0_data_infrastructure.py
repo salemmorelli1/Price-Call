@@ -407,6 +407,93 @@ def download_market_data(cfg: Part0Config):
             })
             quality[_t] = quality_entry
 
+    # A short, paired VOO/IEF request is the last raw-data recovery path.  The
+    # realized-price backfill uses this request shape successfully when the
+    # long multi-ticker download and single-ticker requests omit recent bars.
+    # Use actual observations only; an empty or incomplete response still fails
+    # the core-close check below.  Never forward-fill an exchange session.
+    core_gaps = []
+    for ticker in cfg.core_tickers:
+        if ticker not in close.columns or close[ticker].isna().all():
+            core_gaps.append(bidx.min())
+        else:
+            first = close[ticker].first_valid_index()
+            missing = close.loc[first:, ticker]
+            if missing.isna().any():
+                core_gaps.append(missing.index[missing.isna()].min())
+    if core_gaps:
+        paired_start = max(pd.Timestamp(cfg.start), min(core_gaps) - pd.Timedelta(days=7))
+        print(
+            f"[Part 0] Retrying incomplete core closes together from "
+            f"{paired_start.date()}"
+        )
+        try:
+            # Match the backfill's two-ticker request shape and default column
+            # layout; _extract_yfinance_field supports either MultiIndex order.
+            paired = yf.download(
+                list(cfg.core_tickers),
+                start=paired_start.date().isoformat(),
+                end=download_end,
+                auto_adjust=True,
+                progress=False,
+            )
+        except Exception as exc:
+            print(f"[Part 0] Paired core retry failed: {exc}")
+        else:
+            for ticker in cfg.core_tickers:
+                candidate = _series_on_calendar(
+                    _extract_yfinance_field(paired, ticker, "Close"), ticker, bidx
+                )
+                if candidate is None:
+                    continue
+                candidate = candidate.where(np.isfinite(candidate) & (candidate > 0))
+                existing = (
+                    close[ticker] if ticker in close.columns
+                    else pd.Series(index=bidx, dtype=float, name=ticker)
+                )
+                overlap = existing.notna() & candidate.notna()
+                if overlap.any() and not np.allclose(
+                    existing.loc[overlap], candidate.loc[overlap], rtol=1e-4, atol=1e-6
+                ):
+                    raise RuntimeError(
+                        f"Part 0 paired core retry disagrees with existing {ticker} "
+                        "prices on overlapping sessions."
+                    )
+                recovered = existing.isna() & candidate.notna()
+                close[ticker] = existing.combine_first(candidate)
+                paired_volume = _series_on_calendar(
+                    _extract_yfinance_field(paired, ticker, "Volume"), ticker, bidx
+                )
+                if paired_volume is not None:
+                    prior_volume = (
+                        volume[ticker] if ticker in volume.columns
+                        else pd.Series(index=bidx, dtype=float, name=ticker)
+                    )
+                    volume[ticker] = prior_volume.combine_first(
+                        paired_volume.where(np.isfinite(paired_volume) & (paired_volume >= 0))
+                    )
+                entry = dict(quality.get(ticker, {}))
+                entry["paired_retry_recovered_rows"] = int(recovered.sum())
+                entry["paired_retry_recovered_dates"] = [
+                    day.date().isoformat() for day in bidx[recovered]
+                ]
+                entry["paired_retry_start"] = paired_start.date().isoformat()
+                entry["missing_after_retry"] = float(close[ticker].isna().mean())
+                first_valid = close[ticker].first_valid_index()
+                years_history = (
+                    (bidx.max() - first_valid).days / 365.25
+                    if first_valid is not None else 0.0
+                )
+                entry["first_valid_date"] = (
+                    first_valid.date().isoformat() if first_valid is not None else None
+                )
+                entry["years_history"] = round(years_history, 2)
+                entry["usable_for_model"] = bool(
+                    first_valid is not None and years_history >= cfg.min_history_years
+                )
+                quality[ticker] = entry
+                print(f"[Part 0]   {ticker} paired retry recovered {int(recovered.sum())} row(s)")
+
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
         raise RuntimeError(
