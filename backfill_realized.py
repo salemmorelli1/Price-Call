@@ -258,20 +258,16 @@ def _resolve_target_trading_date(
     trading_dates: pd.DatetimeIndex,
     h_reb: int,
     explicit_target_date: Optional[pd.Timestamp],
-    *,
-    require_exact_target: bool = False,
 ) -> Optional[pd.Timestamp]:
     if explicit_target_date is not None and not pd.isna(explicit_target_date):
         explicit_target = pd.Timestamp(explicit_target_date).normalize()
         pos = trading_dates.searchsorted(explicit_target)
-        if require_exact_target:
-            if pos >= len(trading_dates):
-                return None
-            candidate = pd.Timestamp(trading_dates[pos]).normalize()
-            return candidate if candidate == explicit_target else None
-        if pos < len(trading_dates):
-            return pd.Timestamp(trading_dates[pos]).normalize()
-        return None
+        if pos >= len(trading_dates):
+            return None
+        candidate = pd.Timestamp(trading_dates[pos]).normalize()
+        # A missing observed bar is not a different forecast target, including
+        # for legacy rows. Preserve the original row for a later exact backfill.
+        return candidate if candidate == explicit_target else None
 
     pos = trading_dates.searchsorted(decision_date)
     if pos >= len(trading_dates):
@@ -376,9 +372,6 @@ def main() -> int:
             trading_dates=trading_dates,
             h_reb=h_reb,
             explicit_target_date=None if pd.isna(explicit_target) else pd.Timestamp(explicit_target).normalize(),
-            require_exact_target=(
-                str(row.get("model_protocol_version", "")) == PROTOCOL_VERSION
-            ),
         )
 
         if target_trading_date is None:

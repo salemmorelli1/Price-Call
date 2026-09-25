@@ -258,8 +258,10 @@ def _recover_verified_historical_core_closes(
     explicitly marked as recovered in that verified snapshot. Match the
     source run, anchor, independent backfill, and adjacent-session price scale.
     The source snapshot can use an older model protocol: an observed price
-    does not change when the model's statistical protocol changes. Never
-    recover the latest session or synthesize a close.
+    does not change when the model's statistical protocol changes. An older
+    recovered session remains usable when a later backfill has lost its exact
+    realization, provided the verified snapshot retained the source lineage.
+    This path never recovers the latest session or synthesizes a close.
     """
     root = _resolve_project_root(cfg)
     status_path = root / "artifacts_part10_bot" / "pipeline_status.json"
@@ -335,7 +337,7 @@ def _recover_verified_historical_core_closes(
                 and row.get("realized_target_date") == day_date
                 and row.get("model_protocol_version") == archived_protocol
             ]
-            if len(anchors) != 1 or len(realized) != 1:
+            if len(anchors) != 1 or len(realized) > 1 or (day == session and len(realized) != 1):
                 raise ValueError("unique matching anchor and realized observations are absent")
             anchor_row = anchors[0]
             source_run = _run_number(anchor_row.get("pipeline_run_id", ""))
@@ -360,6 +362,19 @@ def _recover_verified_historical_core_closes(
             ):
                 raise ValueError("earlier recovered close lacks published source provenance")
 
+            # A later Yahoo download can omit the old target. Earlier legacy
+            # backfills used to move that realization to the next available
+            # date. The archived, manifest-verified production snapshot and
+            # its explicit per-ticker recovery lineage survive that overwrite.
+            # Never use the shifted realization as evidence for this session.
+            previous_rows = [
+                row for row in rows
+                if row.get("decision_date") == previous.date().isoformat()
+                and row.get("model_protocol_version") == archived_protocol
+            ]
+            if not realized and len(previous_rows) != 1:
+                raise ValueError("previous session anchor is absent")
+
             # Validate the entire VOO/IEF pair before mutating either ticker.
             recovered = {}
             for ticker in cfg.core_tickers:
@@ -367,8 +382,8 @@ def _recover_verified_historical_core_closes(
                     continue
                 name = ticker.lower()
                 anchor = float(anchor_row[f"px_{name}_t"])
-                backfilled = float(realized[0][f"px_{name}_realized"])
-                prior_anchor = float(realized[0][f"px_{name}_t"])
+                backfilled = float(realized[0][f"px_{name}_realized"]) if realized else anchor
+                prior_anchor = float((realized[0] if realized else previous_rows[0])[f"px_{name}_t"])
                 prior_download = float(close.at[previous, ticker])
                 if not all(np.isfinite(value) and value > 0 for value in (
                     anchor, backfilled, prior_anchor, prior_download
@@ -395,6 +410,127 @@ def _recover_verified_historical_core_closes(
     except (OSError, ValueError, TypeError, KeyError, IndexError, InvalidOperation,
             csv.Error) as exc:
         print(f"[Part 0] Verified historical close recovery unavailable: {exc}")
+
+
+def _recover_verified_adjacent_backfilled_core_closes(
+    cfg: Part0Config,
+    close: pd.DataFrame,
+    quality: Dict[str, Dict[str, object]],
+) -> None:
+    """Use a verified, exact-date realized pair after the published session.
+
+    Backfill downloaded these two raw closes in a separate completed-session
+    run. Require the published manifest, both run identities, an exact target,
+    and agreement with the preceding production anchor. The backfilled session
+    can become historical while a review is pending; do not require it to be
+    the most recently settled session. Incomplete or shifted backfills cannot
+    turn a missing close into a model observation.
+    """
+    root = _resolve_project_root(cfg)
+    status_path = root / "artifacts_part10_bot" / "pipeline_status.json"
+    meta_path = root / "artifacts_part0" / "part0_meta.json"
+    backfill_path = root / "artifacts_part9" / "backfill_status.json"
+    log_path = root / "artifacts_part3" / "prediction_log.csv"
+    if not all(p.is_file() for p in (status_path, meta_path, backfill_path, log_path)):
+        return
+
+    try:
+        from artifact_integrity import verify_run_manifest
+
+        failures = verify_run_manifest(root)
+        if failures:
+            raise ValueError(f"published manifest is invalid: {failures[0]}")
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        backfill = json.loads(backfill_path.read_text(encoding="utf-8"))
+        published_session = pd.Timestamp(status["market_data_asof"]).normalize()
+        position = close.index.get_indexer([published_session])[0]
+        if position < 0 or position + 1 >= len(close.index):
+            raise ValueError("published session does not precede a downloaded exchange session")
+        previous = close.index[position]
+        day = close.index[position + 1]
+        if all(t in close and pd.notna(close.at[day, t]) for t in cfg.core_tickers):
+            return
+        day_date = day.date().isoformat()
+        previous_date = previous.date().isoformat()
+        completed_at = pd.Timestamp(backfill["completed_at_utc"])
+        if (
+            status.get("result") != "verified"
+            or not status.get("protocol_version")
+            or status.get("market_data_asof") != previous_date
+            or status.get("expected_completed_market_session") != previous_date
+            or meta.get("market_data_asof") != previous_date
+            or meta.get("market_values_are_raw_observations") is not True
+            or any(meta.get("last_raw_observation_by_ticker", {}).get(t) != previous_date
+                   for t in cfg.core_tickers)
+            or backfill.get("result") != "verified"
+            or backfill.get("backfill_run_date") != day_date
+            or completed_at.tzinfo is None
+            or completed_at > pd.Timestamp.now(tz="UTC")
+            or latest_completed_xnys_session(completed_at) != day
+        ):
+            raise ValueError("adjacent verified production and exact-date backfill are absent")
+
+        def _run_number(value: object) -> Decimal:
+            number = Decimal(str(value))
+            if not number.is_finite() or number != number.to_integral_value() or number < 1:
+                raise ValueError("invalid source run identity")
+            return number
+
+        for source in (status, backfill):
+            _run_number(source["github_run_id"])
+            _run_number(source["github_run_attempt"])
+            if not source.get("source_code_sha") or not source.get("protocol_version"):
+                raise ValueError("source provenance is incomplete")
+
+        with log_path.open(newline="", encoding="utf-8") as handle:
+            rows = [r for r in csv.DictReader(handle)
+                    if r.get("decision_date") == previous_date
+                    and r.get("target_date") == day_date
+                    and r.get("realized_target_date") == day_date
+                    and r.get("model_protocol_version") == status["protocol_version"]]
+        if len(rows) != 1:
+            raise ValueError("unique exact-date realized pair is absent")
+        row = rows[0]
+        if (
+            _run_number(row["pipeline_run_id"]) != _run_number(status["github_run_id"])
+            or _run_number(row["pipeline_run_attempt"]) != _run_number(status["github_run_attempt"])
+            or row.get("model_code_sha") != status["source_code_sha"]
+        ):
+            raise ValueError("realized pair does not belong to the previous verified run")
+
+        recovered = {}
+        for ticker in cfg.core_tickers:
+            name = ticker.lower()
+            previous_price = float(close.at[previous, ticker])
+            anchor = float(row[f"px_{name}_t"])
+            price = float(row[f"px_{name}_realized"])
+            if (
+                not all(np.isfinite(v) and v > 0 for v in (previous_price, anchor, price))
+                or not np.isclose(previous_price, anchor, rtol=1e-4, atol=1e-6)
+            ):
+                raise ValueError(f"{ticker} backfill and preceding anchor disagree")
+            observed = close.at[day, ticker]
+            if pd.notna(observed):
+                if not np.isclose(float(observed), price, rtol=1e-4, atol=1e-6):
+                    raise ValueError(f"{ticker} raw and backfilled closes disagree")
+            else:
+                recovered[ticker] = price
+
+        for ticker, price in recovered.items():
+            close.at[day, ticker] = price
+            entry = dict(quality.get(ticker, {}))
+            entry.setdefault("verified_backfill_recovered_dates", []).append(day_date)
+            entry["verified_backfill_source_run_id"] = str(int(_run_number(backfill["github_run_id"])))
+            entry["verified_backfill_source_code_sha"] = backfill["source_code_sha"]
+            entry["verified_backfill_completed_at_utc"] = completed_at.isoformat()
+            entry["missing_after_retry"] = float(close[ticker].isna().mean())
+            quality[ticker] = entry
+            print(f"[Part 0]   {ticker} recovered exact {day_date} close "
+                  f"from verified backfill run {entry['verified_backfill_source_run_id']}")
+    except (OSError, ValueError, TypeError, KeyError, IndexError, InvalidOperation,
+            csv.Error) as exc:
+        print(f"[Part 0] Verified adjacent close recovery unavailable: {exc}")
 
 
 def download_market_data(cfg: Part0Config):
@@ -658,6 +794,7 @@ def download_market_data(cfg: Part0Config):
     ]
     if outstanding_core_gaps:
         _recover_verified_historical_core_closes(cfg, close, quality)
+        _recover_verified_adjacent_backfilled_core_closes(cfg, close, quality)
 
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
