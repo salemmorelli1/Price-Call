@@ -1,26 +1,26 @@
 {
-  "built_at": "2026-09-24T03:20:53.840305+00:00",
-  "close_checksum": "f82f60d6a7bbd812",
-  "close_prices_sha256": "f06f57988f7a71feac3ec2926f02d91c9d46a9fd8b8075f2c5de29010232287a",
+  "built_at": "2026-09-25T02:56:29.656210+00:00",
+  "close_checksum": "90b3859b899117fe",
+  "close_prices_sha256": "8f2082e24ce06a034da618e198a1cdb465b957c551cff50711698e5fcf9061b8",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0505032021957914,
+      "missing_pre_clean": 0.050493962678375415,
       "usable_for_model": true,
       "years_history": 20.63
     },
     "EEM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "EFA": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
@@ -34,9 +34,9 @@
     "HYG": {
       "first_valid_date": "2007-04-11",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.10448307410795975,
+      "missing_pre_clean": 0.10446395901939261,
       "usable_for_model": true,
-      "years_history": 19.45
+      "years_history": 19.46
     },
     "IEF": {
       "first_valid_date": "2005-01-03",
@@ -45,7 +45,7 @@
       "individual_retry_recovered_rows": 0,
       "max_equal_close_run": 3,
       "missing_after_retry": 0.0,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "paired_retry_recovered_dates": [],
       "paired_retry_recovered_rows": 0,
       "paired_retry_start": "2026-09-15",
@@ -66,21 +66,21 @@
     "JNK": {
       "first_valid_date": "2007-12-04",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.13467520585544374,
+      "missing_pre_clean": 0.13465056714233442,
       "usable_for_model": true,
-      "years_history": 18.8
+      "years_history": 18.81
     },
     "LQD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "MDY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
@@ -94,14 +94,14 @@
     "RSP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "SHY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
@@ -122,14 +122,14 @@
     "UUP": {
       "first_valid_date": "2007-03-01",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.09935956084172004,
+      "missing_pre_clean": 0.09934138309549945,
       "usable_for_model": true,
-      "years_history": 19.56
+      "years_history": 19.57
     },
     "VNQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
@@ -139,8 +139,8 @@
       "individual_retry_attempts": 3,
       "individual_retry_recovered_rows": 0,
       "max_equal_close_run": 2,
-      "missing_after_retry": 0.26184812442817934,
-      "missing_pre_clean": 0.26203110704483074,
+      "missing_after_retry": 0.26180021953896815,
+      "missing_pre_clean": 0.2619831686791072,
       "paired_retry_recovered_dates": [],
       "paired_retry_recovered_rows": 0,
       "paired_retry_start": "2026-09-15",
@@ -154,16 +154,16 @@
     "XLB": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLC": {
       "first_valid_date": "2018-06-19",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.620128087831656,
+      "missing_pre_clean": 0.6200146359312111,
       "usable_for_model": true,
-      "years_history": 8.26
+      "years_history": 8.27
     },
     "XLE": {
       "first_valid_date": "2005-01-03",
@@ -182,82 +182,115 @@
     "XLI": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLK": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLU": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLV": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "XLY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "^MOVE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.016834400731930467,
+      "missing_pre_clean": 0.016831320892791803,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "^SKEW": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.01171088746569076,
+      "missing_pre_clean": 0.011708744968898645,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "^VIX": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.00018298261665141812,
+      "missing_pre_clean": 0.00018294914013904133,
       "usable_for_model": true,
       "years_history": 21.72
     },
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.07081427264409881,
+      "missing_pre_clean": 0.070801317233809,
       "usable_for_model": true,
       "years_history": 20.19
     }
   },
   "date_range": {
-    "end": "2026-09-23",
-    "requested_end": "2026-09-24",
+    "end": "2026-09-24",
+    "requested_end": "2026-09-25",
     "start": "2010-09-09"
   },
-  "features_checksum": "034dc1d14c6bec84",
-  "features_file_sha256": "da92e1f132eb34559eae7b1709e218cf03770ba3327f38bbb2f665ce738281dd",
+  "features_checksum": "ae623efbdad8e6f4",
+  "features_file_sha256": "5286f190f2aeb2615a108918344010af4ed05d5f4700a1e9e04b53498825d0ba",
+  "fred_available_sessions_by_series": {
+    "consumer_sentiment": 4035,
+    "curve_2s10s": 3184,
+    "curve_3m10y": 3184,
+    "dollar_index": 1920,
+    "fed_funds_rate": 4035,
+    "hy_spread": 752,
+    "ig_spread": 752,
+    "recession_flag": 3530,
+    "ted_spread": 3184,
+    "vix_fred": 3982,
+    "wti_oil": 3889,
+    "yield_10y": 4035,
+    "yield_2y": 4035,
+    "yield_30y": 4035
+  },
   "fred_enabled": true,
+  "fred_first_availability_by_series": {
+    "consumer_sentiment": "2010-09-09",
+    "curve_2s10s": "2014-01-28",
+    "curve_3m10y": "2014-01-28",
+    "dollar_index": "2019-02-05",
+    "fed_funds_rate": "2010-09-09",
+    "hy_spread": "2023-09-26",
+    "ig_spread": "2023-09-26",
+    "recession_flag": "2012-09-10",
+    "ted_spread": "2014-01-28",
+    "vix_fred": "2010-11-23",
+    "wti_oil": "2011-04-07",
+    "yield_10y": "2010-09-09",
+    "yield_2y": "2010-09-09",
+    "yield_30y": "2010-09-09"
+  },
+  "fred_revised_fallback_count": 0,
   "fred_vintage_chunk_diagnostics": {
     "consumer_sentiment": [
       {
@@ -285,7 +318,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 887,
         "start": "2024-09-09",
         "status": "ok"
@@ -318,8 +351,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 13127,
+        "end": "2026-09-24",
+        "rows": 13128,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -351,8 +384,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 11668,
+        "end": "2026-09-24",
+        "rows": 11669,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -385,7 +418,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 7396,
         "start": "2024-09-09",
         "status": "ok"
@@ -417,8 +450,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 26382,
+        "end": "2026-09-24",
+        "rows": 26383,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -452,8 +485,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 794,
+        "end": "2026-09-24",
+        "rows": 795,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -487,8 +520,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 795,
+        "end": "2026-09-24",
+        "rows": 796,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -520,7 +553,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 2061,
         "start": "2024-09-09",
         "status": "ok"
@@ -553,7 +586,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 9407,
         "start": "2024-09-09",
         "status": "ok"
@@ -585,7 +618,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 9581,
         "start": "2024-09-09",
         "status": "ok"
@@ -617,7 +650,7 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
+        "end": "2026-09-24",
         "rows": 11370,
         "start": "2024-09-09",
         "status": "ok"
@@ -649,8 +682,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 16886,
+        "end": "2026-09-24",
+        "rows": 16887,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -681,8 +714,8 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 13126,
+        "end": "2026-09-24",
+        "rows": 13127,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -713,93 +746,86 @@
         "status": "ok"
       },
       {
-        "end": "2026-09-23",
-        "rows": 12941,
+        "end": "2026-09-24",
+        "rows": 12942,
         "start": "2024-09-09",
         "status": "ok"
       }
     ]
   },
-  "fred_vintage_errors": {
-    "curve_2s10s": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
-    "curve_3m10y": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
-    "dollar_index": "ValueError: first usable ALFRED window starts after the model calendar (2016-09-09 > 2010-09-09)",
-    "hy_spread": "ValueError: first usable ALFRED window starts after the model calendar (2020-09-09 > 2010-09-09)",
-    "ig_spread": "ValueError: first usable ALFRED window starts after the model calendar (2020-09-09 > 2010-09-09)",
-    "recession_flag": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)",
-    "ted_spread": "ValueError: first usable ALFRED window starts after the model calendar (2012-09-09 > 2010-09-09)"
-  },
+  "fred_vintage_errors": {},
   "fred_vintage_mode_by_series": {
     "consumer_sentiment": "alfred_first_release_chunked",
-    "curve_2s10s": "latest_revised_fallback",
-    "curve_3m10y": "latest_revised_fallback",
-    "dollar_index": "latest_revised_fallback",
+    "curve_2s10s": "alfred_first_release_partial",
+    "curve_3m10y": "alfred_first_release_partial",
+    "dollar_index": "alfred_first_release_partial",
     "fed_funds_rate": "alfred_first_release_chunked",
-    "hy_spread": "latest_revised_fallback",
-    "ig_spread": "latest_revised_fallback",
-    "recession_flag": "latest_revised_fallback",
-    "ted_spread": "latest_revised_fallback",
+    "hy_spread": "alfred_first_release_partial",
+    "ig_spread": "alfred_first_release_partial",
+    "recession_flag": "alfred_first_release_partial",
+    "ted_spread": "alfred_first_release_partial",
     "vix_fred": "alfred_first_release_chunked",
     "wti_oil": "alfred_first_release_chunked",
     "yield_10y": "alfred_first_release_chunked",
     "yield_2y": "alfred_first_release_chunked",
     "yield_30y": "alfred_first_release_chunked"
   },
-  "fred_vintage_policy": "earliest ALFRED release, indexed by first availability date",
+  "fred_vintage_policy": "earliest retrieved ALFRED release, available at the next exchange session; pre-archive dates missing, never revised-filled",
   "fred_vintage_retrieval": "bounded non-overlapping four-year real-time windows",
-  "historical_point_in_time_complete": false,
+  "historical_point_in_time_complete": true,
+  "historical_point_in_time_policy": "no-revised-values; missing before archive",
   "horizon": 1,
   "last_raw_observation_by_ticker": {
-    "DBC": "2026-09-23",
-    "EEM": "2026-09-23",
-    "EFA": "2026-09-23",
-    "GLD": "2026-09-23",
-    "HYG": "2026-09-23",
-    "IEF": "2026-09-23",
-    "IWM": "2026-09-23",
-    "JNK": "2026-09-23",
-    "LQD": "2026-09-23",
-    "MDY": "2026-09-23",
-    "QQQ": "2026-09-23",
-    "RSP": "2026-09-23",
-    "SHY": "2026-09-23",
-    "SMH": "2026-09-23",
-    "TLT": "2026-09-23",
-    "UUP": "2026-09-23",
-    "VNQ": "2026-09-23",
-    "VOO": "2026-09-23",
-    "XLB": "2026-09-23",
-    "XLC": "2026-09-23",
-    "XLE": "2026-09-23",
-    "XLF": "2026-09-23",
-    "XLI": "2026-09-23",
-    "XLK": "2026-09-23",
-    "XLP": "2026-09-23",
-    "XLU": "2026-09-23",
-    "XLV": "2026-09-23",
-    "XLY": "2026-09-23",
-    "^MOVE": "2026-09-23",
-    "^SKEW": "2026-09-23",
-    "^VIX": "2026-09-23",
+    "DBC": "2026-09-24",
+    "EEM": "2026-09-24",
+    "EFA": "2026-09-24",
+    "GLD": "2026-09-24",
+    "HYG": "2026-09-24",
+    "IEF": "2026-09-24",
+    "IWM": "2026-09-24",
+    "JNK": "2026-09-24",
+    "LQD": "2026-09-24",
+    "MDY": "2026-09-24",
+    "QQQ": "2026-09-24",
+    "RSP": "2026-09-24",
+    "SHY": "2026-09-24",
+    "SMH": "2026-09-24",
+    "TLT": "2026-09-24",
+    "UUP": "2026-09-24",
+    "VNQ": "2026-09-24",
+    "VOO": "2026-09-24",
+    "XLB": "2026-09-24",
+    "XLC": "2026-09-24",
+    "XLE": "2026-09-24",
+    "XLF": "2026-09-24",
+    "XLI": "2026-09-24",
+    "XLK": "2026-09-24",
+    "XLP": "2026-09-24",
+    "XLU": "2026-09-24",
+    "XLV": "2026-09-24",
+    "XLY": "2026-09-24",
+    "^MOVE": "2026-09-24",
+    "^SKEW": "2026-09-24",
+    "^VIX": "2026-09-24",
     "^VIX3M": "2026-09-22"
   },
-  "latest_completed_market_session": "2026-09-23",
-  "macro_data_sha256": "c0777db4f41ac2e804d1a6a12e46e3c6a5c11bcae3ce85d2f1119750df48d3fc",
+  "latest_completed_market_session": "2026-09-24",
+  "macro_data_sha256": "4cc87ea452ffd05097e32765624bccd7f43365b561ea6ed125ca62fa57fedd32",
   "market_calendar": "XNYS",
-  "market_data_asof": "2026-09-23",
+  "market_data_asof": "2026-09-24",
   "market_data_source_overrides": {
     "^VIX3M": {
       "download_sha256": "fd84b11ab9eee950f1b3d0b0008106a31b25c351f02e880516f69a43ea4c504b",
       "latest_observation": "2026-09-22",
       "provider": "Cboe Global Markets",
-      "retrieved_at_utc": "2026-09-24T03:20:54.799428+00:00",
+      "retrieved_at_utc": "2026-09-25T02:56:30.564782+00:00",
       "rows_applied": 4033,
       "rows_downloaded": 4278,
       "status": "applied",
       "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv"
     }
   },
-  "market_observation_mask_sha256": "00c31f4ab1af26c728243203becee2f089dbc416d72e300485e0abde7f6df1bb",
+  "market_observation_mask_sha256": "be8082d63d971ebeb9618aabb76201c064663ce18d246c84820de93cabe3832e",
   "market_values_are_raw_observations": true,
   "n_features": 59,
   "n_macro_series": 14,
@@ -807,8 +833,8 @@
   "out_dir": "/home/runner/work/Price-Call/Price-Call/artifacts_part0",
   "point_in_time_adapter": "point_in_time_macro.py",
   "project_root": "/home/runner/work/Price-Call/Price-Call",
-  "protocol_version": "causal-integrity-v3",
-  "tail_rate": 0.07612199355318622,
+  "protocol_version": "causal-integrity-v4",
+  "tail_rate": 0.07610312345066932,
   "version": "V2_DAILY_CANONICAL",
   "vix3m_authoritative_fallback_applied": true
 }

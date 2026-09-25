@@ -1,13 +1,13 @@
 {
-  "as_of_date": "2026-09-24",
-  "decision_date": "2026-09-23",
+  "as_of_date": "2026-09-25",
+  "decision_date": "2026-09-24",
   "error": "No trades recorded yet",
   "execution_lineage_verified": true,
   "pipeline_run_attempt": "1",
-  "pipeline_run_date": "2026-09-23",
-  "pipeline_run_id": "35950967494",
-  "price_session": "2026-09-23",
+  "pipeline_run_date": "2026-09-24",
+  "pipeline_run_id": "36088219332",
+  "price_session": "2026-09-24",
   "price_source": "artifacts_part0/close_prices.parquet",
-  "protocol_version": "causal-integrity-v3",
-  "source_code_sha": "53ccb6caf4c0c3c9b7ef2626e04df65c01d6af23"
+  "protocol_version": "causal-integrity-v4",
+  "source_code_sha": "fa50c35187cd4cdf75ffeadb9ece3076d9f31734"
 }
