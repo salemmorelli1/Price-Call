@@ -363,21 +363,25 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
 
 
 @pytest.mark.parametrize("failure", [
-    None, "shifted_target", "bad_anchor", "missing_lineage", "unverified",
+    None, "later_session", "replaced_backfill", "shifted_target", "bad_anchor",
+    "missing_lineage", "unverified",
     "future_backfill", "stale_production", "invalid_manifest", "conflicting_close",
 ])
-def test_part0_current_close_requires_verified_exact_date_backfill(
+def test_part0_adjacent_close_requires_verified_exact_date_backfill(
     tmp_path, monkeypatch, failure
 ):
     import artifact_integrity
     import part0_data_infrastructure as part0
 
-    sessions = pd.DatetimeIndex(pd.to_datetime(["2026-09-23", "2026-09-24"]), name="Date")
+    dates = ["2026-09-23", "2026-09-24"]
+    if failure in ("later_session", "replaced_backfill"):
+        dates.append("2026-09-25")
+    sessions = pd.DatetimeIndex(pd.to_datetime(dates), name="Date")
     columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
-    raw = pd.DataFrame(
-        [[102.0, 92.0], [104.0 if failure == "conflicting_close" else None, None]],
-        index=sessions, columns=columns,
-    )
+    prices = [[102.0, 92.0], [104.0 if failure == "conflicting_close" else None, None]]
+    if failure in ("later_session", "replaced_backfill"):
+        prices.append([105.0, 90.0])
+    raw = pd.DataFrame(prices, index=sessions, columns=columns)
     for directory in ("artifacts_part10_bot", "artifacts_part0", "artifacts_part9", "artifacts_part3"):
         (tmp_path / directory).mkdir()
     status = {
@@ -394,7 +398,7 @@ def test_part0_current_close_requires_verified_exact_date_backfill(
     backfill = {
         "result": "failed" if failure == "unverified" else "verified",
         "protocol_version": artifact_integrity.PROTOCOL_VERSION,
-        "backfill_run_date": "2026-09-24",
+        "backfill_run_date": "2026-09-25" if failure == "replaced_backfill" else "2026-09-24",
         "completed_at_utc": (
             "2027-09-24T21:30:00Z" if failure == "future_backfill"
             else "2026-09-24T21:30:00Z"
@@ -435,10 +439,10 @@ def test_part0_current_close_requires_verified_exact_date_backfill(
         lambda root: ["bad manifest"] if failure == "invalid_manifest" else [],
     )
     cfg = part0.Part0Config(
-        start="2026-09-23", end="2026-09-24", equity_tickers=("VOO", "IEF"),
+        start="2026-09-23", end=dates[-1], equity_tickers=("VOO", "IEF"),
         vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
     )
-    if failure is not None:
+    if failure not in (None, "later_session"):
         with pytest.raises(RuntimeError, match="2026-09-24"):
             part0.download_market_data(cfg)
         return
@@ -447,6 +451,8 @@ def test_part0_current_close_requires_verified_exact_date_backfill(
     assert close.loc[pd.Timestamp("2026-09-24"), ["VOO", "IEF"]].tolist() == [103, 91]
     assert quality["VOO"]["verified_backfill_recovered_dates"] == ["2026-09-24"]
     assert quality["IEF"]["verified_backfill_source_run_id"] == "36071978818"
+    if failure == "later_session":
+        assert close.loc[pd.Timestamp("2026-09-25"), ["VOO", "IEF"]].tolist() == [105, 90]
 
 
 def test_part0_ignores_expected_pre_inception_gaps(monkeypatch):

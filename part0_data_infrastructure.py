@@ -412,21 +412,20 @@ def _recover_verified_historical_core_closes(
         print(f"[Part 0] Verified historical close recovery unavailable: {exc}")
 
 
-def _recover_verified_backfilled_current_core_closes(
+def _recover_verified_adjacent_backfilled_core_closes(
     cfg: Part0Config,
     close: pd.DataFrame,
     quality: Dict[str, Dict[str, object]],
 ) -> None:
-    """Use a verified, exact-date realized pair for the newest settled session.
+    """Use a verified, exact-date realized pair after the published session.
 
     Backfill downloaded these two raw closes in a separate completed-session
     run. Require the published manifest, both run identities, an exact target,
-    and agreement with the preceding production anchor. Incomplete or shifted
-    backfills cannot turn a missing current close into a model observation.
+    and agreement with the preceding production anchor. The backfilled session
+    can become historical while a review is pending; do not require it to be
+    the most recently settled session. Incomplete or shifted backfills cannot
+    turn a missing close into a model observation.
     """
-    day = close.index.max()
-    if all(t in close and pd.notna(close.at[day, t]) for t in cfg.core_tickers):
-        return
     root = _resolve_project_root(cfg)
     status_path = root / "artifacts_part10_bot" / "pipeline_status.json"
     meta_path = root / "artifacts_part0" / "part0_meta.json"
@@ -444,7 +443,14 @@ def _recover_verified_backfilled_current_core_closes(
         status = json.loads(status_path.read_text(encoding="utf-8"))
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         backfill = json.loads(backfill_path.read_text(encoding="utf-8"))
-        previous = close.index[-2]
+        published_session = pd.Timestamp(status["market_data_asof"]).normalize()
+        position = close.index.get_indexer([published_session])[0]
+        if position < 0 or position + 1 >= len(close.index):
+            raise ValueError("published session does not precede a downloaded exchange session")
+        previous = close.index[position]
+        day = close.index[position + 1]
+        if all(t in close and pd.notna(close.at[day, t]) for t in cfg.core_tickers):
+            return
         day_date = day.date().isoformat()
         previous_date = previous.date().isoformat()
         completed_at = pd.Timestamp(backfill["completed_at_utc"])
@@ -524,7 +530,7 @@ def _recover_verified_backfilled_current_core_closes(
                   f"from verified backfill run {entry['verified_backfill_source_run_id']}")
     except (OSError, ValueError, TypeError, KeyError, IndexError, InvalidOperation,
             csv.Error) as exc:
-        print(f"[Part 0] Verified current close recovery unavailable: {exc}")
+        print(f"[Part 0] Verified adjacent close recovery unavailable: {exc}")
 
 
 def download_market_data(cfg: Part0Config):
@@ -788,7 +794,7 @@ def download_market_data(cfg: Part0Config):
     ]
     if outstanding_core_gaps:
         _recover_verified_historical_core_closes(cfg, close, quality)
-        _recover_verified_backfilled_current_core_closes(cfg, close, quality)
+        _recover_verified_adjacent_backfilled_core_closes(cfg, close, quality)
 
     core = [t for t in cfg.core_tickers if t in close.columns]
     if close.empty or len(core) != len(cfg.core_tickers):
