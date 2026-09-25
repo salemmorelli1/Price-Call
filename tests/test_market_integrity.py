@@ -255,7 +255,7 @@ def test_part0_paired_retry_rejects_conflicting_raw_prices(monkeypatch):
     "failure",
     [None, "invalid_manifest", "unverified", "backfill_disagrees",
      "current_session", "latest_missing", "price_scale_mismatch",
-     "earlier_verified", "no_earlier_provenance", "legacy_protocol",
+     "earlier_verified", "overwritten_backfill", "no_earlier_provenance", "legacy_protocol",
      "pre_inception"],
 )
 def test_part0_only_recovers_corroborated_historical_core_closes(
@@ -280,9 +280,9 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
     log_dir = tmp_path / "artifacts_part3"
     for directory in (status_dir, meta_dir, log_dir):
         directory.mkdir()
-    previous_snapshot = failure in {"earlier_verified", "no_earlier_provenance"}
+    previous_snapshot = failure in {"earlier_verified", "overwritten_backfill", "no_earlier_provenance"}
     protocol = (
-        "causal-integrity-v3" if failure in {"earlier_verified", "legacy_protocol"}
+        "causal-integrity-v3" if failure in {"earlier_verified", "overwritten_backfill", "legacy_protocol"}
         else artifact_integrity.PROTOCOL_VERSION
     )
     status = {
@@ -307,7 +307,7 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
                 "verified_archive_recovered_dates": ["2026-09-22"],
                 "verified_archive_source_run_id": "35796548754",
             } for ticker in ("VOO", "IEF")
-        } if failure == "earlier_verified" else {},
+        } if failure in {"earlier_verified", "overwritten_backfill"} else {},
     }))
     with (log_dir / "prediction_log.csv").open("w", newline="") as handle:
         fields = [
@@ -320,7 +320,9 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
         writer.writeheader()
         writer.writerow({
             "decision_date": "2026-09-21", "target_date": "2026-09-22",
-            "realized_target_date": "2026-09-22",
+            "realized_target_date": (
+                "2026-09-23" if failure == "overwritten_backfill" else "2026-09-22"
+            ),
             "px_voo_t": 100, "px_ief_t": 90,
             "px_voo_realized": 105 if failure == "backfill_disagrees" else 101,
             "px_ief_realized": 91,
@@ -346,7 +348,7 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
         start="2026-09-21", end="2026-09-23", equity_tickers=("VOO", "IEF"),
         vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
     )
-    if failure not in (None, "earlier_verified", "legacy_protocol", "pre_inception"):
+    if failure not in (None, "earlier_verified", "overwritten_backfill", "legacy_protocol", "pre_inception"):
         with pytest.raises(
             RuntimeError,
             match="2026-09-23" if failure == "latest_missing" else "2026-09-22",
@@ -358,6 +360,93 @@ def test_part0_only_recovers_corroborated_historical_core_closes(
     assert close.loc[pd.Timestamp("2026-09-22"), ["VOO", "IEF"]].tolist() == [101, 91]
     assert quality["VOO"]["verified_archive_recovered_dates"] == ["2026-09-22"]
     assert quality["IEF"]["verified_archive_source_run_id"] == "35796548754"
+
+
+@pytest.mark.parametrize("failure", [
+    None, "shifted_target", "bad_anchor", "missing_lineage", "unverified",
+    "future_backfill", "stale_production", "invalid_manifest", "conflicting_close",
+])
+def test_part0_current_close_requires_verified_exact_date_backfill(
+    tmp_path, monkeypatch, failure
+):
+    import artifact_integrity
+    import part0_data_infrastructure as part0
+
+    sessions = pd.DatetimeIndex(pd.to_datetime(["2026-09-23", "2026-09-24"]), name="Date")
+    columns = pd.MultiIndex.from_product([["VOO", "IEF"], ["Close"]])
+    raw = pd.DataFrame(
+        [[102.0, 92.0], [104.0 if failure == "conflicting_close" else None, None]],
+        index=sessions, columns=columns,
+    )
+    for directory in ("artifacts_part10_bot", "artifacts_part0", "artifacts_part9", "artifacts_part3"):
+        (tmp_path / directory).mkdir()
+    status = {
+        "result": "verified", "protocol_version": "causal-integrity-v3",
+        "market_data_asof": "2026-09-22" if failure == "stale_production" else "2026-09-23",
+        "expected_completed_market_session": "2026-09-23",
+        "github_run_id": "35950967494", "github_run_attempt": "1",
+        "source_code_sha": "production-sha",
+    }
+    meta = {
+        "market_data_asof": "2026-09-23", "market_values_are_raw_observations": True,
+        "last_raw_observation_by_ticker": {"VOO": "2026-09-23", "IEF": "2026-09-23"},
+    }
+    backfill = {
+        "result": "failed" if failure == "unverified" else "verified",
+        "protocol_version": artifact_integrity.PROTOCOL_VERSION,
+        "backfill_run_date": "2026-09-24",
+        "completed_at_utc": (
+            "2027-09-24T21:30:00Z" if failure == "future_backfill"
+            else "2026-09-24T21:30:00Z"
+        ),
+        "github_run_id": "36071978818", "github_run_attempt": "1",
+        "source_code_sha": "" if failure == "missing_lineage" else "backfill-sha",
+    }
+    for path, payload in (
+        ("artifacts_part10_bot/pipeline_status.json", status),
+        ("artifacts_part0/part0_meta.json", meta),
+        ("artifacts_part9/backfill_status.json", backfill),
+    ):
+        (tmp_path / path).write_text(json.dumps(payload))
+    with (tmp_path / "artifacts_part3/prediction_log.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=[
+            "decision_date", "target_date", "realized_target_date",
+            "px_voo_t", "px_ief_t", "px_voo_realized", "px_ief_realized",
+            "pipeline_run_id", "pipeline_run_attempt", "model_code_sha", "model_protocol_version",
+        ])
+        writer.writeheader()
+        writer.writerow({
+            "decision_date": "2026-09-23", "target_date": "2026-09-24",
+            "realized_target_date": (
+                "2026-09-25" if failure == "shifted_target" else "2026-09-24"
+            ),
+            "px_voo_t": 101 if failure == "bad_anchor" else 102,
+            "px_ief_t": 92, "px_voo_realized": 103, "px_ief_realized": 91,
+            "pipeline_run_id": "35950967494.0", "pipeline_run_attempt": "1.0",
+            "model_code_sha": "production-sha", "model_protocol_version": "causal-integrity-v3",
+        })
+
+    monkeypatch.setattr(part0, "_resolve_project_root", lambda cfg: tmp_path)
+    monkeypatch.setattr(part0, "_business_day_calendar", lambda start, end: sessions)
+    monkeypatch.setattr(part0.yf, "download", lambda *args, **kwargs: raw)
+    monkeypatch.setattr(part0.time, "sleep", lambda _: None)
+    monkeypatch.setattr(
+        artifact_integrity, "verify_run_manifest",
+        lambda root: ["bad manifest"] if failure == "invalid_manifest" else [],
+    )
+    cfg = part0.Part0Config(
+        start="2026-09-23", end="2026-09-24", equity_tickers=("VOO", "IEF"),
+        vix_tickers=(), core_tickers=("VOO", "IEF"), min_history_years=0,
+    )
+    if failure is not None:
+        with pytest.raises(RuntimeError, match="2026-09-24"):
+            part0.download_market_data(cfg)
+        return
+
+    close, _, quality = part0.download_market_data(cfg)
+    assert close.loc[pd.Timestamp("2026-09-24"), ["VOO", "IEF"]].tolist() == [103, 91]
+    assert quality["VOO"]["verified_backfill_recovered_dates"] == ["2026-09-24"]
+    assert quality["IEF"]["verified_backfill_source_run_id"] == "36071978818"
 
 
 def test_part0_ignores_expected_pre_inception_gaps(monkeypatch):
@@ -424,7 +513,7 @@ def test_completed_session_input_validator_rejects_non_session_row(tmp_path, mon
     assert any("non-XNYS or uncompleted" in failure for failure in failures)
 
 
-def test_current_protocol_backfill_does_not_roll_a_missing_target_forward():
+def test_backfill_never_rolls_any_explicit_target_forward():
     from backfill_realized import _resolve_target_trading_date
 
     available = pd.DatetimeIndex(pd.to_datetime(["2026-09-04", "2026-09-09"]))
@@ -435,13 +524,10 @@ def test_current_protocol_backfill_does_not_roll_a_missing_target_forward():
         available,
         1,
         target,
-        require_exact_target=True,
     ) is None
-    # Legacy rows retain the historical holiday/weekend roll-forward behavior.
     assert _resolve_target_trading_date(
         pd.Timestamp("2026-09-04"),
         available,
         1,
         target,
-        require_exact_target=False,
-    ) == pd.Timestamp("2026-09-09")
+    ) is None

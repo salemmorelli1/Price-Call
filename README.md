@@ -163,6 +163,9 @@ versus the rowwise causal prevalence forecast.
   unsettled same-day session.
 - VOO/IEF and auxiliary closes remain raw source observations through freshness
   measurement; Part 0 also retains a per-cell observation mask.
+- Missing core bars can be recovered only from a manifest-verified prior
+  production snapshot or an exact-date verified realized-price backfill;
+  mismatched, missing, or shifted targets leave the production run closed.
 - Production is scheduled after the 16:20 Eastern settlement boundary and is
   idempotent by completed XNYS session rather than wall-clock date.
 - Prediction rows carry source SHA, workflow run, run attempt, and a stable

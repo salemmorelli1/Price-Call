@@ -31,6 +31,13 @@ The secret-free `point_in_time_macro.py` adapter runs after Part 0 and rebuilds
 the regime engine starts. The regime loader checks the feature-file hash and
 refuses a DuckDB fallback when the point-in-time parquet is missing.
 
+Core VOO/IEF closes can be replayed from a manifest-verified older production
+snapshot with per-ticker run provenance. The newest settled session may use a
+separately verified backfill only if it records the exact target date and both
+prices agree with the preceding verified anchor. A missing target in a backfill
+remains missing, including for legacy forecast rows; it never moves to the next
+available provider date. If either source cannot be verified, Part 0 stops.
+
 ## Calibration contract
 
 Platt parameters are fit on the older 75% of a chronological calibration sample and
