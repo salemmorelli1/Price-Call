@@ -36,43 +36,20 @@
   "current_cohort_eligible_predictions": 1,
   "current_cohort_predictions": 1,
   "evidence_cohort": "causal-integrity-v4",
-  "feature_drift": {
-    "most_drifted": [
-      {
-        "feature": "alpha_credit_spread",
-        "ks_pval": 4.661495681057537e-111,
-        "ks_stat": 0.9898399796799593,
-        "mean_shift": 0.28331431136397334
-      },
-      {
-        "feature": "alpha_tech_relative",
-        "ks_pval": 2.1872037169431038e-91,
-        "ks_stat": 0.9715519431038862,
-        "mean_shift": 0.32847101276007307
-      },
-      {
-        "feature": "alpha_breadth",
-        "ks_pval": 1.0910974922359353e-71,
-        "ks_stat": 0.9334518669037338,
-        "mean_shift": -0.21812490690059005
-      }
-    ],
-    "n_drifted_5pct": 9,
-    "n_features_tested": 14,
-    "n_severely_drifted_1pct": 9
-  },
-  "generated_at": "2026-09-25T03:32:47.123791+00:00",
+  "generated_at": "2026-09-25T23:24:17.825712+00:00",
   "health_reasons": [
     "Only 0 live observations (60 required)"
   ],
   "health_status": "IMMATURE",
   "legacy_predictions": 40,
   "legacy_realized_rows": 40,
-  "message": "Only 0 eligible realized predictions are available in the causal-integrity-v4 cohort. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months.",
-  "n_live_realized": 0,
+  "message": "Only 1 eligible realized predictions are available in the causal-integrity-v4 cohort. Accumulate 60 before making statistical inferences. At daily rebalancing, this takes roughly 2.9 months.",
+  "n_live_realized": 1,
   "protocol_version": "causal-integrity-v4",
   "schema_mode_col": "deployment_mode",
   "status": "IMMATURE",
   "total_predictions": 41,
-  "total_predictions_all_cohorts": 41
+  "total_predictions_all_cohorts": 41,
+  "voo_mae_live": 4.326045384767895,
+  "voo_rmse_live": 4.326045384767895
 }
