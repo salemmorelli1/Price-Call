@@ -572,9 +572,10 @@ def evaluate_stopping_rules(
 
     n = live_stats.get("n", 0)
     if n < cfg.min_live_n:
+        noun = "observation" if n == 1 else "observations"
         return {
             "status": "IMMATURE",
-            "reasons": [f"Only {n} live observations ({cfg.min_live_n} required)"],
+            "reasons": [f"Only {n} live {noun} ({cfg.min_live_n} required)"],
         }
     if not bool(live_stats.get("inference_eligible", False)):
         return {
@@ -927,8 +928,12 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         except Exception as _drift_exc:
             print(f"[Part 9] Feature drift detection failed: {_drift_exc}")
 
+    # One eligible realized row is too small for classification statistics, but
+    # it is still a realized observation.  Give the stopping rule the cohort
+    # count until an analyzable classification count is available; otherwise
+    # the published health reason incorrectly says "Only 0 live observations".
     stopping = evaluate_stopping_rules(
-        live_stats,
+        {"n": n_live, **live_stats},
         report.get("calibration_live", {}),
         _drift_df,
         cfg,

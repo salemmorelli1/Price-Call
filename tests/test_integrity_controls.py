@@ -58,7 +58,17 @@ def test_production_gate_is_idempotent_by_completed_xnys_session():
     text = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
     assert "latest_completed_xnys_session" in text
     assert "completed != session_date" in text
+    assert 'if event == "workflow_dispatch"' not in text
+    assert "|| github.event_name == 'workflow_dispatch'" not in text
+    assert "if: steps.gate.outputs.run == 'true'" in text
     assert 'cron: "45 20 * * 1-5"' in text
+    assert 'cron: "22 23 * * 1-5"' in text
+    assert "Production gate: {status}" in text
+    assert "ALREADY_COMPLETE" in text
+    assert "GITHUB_STEP_SUMMARY" in text
+    assert 'cron: "7 23 * * 1-5"' in Path(
+        ".github/workflows/daily-backfill.yml"
+    ).read_text(encoding="utf-8")
 
 
 def test_workflows_use_locked_dependencies_and_retain_research_bundle():

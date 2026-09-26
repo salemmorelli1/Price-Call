@@ -6,7 +6,7 @@ on:
     # gate keys work to the latest XNYS session settled by at least 20 minutes.
     - cron: "30 20 * * 1-5"   # 4:30 PM EDT (summer)
     - cron: "30 21 * * 1-5"   # 4:30 PM EST (winter)
-    - cron: "30 23 * * 1-5"   # DST-independent catch-up if an earlier job was delayed
+    - cron: "7 23 * * 1-5"    # DST-independent catch-up; avoid top-of-hour load
   workflow_dispatch:
 
 # ── Same concurrency group as the production pipeline ────────────────────

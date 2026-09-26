@@ -113,6 +113,41 @@ def test_live_report_handles_an_empty_current_evidence_cohort(tmp_path):
 
     assert report["n_live_realized"] == 0
     assert report["health_status"] == "IMMATURE"
+    assert report["health_reasons"] == ["Only 0 live observations (60 required)"]
+    assert "classification_stats_live" not in report
+
+
+def test_live_report_counts_one_realized_outcome_before_classification(tmp_path):
+    from artifact_integrity import PROTOCOL_VERSION
+    from part9_live_attribution import Part9Config, generate_live_report
+
+    prediction_log = tmp_path / "prediction_log.csv"
+    pd.DataFrame([{
+        "decision_date": "2026-09-24",
+        "model_protocol_version": PROTOCOL_VERSION,
+        "evidence_eligible": 1,
+        "px_voo_realized": 710.79,
+        "px_ief_realized": 90.0,
+        "px_voo_t": 707.0,
+        "px_ief_t": 89.7,
+        "p_final_cal": 0.199,
+        "base_rate": 0.197,
+        "tail_threshold": -0.015,
+    }]).to_csv(prediction_log, index=False)
+    cfg = Part9Config(
+        predlog_path=str(prediction_log),
+        part2_tape_path=str(tmp_path / "missing-tape.csv"),
+        part6_dir=str(tmp_path / "missing-part6"),
+        out_dir=str(tmp_path / "part9"),
+        part8_cost_path=str(tmp_path / "missing-costs.csv"),
+        part1_dir=str(tmp_path / "missing-part1"),
+    )
+
+    report = generate_live_report(cfg)
+
+    assert report["n_live_realized"] == 1
+    assert report["health_status"] == "IMMATURE"
+    assert report["health_reasons"] == ["Only 1 live observation (60 required)"]
     assert "classification_stats_live" not in report
 
 

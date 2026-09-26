@@ -1,4 +1,5 @@
 name: Daily Production Run
+run-name: Production ${{ github.event_name }} ${{ github.event.schedule || 'manual' }}
 
 # Two UTC schedules cover Eastern daylight/standard time after the 16:20 ET
 # data-settlement boundary. Runs are serialized, and a committed XNYS-session
@@ -7,8 +8,8 @@ on:
   schedule:
     - cron: "45 20 * * 1-5"  # 4:45 PM EDT (UTC-4, summer)
     - cron: "45 21 * * 1-5"  # 4:45 PM EST (UTC-5, winter)
-    - cron: "0 23 * * 1-5"   # catch-up for delayed or missed earlier trigger
-  workflow_dispatch:          # always available for manual runs
+    - cron: "22 23 * * 1-5"  # catch-up; avoid the top-of-hour Actions load
+  workflow_dispatch:          # manual runs use the same completed-session gate
 
 # ── Concurrency guard ────────────────────────────────────────────────────
 # Prevents the daily-backfill and production pipeline from running
@@ -169,34 +170,39 @@ jobs:
           session_date = latest_completed_xnys_session().date().isoformat()
           marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          if event == "workflow_dispatch":
-              should_run = True
-              reason = f"manual dispatch for completed_session={session_date}"
-          else:
-              should_run = completed != session_date
-              reason = f"completed={completed or 'none'} latest_xnys_session={session_date}"
+          should_run = completed != session_date
+          reason = f"completed={completed or 'none'} latest_xnys_session={session_date} trigger={event}"
 
-          print(f"run={should_run} ({reason})")
+          status = "RUN" if should_run else "ALREADY_COMPLETE"
+          print(f"production_gate_status={status} ({reason})")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write("run=" + ("true" if should_run else "false") + "\n")
+              f.write(f"status={status}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"### Production gate: {status}\n\n")
+              f.write(f"- Latest completed XNYS session: `{session_date}`\n")
+              f.write(f"- Committed completion marker: `{completed or 'none'}`\n")
+              f.write(f"- Trigger: `{event}`\n")
+              if not should_run:
+                  f.write("- Pipeline steps skipped: this session was already processed.\n")
           PYEOF
 
       - name: Run pipeline
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: python run_tuesday_prediction.py --force --direct
 
       - name: Verify accumulating ledger preservation
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: >-
           python artifact_integrity.py --root .
           --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Evaluate fixed prospective paper cohort
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: python evaluate_prospective_cohort.py --root .
 
       - name: Record successful production session
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: |
           python - <<'PYEOF'
           from pathlib import Path
@@ -208,12 +214,12 @@ jobs:
           python artifact_integrity.py --root . --write-pipeline-status --status-only
 
       - name: Synchronize dashboard
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: python sync_dashboard.py --root .
 
       # ── Artifact verification ─────────────────────────────────────────
       - name: Verify required artifacts
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         id: verify
         run: |
           missing=0
@@ -243,7 +249,7 @@ jobs:
           echo "missing=$missing" >> "$GITHUB_OUTPUT"
 
       - name: Run missing=${{ steps.verify.outputs.missing }}
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: |
           if [ "${{ steps.verify.outputs.missing }}" != "0" ]; then
             echo "Required artifacts are missing — aborting commit."
@@ -251,11 +257,11 @@ jobs:
           fi
 
       - name: Record provenance and validate strict JSON
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         run: python artifact_integrity.py --root . --verify-run-inputs
 
       - name: Retain immutable research inputs and model provenance
-        if: steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pricecall-research-bundle-${{ github.run_id }}-${{ github.run_attempt }}
@@ -286,7 +292,7 @@ jobs:
       # The source commit is rechecked before committing. A concurrent branch
       # change aborts this run instead of conflict-merging mixed-run artifacts.
       - name: Commit and push artifacts
-        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
+        if: github.ref_name == 'main' && steps.gate.outputs.run == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -340,7 +346,7 @@ jobs:
           git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Deploy the committed dashboard
-        if: github.ref_name == 'main' && (steps.gate.outputs.run == 'true' || github.event_name == 'workflow_dispatch')
+        if: github.ref_name == 'main' && steps.gate.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"

@@ -114,6 +114,15 @@ Scheduled production jobs are serialized and use an Eastern-date completion mark
 A delayed GitHub scheduler run is allowed to execute; later duplicate runs skip only
 after the date marker has been committed. Pull or merge failures are fatal and may
 not be hidden with `|| true`.
+The two 16:45 Eastern DST-covering UTC triggers and an off-hour catch-up are
+deliberately redundant. The gate writes `RUN` or `ALREADY_COMPLETE` with the
+session and marker to the Actions run summary; a green, short duplicate run
+does not claim to have computed a new forecast. GitHub may delay scheduled
+workflows, and model runtime varies with retrieval and retries. The actual
+production artifact, eligible issuance, and exact-date realized backfill must
+be checked separately from workflow duration. Manual production dispatch uses
+the same marker gate. Replaying a completed session would attempt to replace
+an immutable eligible paper forecast, so it skips the model before computation.
 
 Scheduled backfill triggers run on weekdays after the settlement boundary. Manual
 dispatch uses the same latest-completed-XNYS-session gate and cannot admit an
