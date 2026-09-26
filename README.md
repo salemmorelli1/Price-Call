@@ -169,7 +169,9 @@ versus the rowwise causal prevalence forecast.
 - Production is scheduled after the 16:20 Eastern settlement boundary and is
   idempotent by completed XNYS session rather than wall-clock date.
 - In Actions, open the run summary to distinguish `RUN` (the forecast computed)
-  from `ALREADY_COMPLETE` (a later scheduled trigger skipped the same session).
+  from `ALREADY_COMPLETE` (a later scheduled or manual trigger skipped the same
+  session). A manual dispatch can process an unprocessed completed session, but
+  cannot overwrite an already issued eligible paper forecast.
   GitHub can delay cron delivery; a short green duplicate run is not a new
   forecast. Check `artifacts_part10_bot/pipeline_status.json` and
   `python evaluate_prospective_cohort.py --root .` for the completed session,
