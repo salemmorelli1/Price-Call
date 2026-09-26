@@ -168,6 +168,13 @@ versus the rowwise causal prevalence forecast.
   mismatched, missing, or shifted targets leave the production run closed.
 - Production is scheduled after the 16:20 Eastern settlement boundary and is
   idempotent by completed XNYS session rather than wall-clock date.
+- In Actions, open the run summary to distinguish `RUN` (the forecast computed)
+  from `ALREADY_COMPLETE` (a later scheduled trigger skipped the same session).
+  GitHub can delay cron delivery; a short green duplicate run is not a new
+  forecast. Check `artifacts_part10_bot/pipeline_status.json` and
+  `python evaluate_prospective_cohort.py --root .` for the completed session,
+  eligible paper issuances, and exact-date realized outcomes. Workflow success
+  does not clear the historical AUC, Brier, or independent-validation gates.
 - Prediction rows carry source SHA, workflow run, run attempt, and a stable
   revision identifier; provenance updates fail loudly on dtype or duplicate-row errors.
 - Production retains a 90-day immutable workflow artifact containing raw inputs,
