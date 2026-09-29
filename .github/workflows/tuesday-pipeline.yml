@@ -191,6 +191,22 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: python run_tuesday_prediction.py --force --direct
 
+      # Part 0 has now verified the exact current-session VOO/IEF pair. Reconcile
+      # previously issued H=1 paper outcomes against that same observed panel,
+      # even if an earlier backfill trigger found that the provider was not ready.
+      # A pending or inconsistent past target fails closed before publication.
+      - name: Reconcile prospective outcomes from verified Part 0 closes
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python backfill_realized.py --close-source part0
+          python - <<'PYEOF'
+          from pathlib import Path
+          from market_calendar import latest_completed_xnys_session
+          marker = Path("artifacts_part9/backfill_run_date.txt")
+          marker.write_text(latest_completed_xnys_session().date().isoformat() + "\n", encoding="utf-8")
+          PYEOF
+          python artifact_integrity.py --root . --write-backfill-status --status-only
+
       - name: Verify accumulating ledger preservation
         if: steps.gate.outputs.run == 'true'
         run: >-

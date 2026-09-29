@@ -211,6 +211,18 @@ def test_live_log_spread_fails_closed_on_invalid_prices():
         _realized_log_spread(frame, "px_voo_realized", "px_ief_realized")
 
 
+def test_live_log_spread_uses_frozen_same_vintage_anchors():
+    from part9_live_attribution import _realized_log_spread
+
+    frame = pd.DataFrame({
+        "px_voo_t": [710.79], "px_ief_t": [90.0],
+        "px_voo_outcome_anchor": [708.96698], "px_ief_outcome_anchor": [90.0],
+        "px_voo_realized": [703.61], "px_ief_realized": [89.53],
+    })
+    actual = _realized_log_spread(frame, "px_voo_realized", "px_ief_realized")
+    assert actual[0] == pytest.approx(np.log(703.61 / 708.96698) - np.log(89.53 / 90.0))
+
+
 def test_backfill_spread_diagnostic_uses_log_returns():
     from backfill_realized import _log_return_spread
 

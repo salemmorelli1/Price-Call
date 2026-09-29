@@ -354,10 +354,13 @@ def _realized_log_spread(
     frame: pd.DataFrame, voo_real_col: str, ief_real_col: str
 ) -> np.ndarray:
     """Recreate Part 1's one-session log-return spread from observed closes."""
+    anchors = _outcome_anchors(frame)
     prices = {
         name: pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float)
         for name in ("px_voo_t", "px_ief_t", voo_real_col, ief_real_col)
     }
+    prices["px_voo_t"] = anchors["VOO"]
+    prices["px_ief_t"] = anchors["IEF"]
     invalid = np.zeros(len(frame), dtype=bool)
     for values in prices.values():
         invalid |= ~np.isfinite(values) | (values <= 0)
@@ -370,6 +373,28 @@ def _realized_log_spread(
         np.log(prices[voo_real_col] / prices["px_voo_t"])
         - np.log(prices[ief_real_col] / prices["px_ief_t"])
     )
+
+
+def _outcome_anchors(frame: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Use frozen same-vintage anchors for current protocol realized returns."""
+    columns = {ticker: f"px_{ticker.lower()}_outcome_anchor" for ticker in ("VOO", "IEF")}
+    present = [name in frame for name in columns.values()]
+    if any(present) and not all(present):
+        raise RuntimeError("Current-protocol evidence has a partial outcome-anchor schema")
+    source = columns if all(present) else {ticker: f"px_{ticker.lower()}_t" for ticker in columns}
+    values = {
+        ticker: pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float)
+        for ticker, name in source.items()
+    }
+    invalid = np.zeros(len(frame), dtype=bool)
+    for arr in values.values():
+        invalid |= ~np.isfinite(arr) | (arr <= 0)
+    if invalid.any():
+        raise RuntimeError(
+            "Current-protocol evidence has invalid same-vintage outcome anchors "
+            f"at rows {frame.index[invalid].tolist()[:5]}."
+        )
+    return values
 
 
 def diebold_mariano_test(
@@ -751,7 +776,14 @@ def generate_live_report(cfg: Part9Config) -> Dict:
 
     voo_pred_col = next((c for c in ["px_voo_call_1d", "px_voo_call_7d"] if c in realized.columns), None)
     if voo_pred_col:
-        errors = (pd.to_numeric(realized[voo_pred_col], errors="coerce") - pd.to_numeric(realized[voo_real_col], errors="coerce")).dropna()
+        anchors = _outcome_anchors(realized)
+        issued = pd.to_numeric(realized["px_voo_t"], errors="coerce")
+        # Compare forecast and target in the issued price scale; the target's
+        # same-vintage adjusted return is applied to the immutable issued close.
+        comparable_target = pd.to_numeric(realized[voo_real_col], errors="coerce") * (
+            issued / anchors["VOO"]
+        )
+        errors = (pd.to_numeric(realized[voo_pred_col], errors="coerce") - comparable_target).dropna()
         if len(errors):
             report["voo_mae_live"] = float(errors.abs().mean())
             report["voo_rmse_live"] = float(np.sqrt((errors ** 2).mean()))
@@ -796,12 +828,13 @@ def generate_live_report(cfg: Part9Config) -> Dict:
         else:
             pred_p = pred_p_raw
         log_spread_real = _realized_log_spread(realized, voo_real_col, ief_real_col)
+        anchors = _outcome_anchors(realized)
         # Simple returns remain appropriate for the descriptive active-return
         # calculation.  Part 1's event label and its threshold use log returns.
         spread_real = (
-            pd.to_numeric(realized[voo_real_col], errors="coerce").values / pd.to_numeric(realized["px_voo_t"], errors="coerce").values - 1.0
+            pd.to_numeric(realized[voo_real_col], errors="coerce").values / anchors["VOO"] - 1.0
         ) - (
-            pd.to_numeric(realized[ief_real_col], errors="coerce").values / pd.to_numeric(realized["px_ief_t"], errors="coerce").values - 1.0
+            pd.to_numeric(realized[ief_real_col], errors="coerce").values / anchors["IEF"] - 1.0
         )
         # Match Part 1 exactly: the row-level threshold is a log-return spread.
         y_live = (log_spread_real < thr_series.values).astype(float)
