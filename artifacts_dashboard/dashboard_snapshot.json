@@ -6,13 +6,13 @@
   "deployment_mode": "DEFENSE_ONLY",
   "evidence": {
     "cohort": "causal-integrity-v4",
-    "eligible_realized": 1,
+    "eligible_realized": 2,
     "inference_eligible": false,
     "legacy_realized_excluded": 40,
     "minimum": 60,
-    "n_negative": 0,
+    "n_negative": 2,
     "n_positive": 0,
-    "progress_pct": 1.7
+    "progress_pct": 3.3
   },
   "execution_lineage_ok": true,
   "final_pass": false,
@@ -30,8 +30,8 @@
   },
   "lineage": {
     "backfill_run_date": "2026-09-28",
-    "backfill_run_id": "36503230049",
-    "backfill_source_code_sha": "ee1099c19729b0b7ff2c77538f8133e6817f30b6",
+    "backfill_run_id": "36565231078",
+    "backfill_source_code_sha": "eea644892efa2273532d8a5e974febb38987189c",
     "execution_decision_date": "2026-09-28",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
@@ -68,7 +68,7 @@
   },
   "live_health": "IMMATURE",
   "live_health_reasons": [
-    "Only 1 live observation (60 required)"
+    "Only 2 live observations (60 required)"
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
@@ -79,9 +79,9 @@
     "backtest_brier_skill": -0.0023455433561445638,
     "balanced_accuracy": null,
     "live_auc": null,
-    "live_brier": null,
-    "live_brier_null": null,
-    "live_brier_skill": null,
+    "live_brier": 0.0388267622642307,
+    "live_brier_null": 0.038974907092466614,
+    "live_brier_skill": 0.0038010335086711144,
     "rolling_median_auc": 0.5584846912298911
   },
   "operator_validation": {
