@@ -126,8 +126,29 @@ an immutable eligible paper forecast, so it skips the model before computation.
 
 Scheduled backfill triggers run on weekdays after the settlement boundary. Manual
 dispatch uses the same latest-completed-XNYS-session gate and cannot admit an
-unsettled close. Failure to regenerate Part 9 is fatal. Both workflows
-synchronize before computation, abort if the branch changes during computation, build
+unsettled close. A calendar-completed session is not evidence that Yahoo has
+published its exact VOO/IEF close pair. When a current-protocol paper target is
+due or the completed session is being marked as processed but that pair is
+absent, backfill reports `DATA_PENDING` (exit 75), leaves
+the prediction ledger and completion marker untouched, and lets the next trigger
+retry. Its gate also retries due, unrealized or unanchored eligible targets even if an older
+workflow wrote the current-date marker prematurely. All other failures remain
+fatal. After production verifies the current pair in Part 0, it reconciles
+prior eligible outcomes against Part 0's observation mask before the prospective
+cohort is scored and the dashboard is published. A previously realized eligible
+price cannot change silently. Yahoo's auto-adjusted historical prices can change
+after a distribution: the Sep 28 download revised the Sep 24–25 VOO observations
+by about $1.82. A new realized outcome therefore freezes both the decision and
+target adjusted prices from that same download. Its original issued price anchor
+remains unchanged; Part 9 and the locked prospective evaluator use the frozen
+outcome anchor for the event return. An older frozen current-protocol outcome
+without this explicit field may be migrated only when the next issued forecast's
+decision anchor corroborates its recorded target pair. Missing past targets,
+partial price pairs, or uncorroborated old outcomes block publication. This
+recovery does not change any historical AUC,
+Brier, eligibility, or allocation thresholds. Failure to regenerate Part 9 is
+fatal. Both workflows synchronize before computation, abort if the branch changes
+during computation, build
 the SHA-256 manifest after all outputs, push without conflict-merging, and explicitly
 dispatch the verified Pages deployment. Pages has no independent push trigger, so a code
 merge cannot publish an old or incomplete artifact snapshot before production succeeds.

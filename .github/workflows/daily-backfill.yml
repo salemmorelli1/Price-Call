@@ -99,30 +99,50 @@ jobs:
           python - <<'PYEOF'
           import os
           from pathlib import Path
+          import pandas as pd
+          from backfill_realized import pending_eligible_targets
           from market_calendar import latest_completed_xnys_session
-          session_date = latest_completed_xnys_session().date().isoformat()
+          session = latest_completed_xnys_session()
+          session_date = session.date().isoformat()
           marker = Path("artifacts_part9/backfill_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          should_run = completed != session_date
+          pending = pending_eligible_targets(pd.read_csv("artifacts_part3/prediction_log.csv"), session)
+          should_run = completed != session_date or bool(pending)
           status = "RUN" if should_run else "ALREADY_COMPLETE"
-          print(f"latest_xnys_session={session_date} completed={completed or 'none'} status={status}")
+          print(f"latest_xnys_session={session_date} completed={completed or 'none'} "
+                f"pending_eligible_targets={[day.date().isoformat() for day in pending]} status={status}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"run={'true' if should_run else 'false'}\n")
               f.write(f"status={status}\n")
           PYEOF
 
       - name: Run backfill
+        id: backfill
         if: steps.gate.outputs.run == 'true'
-        run: python backfill_realized.py
+        run: |
+          set +e
+          python backfill_realized.py
+          result=$?
+          set -e
+          if [ "$result" -eq 75 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Backfill: DATA_PENDING" >> "$GITHUB_STEP_SUMMARY"
+            echo "Exact current-session VOO/IEF closes are not available yet. No ledger or completion marker was published; the catch-up trigger will retry." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$result" -ne 0 ]; then
+            exit "$result"
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify accumulating ledger preservation
-        if: steps.gate.outputs.run == 'true'
+        if: steps.backfill.outputs.ready == 'true'
         run: >-
           python artifact_integrity.py --root .
           --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Record successful backfill date
-        if: steps.gate.outputs.run == 'true'
+        if: steps.backfill.outputs.ready == 'true'
         run: |
           python - <<'PYEOF'
           from pathlib import Path
@@ -134,13 +154,13 @@ jobs:
           python artifact_integrity.py --root . --write-backfill-status --status-only
 
       - name: Synchronize dashboard and verify published artifacts
-        if: steps.gate.outputs.run == 'true'
+        if: steps.backfill.outputs.ready == 'true'
         run: |
           python sync_dashboard.py --root .
           python artifact_integrity.py --root .
 
       - name: Commit and push backfill artifacts
-        if: steps.gate.outputs.run == 'true'
+        if: github.ref_name == 'main' && steps.backfill.outputs.ready == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -194,11 +214,13 @@ jobs:
           git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Deploy the committed dashboard
-        if: steps.gate.outputs.run == 'true'
+        if: github.ref_name == 'main' && steps.backfill.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
 
       - name: Report backfill gate status
         if: always()
-        run: echo "Backfill gate status — ${{ steps.gate.outputs.status || 'FAILED_BEFORE_GATE' }}" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Backfill gate status — ${{ steps.gate.outputs.status || 'FAILED_BEFORE_GATE' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backfill data ready — ${{ steps.backfill.outputs.ready || 'NOT_RUN' }}" >> "$GITHUB_STEP_SUMMARY"

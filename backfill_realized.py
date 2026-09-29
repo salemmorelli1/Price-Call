@@ -15,6 +15,8 @@ Behavior
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -253,6 +255,114 @@ def _download_close_history(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFr
     )
 
 
+def _part0_close_history(project_dir: Path, end: pd.Timestamp) -> pd.DataFrame:
+    """Use this run's validated, observed Part 0 closes for production backfill."""
+    folder = project_dir / "artifacts_part0"
+    meta = json.loads((folder / "part0_meta.json").read_text(encoding="utf-8"))
+    day = end.date().isoformat()
+    if (
+        meta.get("market_data_asof") != day
+        or meta.get("latest_completed_market_session") != day
+        or meta.get("market_values_are_raw_observations") is not True
+        or any(meta.get("last_raw_observation_by_ticker", {}).get(t) != day
+               for t in ("VOO", "IEF"))
+    ):
+        raise RuntimeError("Part 0 lacks verified exact-session VOO/IEF observations")
+    close = pd.read_parquet(folder / "close_prices.parquet")
+    mask = pd.read_parquet(folder / "market_observation_mask.parquet")
+    if not {"VOO", "IEF"}.issubset(close.columns) or not {"VOO", "IEF"}.issubset(mask.columns):
+        raise RuntimeError("Part 0 core close or observation-mask columns are missing")
+    for frame in (close, mask):
+        frame.index = pd.DatetimeIndex(pd.to_datetime(frame.index)).tz_localize(None).normalize()
+        if frame.index.has_duplicates:
+            raise RuntimeError("Part 0 contains duplicate market sessions")
+    if end not in close.index or end not in mask.index or any(
+        mask.at[end, ticker] != 1 for ticker in ("VOO", "IEF")
+    ):
+        raise RuntimeError("Part 0 latest VOO/IEF pair is not observed on the exact session")
+    result = close.loc[close.index <= end, ["VOO", "IEF"]].sort_index()
+    if result.empty or not np.isfinite(result.to_numpy(dtype=float)).all() or (result <= 0).any().any():
+        raise RuntimeError("Part 0 core close history contains missing or invalid prices")
+    return result
+
+
+def pending_eligible_targets(frame: pd.DataFrame, completed_session: pd.Timestamp) -> list[pd.Timestamp]:
+    """Find due current-protocol targets without a complete frozen outcome."""
+    eligible = frame.loc[current_evidence_mask(frame)]
+    if eligible.empty:
+        return []
+    required = {"target_date", "px_voo_realized", "px_ief_realized"}
+    if required - set(eligible.columns):
+        raise ValueError(f"Eligible prediction log lacks {sorted(required - set(eligible.columns))}")
+    targets = pd.to_datetime(eligible["target_date"], errors="raise", format="mixed").dt.normalize()
+    if targets.isna().any():
+        raise ValueError("Eligible forecast has no exact target date")
+    prices = eligible[["px_voo_realized", "px_ief_realized"]].apply(pd.to_numeric, errors="coerce")
+    if (prices.notna().any(axis=1) & ~prices.notna().all(axis=1)).any():
+        raise ValueError("Eligible forecast has a partially realized VOO/IEF pair")
+    anchors = eligible.reindex(columns=["px_voo_outcome_anchor", "px_ief_outcome_anchor"])
+    anchors = anchors.apply(pd.to_numeric, errors="coerce")
+    if (anchors.notna().any(axis=1) & ~anchors.notna().all(axis=1)).any():
+        raise ValueError("Eligible forecast has a partially recorded outcome anchor")
+    due = targets.le(pd.Timestamp(completed_session).normalize()) & (
+        ~prices.notna().all(axis=1) | ~anchors.notna().all(axis=1)
+    )
+    return sorted(set(targets.loc[due]))
+
+
+def _verify_eligible_prices(
+    row: pd.Series, close: pd.DataFrame, decision: pd.Timestamp, target: pd.Timestamp,
+    realized: tuple[float, float], successor: Optional[pd.Series] = None,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Freeze both sides of a same-vintage adjusted-return observation.
+
+    Auto-adjusted history can change after a distribution. An already published
+    outcome and its original anchor must therefore never be compared to a later
+    download of the old dates. For a NEW outcome, capture the decision close
+    and target close from the same verified download, leaving the issued price
+    anchor and earlier outcome untouched.
+    """
+    prior_target = row.get("realized_target_date")
+    if pd.notna(prior_target) and str(prior_target).strip() and pd.Timestamp(prior_target).normalize() != target:
+        raise RuntimeError("Eligible realized target date differs from the issued target")
+    issued = tuple(_safe_float(row.get(f"px_{ticker.lower()}_t")) for ticker in ("VOO", "IEF"))
+    prior = tuple(_safe_float(row.get(f"px_{ticker.lower()}_realized")) for ticker in ("VOO", "IEF"))
+    frozen = tuple(_safe_float(row.get(f"px_{ticker.lower()}_outcome_anchor")) for ticker in ("VOO", "IEF"))
+    if any(not np.isfinite(value) or value <= 0 for value in issued):
+        raise RuntimeError("Eligible forecast has an invalid issued decision anchor")
+    if any(np.isfinite(value) for value in prior) != all(np.isfinite(value) for value in prior):
+        raise RuntimeError("Eligible forecast has a partially realized price pair")
+    if any(np.isfinite(value) for value in frozen) != all(np.isfinite(value) for value in frozen):
+        raise RuntimeError("Eligible forecast has a partially recorded outcome anchor")
+    if all(np.isfinite(value) for value in prior):
+        if any(value <= 0 for value in prior):
+            raise RuntimeError("Eligible forecast has invalid frozen realized prices")
+        # A prior outcome predates the explicit anchor field. Migrate its issued
+        # anchor only when the next independently issued paper row corroborates
+        # BOTH realized closes as its exact-session decision anchors.
+        if all(np.isfinite(value) for value in frozen):
+            outcome_anchor = frozen
+        else:
+            if successor is None or pd.Timestamp(successor.get("decision_date")).normalize() != target:
+                raise RuntimeError("Frozen outcome lacks a corroborating next-session issuance")
+            next_issued = tuple(_safe_float(successor.get(f"px_{t.lower()}_t")) for t in ("VOO", "IEF"))
+            if any(not np.isclose(p, n, rtol=1e-7, atol=1e-6) for p, n in zip(prior, next_issued)):
+                raise RuntimeError("Frozen outcome differs from the next-session issued anchor")
+            outcome_anchor = issued
+        if any(value <= 0 for value in outcome_anchor):
+            raise RuntimeError("Eligible forecast has invalid frozen outcome anchors")
+        return prior, outcome_anchor
+
+    if any(np.isfinite(value) for value in frozen):
+        raise RuntimeError("Unrealized eligible forecast already has an outcome anchor")
+    if decision not in close.index or target not in close.index:
+        raise RuntimeError("New eligible outcome lacks an exact same-vintage close pair")
+    outcome_anchor = tuple(float(close.at[decision, ticker]) for ticker in ("VOO", "IEF"))
+    if any(not np.isfinite(value) or value <= 0 for value in (*outcome_anchor, *realized)):
+        raise RuntimeError("New eligible outcome has invalid observed prices")
+    return realized, outcome_anchor
+
+
 def _resolve_target_trading_date(
     decision_date: pd.Timestamp,
     trading_dates: pd.DatetimeIndex,
@@ -299,7 +409,7 @@ def _compute_direction_hit(row: pd.Series) -> float:
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
-def main() -> int:
+def main(close_source: str = "yahoo") -> int:
     print(f"ROOT: {PROJECT_DIR}")
     print(f"IN_COLAB: {IN_COLAB}")
     print(f"Prediction log exists: {PREDLOG_PATH.exists()}")
@@ -330,6 +440,7 @@ def main() -> int:
 
     numeric_cols = [
         "px_voo_realized", "px_ief_realized",
+        "px_voo_outcome_anchor", "px_ief_outcome_anchor",
         "voo_realized", "ief_realized",
         "voo_err", "ief_err",
         "voo_abs_err", "ief_abs_err",
@@ -347,9 +458,29 @@ def main() -> int:
         
     start = df[decision_col].dropna().min() - pd.Timedelta(days=20)
     end = latest_completed_xnys_session()
-    close = _download_close_history(start, end)
+    if close_source == "part0":
+        close = _part0_close_history(PROJECT_DIR, end)
+    elif close_source == "yahoo":
+        close = _download_close_history(start, end)
+    else:
+        raise ValueError(f"Unknown close source: {close_source}")
     trading_dates = pd.DatetimeIndex(close.index).sort_values()
     latest_trading_date = pd.Timestamp(trading_dates.max()).normalize()
+    if end not in trading_dates:
+        print(f"[backfill] DATA_PENDING: exact VOO/IEF close for {end.date()} is not available; "
+              "no completion marker or ledger update is permitted.")
+        return 75
+    pending = pending_eligible_targets(df, end)
+    missing = [day for day in pending if day not in trading_dates]
+    if missing:
+        raise RuntimeError(f"Past eligible target close(s) remain missing: {missing}")
+    eligible_indices = set(df.index[current_evidence_mask(df)])
+    eligible_by_decision: dict[pd.Timestamp, pd.Series] = {}
+    for index in eligible_indices:
+        key = pd.Timestamp(df.at[index, decision_col]).normalize()
+        if key in eligible_by_decision:
+            raise RuntimeError(f"Duplicate eligible paper decision: {key.date()}")
+        eligible_by_decision[key] = df.loc[index]
 
     matured_rows = 0
     updated_rows = 0
@@ -383,6 +514,13 @@ def main() -> int:
 
         px_voo_realized = float(close.loc[target_trading_date, "VOO"])
         px_ief_realized = float(close.loc[target_trading_date, "IEF"])
+        outcome_anchor = None
+        if idx in eligible_indices:
+            (px_voo_realized, px_ief_realized), outcome_anchor = _verify_eligible_prices(
+                row, close, pd.Timestamp(decision_date).normalize(),
+                target_trading_date, (px_voo_realized, px_ief_realized),
+                successor=eligible_by_decision.get(target_trading_date),
+            )
 
         already_done = (
             np.isfinite(_safe_float(row.get("px_voo_realized", np.nan)))
@@ -394,6 +532,9 @@ def main() -> int:
         df.at[idx, "px_ief_realized"] = px_ief_realized
         df.at[idx, "voo_realized"] = px_voo_realized
         df.at[idx, "ief_realized"] = px_ief_realized
+        if outcome_anchor is not None:
+            df.at[idx, "px_voo_outcome_anchor"] = outcome_anchor[0]
+            df.at[idx, "px_ief_outcome_anchor"] = outcome_anchor[1]
 
         px_voo_call = _resolve_call_value(row, "voo")
         px_ief_call = _resolve_call_value(row, "ief")
@@ -415,7 +556,9 @@ def main() -> int:
                 df.at[idx, "ief_ape"] = abs(ief_err) / abs(px_ief_call)
 
         real_spread = _log_return_spread(
-            px_voo_realized, px_ief_realized, px_voo_t, px_ief_t
+            px_voo_realized, px_ief_realized,
+            outcome_anchor[0] if outcome_anchor else px_voo_t,
+            outcome_anchor[1] if outcome_anchor else px_ief_t,
         )
         pred_spread = _log_return_spread(
             px_voo_call, px_ief_call, px_voo_t, px_ief_t
@@ -561,5 +704,7 @@ def main() -> int:
     return 0
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--close-source", choices=("yahoo", "part0"), default="yahoo")
+    raise SystemExit(main(parser.parse_args().close_source))
     

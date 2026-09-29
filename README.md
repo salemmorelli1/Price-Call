@@ -177,6 +177,12 @@ versus the rowwise causal prevalence forecast.
   `python evaluate_prospective_cohort.py --root .` for the completed session,
   eligible paper issuances, and exact-date realized outcomes. Workflow success
   does not clear the historical AUC, Brier, or independent-validation gates.
+- Backfill reports `DATA_PENDING` when an eligible target's exact close pair is
+  not yet available. It does not complete that session or mutate the ledger;
+  catch-up retries remain eligible. A later successful production run reconciles
+  due outcomes from its verified Part 0 close panel before scoring the cohort.
+  Realized event returns use a frozen decision/target pair from the same
+  auto-adjusted data vintage; the issued price anchors remain immutable.
 - Prediction rows carry source SHA, workflow run, run attempt, and a stable
   revision identifier; provenance updates fail loudly on dtype or duplicate-row errors.
 - Production retains a 90-day immutable workflow artifact containing raw inputs,

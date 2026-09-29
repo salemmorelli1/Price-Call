@@ -38,6 +38,8 @@ def _paper_rows(n=61):
             "tail_threshold": -0.005,
             "px_voo_t": 100.0,
             "px_ief_t": 100.0,
+            "px_voo_outcome_anchor": 100.0,
+            "px_ief_outcome_anchor": 100.0,
             "px_voo_realized": 98.0 if event else 102.0,
             "px_ief_realized": 100.0,
         })
@@ -73,6 +75,19 @@ def test_csv_roundtrip_with_legacy_nulls_keeps_current_flags(tmp_path):
     report = evaluate(pd.read_csv(path))
     assert report["eligible_realized"] == 2
     assert report["status"] == "awaiting_60_outcomes"
+
+
+def test_locked_cohort_uses_same_vintage_anchor_and_rejects_missing_lineage():
+    rows = _paper_rows(60)
+    original = evaluate(rows)
+    # The issuance anchor remains fixed, while the realized adjusted return
+    # uses the contemporaneous adjusted anchor frozen at realization.
+    rows.loc[0, "px_voo_outcome_anchor"] = 95.0
+    changed = evaluate(rows)
+    assert changed["n_events"] == original["n_events"] - 1
+    rows.loc[0, "px_ief_outcome_anchor"] = np.nan
+    with pytest.raises(ValueError, match="invalid px_ief_outcome_anchor"):
+        evaluate(rows)
 
 
 @pytest.mark.parametrize("change", ["late", "wrong_target", "wrong_realization", "duplicate"])

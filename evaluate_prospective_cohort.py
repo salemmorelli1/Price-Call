@@ -106,9 +106,19 @@ def evaluate(frame: pd.DataFrame) -> dict[str, object]:
     if len(realized) < MIN_OUTCOMES:
         return {**result, "status": "awaiting_60_outcomes"}
 
-    locked = realized.iloc[:MIN_OUTCOMES]
-    log_spread = np.log(locked["px_voo_realized"] / locked["px_voo_t"]) - np.log(
-        locked["px_ief_realized"] / locked["px_ief_t"]
+    locked = realized.iloc[:MIN_OUTCOMES].copy()
+    # The issued price anchor is immutable, but a later auto-adjusted download
+    # can revise its historical value after a distribution. Each realized row
+    # stores the decision and target closes from the SAME download vintage.
+    anchor_cols = ("px_voo_outcome_anchor", "px_ief_outcome_anchor")
+    if any(key not in locked for key in anchor_cols):
+        raise ValueError("Locked cohort lacks frozen same-vintage outcome anchors")
+    for key in anchor_cols:
+        locked[key] = pd.to_numeric(locked[key], errors="coerce")
+        if (~np.isfinite(locked[key].to_numpy(dtype=float)) | locked[key].le(0)).any():
+            raise ValueError(f"Locked cohort has invalid {key}")
+    log_spread = np.log(locked["px_voo_realized"] / locked[anchor_cols[0]]) - np.log(
+        locked["px_ief_realized"] / locked[anchor_cols[1]]
     )
     outcomes = (log_spread < locked["tail_threshold"]).astype(int).to_numpy()
     predicted = locked["p_final_cal"].to_numpy(dtype=float)

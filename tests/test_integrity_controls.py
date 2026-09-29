@@ -50,8 +50,19 @@ def test_workflows_publish_dashboard_and_manifest():
 
 def test_backfill_process_propagates_failure_exit_code():
     text = Path("backfill_realized.py").read_text(encoding="utf-8")
-    assert 'raise SystemExit(main())' in text
+    assert 'raise SystemExit(main(parser.parse_args().close_source))' in text
     assert "Part 3 summary regeneration failed after backfill" in text
+
+
+def test_workflows_retry_pending_targets_and_reconcile_before_prospective_scoring():
+    backfill = Path(".github/workflows/daily-backfill.yml").read_text(encoding="utf-8")
+    production = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
+    assert "completed != session_date or bool(pending)" in backfill
+    assert "if [ \"$result\" -eq 75 ]" in backfill
+    assert "if: steps.backfill.outputs.ready == 'true'" in backfill
+    assert production.index("Run pipeline") < production.index(
+        "backfill_realized.py --close-source part0"
+    ) < production.index("Evaluate fixed prospective paper cohort")
 
 
 def test_production_gate_is_idempotent_by_completed_xnys_session():
@@ -98,10 +109,14 @@ def test_workflows_fail_closed_and_guard_accumulating_ledgers():
 
 
 def test_research_branch_cannot_commit_artifacts_or_deploy_pages():
-    workflow = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
-    for step in ("Commit and push artifacts", "Deploy the committed dashboard"):
-        condition = workflow.split(f"- name: {step}", 1)[1].split("\n", 2)[1]
-        assert "github.ref_name == 'main'" in condition
+    for name, commit_step in (
+        ("tuesday-pipeline.yml", "Commit and push artifacts"),
+        ("daily-backfill.yml", "Commit and push backfill artifacts"),
+    ):
+        workflow = Path(".github/workflows", name).read_text(encoding="utf-8")
+        for step in (commit_step, "Deploy the committed dashboard"):
+            condition = workflow.split(f"- name: {step}", 1)[1].split("\n", 2)[1]
+            assert "github.ref_name == 'main'" in condition
 
 
 def test_repository_enforces_cross_platform_manifest_line_endings():
