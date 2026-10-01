@@ -23,7 +23,6 @@ jobs:
       PRICECALL_ROOT: ${{ github.workspace }}
       PRICECALL_CODE_SHA: ${{ github.sha }}
       PRICECALL_STRICT_DRIVE_ONLY: "0"
-      PRICECALL_INPUT_STATUS_PATH: ${{ runner.temp }}/pricecall-input-status.json
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -62,7 +61,7 @@ jobs:
         with:
           name: pricecall-input-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/pricecall-input-status.json
+            artifacts_diagnostics/production_input_status.json
             artifacts_part0/*.parquet
             artifacts_part0/part0_meta.json
             artifacts_part1/part1_meta.json
