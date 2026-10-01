@@ -179,10 +179,11 @@ def test_actual_production_shell_handles_pending_and_failure_distinctly(tmp_path
     (tmp_path / "run_tuesday_prediction.py").write_text(f"raise SystemExit({result})\n")
     status = tmp_path / "status.json"
     status.write_text(json.dumps({"stage": "PIT_MACRO", "reason": "incomplete retrieval"}))
-    env = dict(os.environ, GITHUB_OUTPUT=str(tmp_path / "output.txt"),
-               GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"), PRICECALL_INPUT_STATUS_PATH=str(status))
+    env = dict(os.environ, GITHUB_OUTPUT=(tmp_path / "output.txt").as_posix(),
+               GITHUB_STEP_SUMMARY=(tmp_path / "summary.md").as_posix(),
+               PRICECALL_INPUT_STATUS_PATH=status.as_posix())
     # Use the tested interpreter even when the caller's PATH lacks its venv.
-    script = script.replace("python ", f'"{sys.executable}" ')
+    script = script.replace("python ", f'"{Path(sys.executable).as_posix()}" ')
     run = subprocess.run([bash, "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
     assert run.returncode == expected_exit, run.stderr
     if output:

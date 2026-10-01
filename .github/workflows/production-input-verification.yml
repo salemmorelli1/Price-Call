@@ -15,6 +15,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  windows-git-bash:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Verify Windows virtualenv and Git Bash commands
+        run: |
+          python -m venv .venv
+          source .venv/Scripts/activate
+          python -m pip install --disable-pip-version-check -r requirements-ci-lock.txt
+          python -m pip install --disable-pip-version-check duckdb==1.5.5 pyarrow==23.0.1
+          python -m pip check
+          python -m compileall -q part0_data_infrastructure.py point_in_time_macro.py production_readiness.py run_tuesday_prediction.py tests
+          python -m ruff check --select E9,F63,F7,F82 .
+          python -m pytest -q tests/
+          GITHUB_REF_NAME=main python -m pytest -q tests/
+          python artifact_integrity.py --root .
+          python evaluate_prospective_cohort.py --root .
+          python prepare_pages.py --root . --site ../Price-Call-pages-preview
+          git diff --check
+          git diff --exit-code
+
   replay:
     runs-on: ubuntu-latest
     timeout-minutes: 90
