@@ -221,3 +221,20 @@ versus the rowwise causal prevalence forecast.
 
 See `docs/CAUSAL_RESEARCH_PROTOCOL.md` for the temporal and governance contracts.
 See `docs/ARTIFACT_RETENTION.md` for the non-destructive repository-size policy.
+
+### Production input readiness (October 1, 2026 audit)
+
+Production reports `DATA_PENDING` (process exit 75) when the latest completed
+session's exact core close pair or a required ALFRED retrieval remains unavailable
+after retries. It stops before downstream training/publication, retains attempt
+diagnostics as a workflow artifact, and leaves the completion marker unchanged.
+Historical price gaps, malformed release responses, and credential errors remain
+hard failures. ALFRED transient requests receive at most three attempts per window.
+
+A completed session from the older incomplete-macro path can be retried only if
+its published forecast is ineligible, its publication hashes verify, and its H=1
+target has not closed. Eligible forecasts remain immutable. Statistical rejection
+does not cause a rerun or change the AUC, Brier, or 60-outcome requirements.
+
+See `docs/PRODUCTION_INPUT_AUDIT_2026-10-01.md` for the failed-run evidence and
+`Production input verification` in Actions for a real-provider feature-branch replay.

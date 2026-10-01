@@ -298,6 +298,10 @@ def run_direct_pipeline(project_dir: Path) -> int:
             continue
 
         rc = run_subprocess([sys.executable, str(script)], project_dir, extra_env=common_env)
+        if rc == 75:
+            print(f"\n[INFO] {label} DATA_PENDING — stopping before downstream training/publication; "
+                  "the session remains available for a later retry.")
+            return rc
         if rc != 0:
             print(f"\n[ERROR] {label} failed with exit code {rc}.")
             return rc

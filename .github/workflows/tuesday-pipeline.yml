@@ -165,15 +165,17 @@ jobs:
           import os
           from pathlib import Path
           from market_calendar import latest_completed_xnys_session
+          from production_readiness import retry_incomplete_macro_session
 
           event = os.environ.get("GITHUB_EVENT_NAME", "")
           session_date = latest_completed_xnys_session().date().isoformat()
           marker = Path("artifacts_part10_bot/pipeline_run_date.txt")
           completed = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
-          should_run = completed != session_date
+          retry_macro = completed == session_date and retry_incomplete_macro_session(Path("."), session_date)
+          should_run = completed != session_date or retry_macro
           reason = f"completed={completed or 'none'} latest_xnys_session={session_date} trigger={event}"
 
-          status = "RUN" if should_run else "ALREADY_COMPLETE"
+          status = "RETRY_INCOMPLETE_MACRO" if retry_macro else ("RUN" if should_run else "ALREADY_COMPLETE")
           print(f"production_gate_status={status} ({reason})")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write("run=" + ("true" if should_run else "false") + "\n")
@@ -183,20 +185,58 @@ jobs:
               f.write(f"- Latest completed XNYS session: `{session_date}`\n")
               f.write(f"- Committed completion marker: `{completed or 'none'}`\n")
               f.write(f"- Trigger: `{event}`\n")
+              if retry_macro:
+                  f.write("- Retrying an ineligible incomplete-macro decision before its target closes.\n")
               if not should_run:
                   f.write("- Pipeline steps skipped: this session was already processed.\n")
           PYEOF
 
       - name: Run pipeline
         if: steps.gate.outputs.run == 'true'
-        run: python run_tuesday_prediction.py --force --direct
+        id: pipeline
+        env:
+          PRICECALL_INPUT_STATUS_PATH: ${{ runner.temp }}/pricecall-input-status.json
+        run: |
+          set +e
+          python run_tuesday_prediction.py --force --direct
+          result=$?
+          set -e
+          if [ "$result" -eq 75 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "status=DATA_PENDING" >> "$GITHUB_OUTPUT"
+            echo "### Production inputs: DATA_PENDING" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required provider inputs remain unavailable after retries. Training and publication stopped; the completion marker is unchanged. A later trigger can retry." >> "$GITHUB_STEP_SUMMARY"
+            python - <<'PYEOF'
+          import json, os
+          from pathlib import Path
+          payload = json.loads(Path(os.environ["PRICECALL_INPUT_STATUS_PATH"]).read_text())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"\nStage: `{payload['stage']}`. {payload['reason']}\n")
+          PYEOF
+            exit 0
+          fi
+          if [ "$result" -ne 0 ]; then
+            echo "### Production inputs/pipeline: FAILED (exit $result)" >> "$GITHUB_STEP_SUMMARY"
+            exit "$result"
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "status=COMPLETED" >> "$GITHUB_OUTPUT"
+
+      - name: Retain deferred-input diagnostics
+        if: always() && steps.pipeline.outputs.status == 'DATA_PENDING'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pricecall-pending-inputs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pricecall-input-status.json
+          if-no-files-found: error
+          retention-days: 90
 
       # Part 0 has now verified the exact current-session VOO/IEF pair. Reconcile
       # previously issued H=1 paper outcomes against that same observed panel,
       # even if an earlier backfill trigger found that the provider was not ready.
       # A pending or inconsistent past target fails closed before publication.
       - name: Reconcile prospective outcomes from verified Part 0 closes
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: |
           python backfill_realized.py --close-source part0
           python - <<'PYEOF'
@@ -208,17 +248,17 @@ jobs:
           python artifact_integrity.py --root . --write-backfill-status --status-only
 
       - name: Verify accumulating ledger preservation
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: >-
           python artifact_integrity.py --root .
           --verify-ledger-baseline "$RUNNER_TEMP/pricecall-ledger-baseline.json"
 
       - name: Evaluate fixed prospective paper cohort
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: python evaluate_prospective_cohort.py --root .
 
       - name: Record successful production session
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: |
           python - <<'PYEOF'
           from pathlib import Path
@@ -230,12 +270,12 @@ jobs:
           python artifact_integrity.py --root . --write-pipeline-status --status-only
 
       - name: Synchronize dashboard
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: python sync_dashboard.py --root .
 
       # ── Artifact verification ─────────────────────────────────────────
       - name: Verify required artifacts
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         id: verify
         run: |
           missing=0
@@ -265,7 +305,7 @@ jobs:
           echo "missing=$missing" >> "$GITHUB_OUTPUT"
 
       - name: Run missing=${{ steps.verify.outputs.missing }}
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: |
           if [ "${{ steps.verify.outputs.missing }}" != "0" ]; then
             echo "Required artifacts are missing — aborting commit."
@@ -273,11 +313,11 @@ jobs:
           fi
 
       - name: Record provenance and validate strict JSON
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         run: python artifact_integrity.py --root . --verify-run-inputs
 
       - name: Retain immutable research inputs and model provenance
-        if: steps.gate.outputs.run == 'true'
+        if: steps.pipeline.outputs.ready == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pricecall-research-bundle-${{ github.run_id }}-${{ github.run_attempt }}
@@ -308,7 +348,7 @@ jobs:
       # The source commit is rechecked before committing. A concurrent branch
       # change aborts this run instead of conflict-merging mixed-run artifacts.
       - name: Commit and push artifacts
-        if: github.ref_name == 'main' && steps.gate.outputs.run == 'true'
+        if: github.ref_name == 'main' && steps.pipeline.outputs.ready == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -362,7 +402,7 @@ jobs:
           git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Deploy the committed dashboard
-        if: github.ref_name == 'main' && steps.gate.outputs.run == 'true'
+        if: github.ref_name == 'main' && steps.pipeline.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"

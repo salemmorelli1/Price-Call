@@ -48,6 +48,7 @@ import pandas as pd
 import yfinance as yf
 
 from market_calendar import completed_xnys_sessions, latest_completed_xnys_session
+from production_readiness import DataPendingError, record_data_pending
 
 warnings.filterwarnings("ignore")
 
@@ -828,6 +829,17 @@ def download_market_data(cfg: Part0Config):
             ticker: [date.date().isoformat() for date in close.index[close[ticker].isna()][:10]]
             for ticker in bad_post
         }
+        # Only the latest completed session can be a provider settlement delay.
+        # Older holes remain fatal; no source observation is synthesized.
+        latest = latest_completed_xnys_session()
+        gaps = close.index[close[core].isna().any(axis=1)]
+        if len(close) > 1 and len(gaps) == 1 and gaps[0] == latest == close.index.max():
+            raise DataPendingError(
+                f"Exact core close pair for {latest.date()} is unavailable after raw-data "
+                "retries and verified archive recovery",
+                stage="PART0",
+                diagnostics={"session_date": latest.date().isoformat(), "missing_dates": missing_dates},
+            )
         raise RuntimeError(
             "Part 0 core tickers still have NaN after raw-data retries and "
             "verified historical-close recovery. "
@@ -1240,7 +1252,10 @@ def main() -> int:
     print(f"[Part 0] Project root: {_resolve_project_root(cfg)}")
     print(f"[Part 0] Output dir:    {out_dir}")
 
-    close, volume, quality = download_market_data(cfg)
+    try:
+        close, volume, quality = download_market_data(cfg)
+    except DataPendingError as exc:
+        return record_data_pending(exc, _resolve_project_root(cfg))
     macro = download_fred_data(cfg)
     macro = _fill_vixcls_from_market(macro, close)
     macro = _fill_macro_from_last_good(macro, cfg, out_dir)
@@ -1275,4 +1290,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

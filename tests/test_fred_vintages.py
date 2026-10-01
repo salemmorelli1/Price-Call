@@ -158,6 +158,7 @@ def test_prearchive_macro_is_missing_without_revised_history(tmp_path, monkeypat
     monkeypatch.setattr(pit.pd, "read_parquet", fake_read)
     monkeypatch.setattr(pit, "_atomic_parquet", lambda frame, path: results.__setitem__(path.name, frame.copy()))
     monkeypatch.setattr(pit, "sha256_file", lambda path: "synthetic-test-hash")
+    monkeypatch.setattr(pit.time, "sleep", lambda _: None)
     meta = pit.rebuild_point_in_time_macro(tmp_path)
     macro = results["macro_data.parquet"]
     features = results["features_full.parquet"]
@@ -170,10 +171,15 @@ def test_prearchive_macro_is_missing_without_revised_history(tmp_path, monkeypat
     assert json.loads((output / "part0_meta.json").read_text())["historical_point_in_time_complete"]
 
     FakeFred.failing_series = "T10Y2Y"
-    meta = pit.rebuild_point_in_time_macro(tmp_path)
-    assert meta["historical_point_in_time_complete"] is False
-    assert meta["fred_vintage_mode_by_series"]["curve_2s10s"] == "unavailable"
-    assert results["macro_data.parquet"]["curve_2s10s"].isna().all()
+    old_meta = (output / "part0_meta.json").read_bytes()
+    old_macro = results["macro_data.parquet"].copy()
+    old_features = results["features_full.parquet"].copy()
+    with pytest.raises(pit.DataPendingError, match="curve_2s10s") as failure:
+        pit.rebuild_point_in_time_macro(tmp_path)
+    assert failure.value.diagnostics["modes"]["curve_2s10s"] == "unavailable"
+    assert (output / "part0_meta.json").read_bytes() == old_meta
+    pd.testing.assert_frame_equal(results["macro_data.parquet"], old_macro)
+    pd.testing.assert_frame_equal(results["features_full.parquet"], old_features)
 
 
 def test_regime_loader_rejects_stale_or_missing_pit_feature_file(tmp_path):

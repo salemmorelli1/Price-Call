@@ -1,0 +1,73 @@
+name: Production input verification
+
+# A read-only replay on the audit branch exercises the real providers and
+# production dependency lock. It cannot update main, its ledgers, or Pages.
+on:
+  push:
+    branches: ["codex/production-input-readiness-v1"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pricecall-input-verification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      PRICECALL_ROOT: ${{ github.workspace }}
+      PRICECALL_CODE_SHA: ${{ github.sha }}
+      PRICECALL_STRICT_DRIVE_ONLY: "0"
+      PRICECALL_INPUT_STATUS_PATH: ${{ runner.temp }}/pricecall-input-status.json
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install production dependency lock
+        run: |
+          python -m pip install --no-cache-dir -r requirements-lock.txt
+          python -m pip install --no-cache-dir -r requirements-ci-lock.txt
+          python -m pip check
+      - name: Test against the production dependencies
+        run: |
+          python -m pytest -q tests/
+          GITHUB_REF_NAME=main python -m pytest -q tests/
+      - name: Replay the production pipeline without publication
+        run: python run_tuesday_prediction.py --force --direct
+      - name: Confirm complete required macro inputs
+        run: |
+          python - <<'PYEOF'
+          from pathlib import Path
+          from artifact_integrity import read_json_strict
+          from point_in_time_macro import FRED_SERIES
+          meta = read_json_strict(Path("artifacts_part0/part0_meta.json"))
+          modes = meta["fred_vintage_mode_by_series"]
+          assert meta["historical_point_in_time_complete"] is True
+          assert set(modes) == set(FRED_SERIES.values())
+          assert not meta["fred_vintage_errors"]
+          assert meta["fred_revised_fallback_count"] == 0
+          print(f"Verified {len(modes)}/14 point-in-time macro series, zero revised fallbacks.")
+          PYEOF
+      - name: Evaluate the prospective cohort without issuing eligible evidence
+        run: python evaluate_prospective_cohort.py --root .
+      - name: Retain replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pricecall-input-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pricecall-input-status.json
+            artifacts_part0/*.parquet
+            artifacts_part0/part0_meta.json
+            artifacts_part1/part1_meta.json
+            artifacts_part2_g532/predictions/part2_g532_summary.json
+            artifacts_part3/prediction_log.csv
+            artifacts_part3_v1/part3_summary.json
+            artifacts_part9/live_attribution_report.json
+          retention-days: 90
