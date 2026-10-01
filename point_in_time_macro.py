@@ -7,6 +7,9 @@ credential only from the environment and contains no embedded credential.
 from __future__ import annotations
 
 import os
+import time
+from urllib.error import HTTPError, URLError
+from xml.etree.ElementTree import ParseError
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,7 @@ from fredapi import Fred
 
 from artifact_integrity import PROTOCOL_VERSION, read_json_strict, sha256_file, write_json_strict
 import part0_data_infrastructure as part0
+from production_readiness import DataPendingError, record_data_pending
 
 
 FRED_SERIES = {
@@ -36,9 +40,47 @@ FRED_SERIES = {
 
 
 class AlfredCoverageError(RuntimeError):
-    def __init__(self, message: str, diagnostics: list[dict[str, Any]]) -> None:
+    def __init__(
+        self, message: str, diagnostics: list[dict[str, Any]], *, retryable: bool = False,
+    ) -> None:
         super().__init__(message)
         self.diagnostics = diagnostics
+        self.retryable = retryable
+
+
+def _retryable_alfred_error(error: Exception) -> bool:
+    """Retry transport/service failures, never credential or schema errors."""
+    if isinstance(error, HTTPError):
+        return error.code == 429 or 500 <= error.code < 600
+    if isinstance(error, (URLError, TimeoutError, ConnectionError, OSError, ParseError)):
+        return True
+    # fredapi 0.5.2 discards HTTP status and raises ValueError(message).
+    # An error response without a message produced ValueError(None) in run #370.
+    if isinstance(error, ValueError):
+        if not error.args or error.args[0] is None or str(error).strip() == "":
+            return True
+        return any(token in str(error).lower() for token in (
+            "too many requests", "rate limit", "temporarily unavailable",
+            "service unavailable", "internal server error", "bad gateway", "gateway timeout",
+        ))
+    return False
+
+
+def _request_releases(fred: Fred, series_id: str, start: str, end: str) -> tuple[pd.DataFrame, int]:
+    for attempt in range(1, 4):
+        try:
+            return pd.DataFrame(fred.get_series_all_releases(
+                series_id, realtime_start=start, realtime_end=end,
+            )), attempt
+        except Exception as exc:
+            if not _retryable_alfred_error(exc) or attempt == 3:
+                # Annotate our coverage diagnostics without changing the cause.
+                exc.alfred_request_attempts = attempt
+                raise
+            print(f"[Point-in-time macro] {series_id} {start}..{end}: "
+                  f"transient request failure; retry {attempt + 1}/3")
+            time.sleep(2.0 * attempt)
+    raise AssertionError("unreachable")
 
 
 def realtime_windows(
@@ -75,7 +117,8 @@ def get_series_releases_chunked(
     """Fetch releases while isolating pre-history failures by window.
 
     ALFRED can reject a window before its archived history begins. Only that
-    specific error may precede a usable chunk; other API errors are fatal.
+    specific error may precede a usable chunk. Transient failures receive three
+    attempts per window; a remaining error invalidates the entire retrieval.
     Missing pre-archive dates remain missing in the returned time series.
     """
     chunks: list[pd.DataFrame] = []
@@ -83,16 +126,11 @@ def get_series_releases_chunked(
     first_usable_window_start: str | None = None
     seen_usable = False
     coverage_errors: list[str] = []
+    retryable_errors: list[bool] = []
     required = {"date", "realtime_start", "value"}
     for start, end in realtime_windows(realtime_start, realtime_end):
         try:
-            chunk = pd.DataFrame(
-                fred.get_series_all_releases(
-                    series_id,
-                    realtime_start=start,
-                    realtime_end=end,
-                )
-            )
+            chunk, attempts = _request_releases(fred, series_id, start, end)
             missing = sorted(required - set(chunk.columns))
             if chunk.empty:
                 diagnostics.append({
@@ -100,6 +138,7 @@ def get_series_releases_chunked(
                     "end": end,
                     "status": "empty",
                     "rows": 0,
+                    "attempts": attempts,
                 })
                 continue
             if missing:
@@ -111,6 +150,7 @@ def get_series_releases_chunked(
                     "end": end,
                     "status": "empty_after_validation",
                     "rows": 0,
+                    "attempts": attempts,
                 })
                 continue
             if first_usable_window_start is None:
@@ -122,6 +162,7 @@ def get_series_releases_chunked(
                 "end": end,
                 "status": "ok",
                 "rows": int(len(chunk)),
+                "attempts": attempts,
             })
         except Exception as exc:
             prearchive = (
@@ -136,15 +177,18 @@ def get_series_releases_chunked(
                 "status": status,
                 "rows": 0,
                 "error": detail,
+                "attempts": getattr(exc, "alfred_request_attempts", 1),
             })
             if not prearchive:
                 coverage_errors.append(f"{start}..{end}: {detail}")
+                retryable_errors.append(_retryable_alfred_error(exc))
 
     if coverage_errors:
         raise AlfredCoverageError(
             f"ALFRED coverage failed for {series_id}: "
             + "; ".join(coverage_errors),
             diagnostics,
+            retryable=all(retryable_errors),
         )
     releases = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
     if not required.issubset(releases.columns):
@@ -256,6 +300,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
     chunk_diagnostics: dict[str, Any] = {}
     first_availability: dict[str, str | None] = {}
     available_observations: dict[str, int] = {}
+    retryable_errors: list[bool] = []
     for series_id, name in FRED_SERIES.items():
         try:
             releases = get_series_releases_chunked(
@@ -282,6 +327,7 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
             series = pd.Series(index=calendar, dtype=float, name=name)
             modes[name] = "unavailable"
             errors[name] = f"{type(exc).__name__}: {exc}"
+            retryable_errors.append(isinstance(exc, AlfredCoverageError) and exc.retryable)
         first = series.first_valid_index()
         first_availability[name] = first.date().isoformat() if first is not None else None
         available_observations[name] = int(series.notna().sum())
@@ -293,6 +339,12 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
         mode in {"alfred_first_release_chunked", "alfred_first_release_partial"}
         for mode in modes.values()
     )
+    if not complete:
+        diagnostics = {"modes": modes, "errors": errors, "chunks": chunk_diagnostics}
+        message = "Required point-in-time macro retrieval is incomplete: " + ", ".join(errors)
+        if retryable_errors and all(retryable_errors):
+            raise DataPendingError(message, stage="PIT_MACRO", diagnostics=diagnostics)
+        raise AlfredCoverageError(message, [{"series_diagnostics": diagnostics}])
 
     # Part 6 consumes features_full.parquet, so rebuilding the macro file alone
     # would not remove revised values from the regime engine.
@@ -335,7 +387,10 @@ def rebuild_point_in_time_macro(root: Path) -> dict[str, Any]:
 
 def main() -> int:
     root = Path(os.environ.get("PRICECALL_ROOT", ".")).resolve()
-    rebuild_point_in_time_macro(root)
+    try:
+        rebuild_point_in_time_macro(root)
+    except DataPendingError as exc:
+        return record_data_pending(exc, root)
     return 0
 
 
