@@ -41,4 +41,5 @@ built_at,total_estimated_cost_dollars,total_estimated_cost_bps,annual_tc_drag_bp
 2026-09-25T03:32:45.832341+00:00,0.0,0.0,,2026-09-24,0.6,0.4,causal-integrity-v4,True,2026-09-24,36088219332.0,1.0,fa50c35187cd4cdf75ffeadb9ece3076d9f31734,v1_fusion_allocations
 2026-09-25T23:49:46.885620+00:00,0.0,0.0,,2026-09-25,0.6,0.4,causal-integrity-v4,True,2026-09-25,36201384528.0,1.0,14eca617f23ba8bf52ab48c49a48d2f849326bf8,v1_fusion_allocations
 2026-09-29T03:14:33.568624+00:00,0.0,0.0,,2026-09-28,0.6,0.4,causal-integrity-v4,True,2026-09-28,36513399023.0,1.0,b2e3e304ad1e651e61ff85742bd4e4ce2369fe3d,v1_fusion_allocations
-2026-09-30T00:37:43.066078+00:00,0.0,0.0,,2026-09-29,0.6,0.4,causal-integrity-v4,True,2026-09-29,36647809420,1,63d5b885097b2b91790e10beb0abf4fd19db9051,v1_fusion_allocations
+2026-09-30T00:37:43.066078+00:00,0.0,0.0,,2026-09-29,0.6,0.4,causal-integrity-v4,True,2026-09-29,36647809420.0,1.0,63d5b885097b2b91790e10beb0abf4fd19db9051,v1_fusion_allocations
+2026-10-01T02:38:45.472869+00:00,0.0,0.0,,2026-09-30,0.6,0.4,causal-integrity-v4,True,2026-09-30,36804826262,1,6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38,v1_fusion_allocations
