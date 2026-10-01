@@ -12,7 +12,9 @@ permissions:
 
 concurrency:
   group: pricecall-input-verification-${{ github.ref }}
-  cancel-in-progress: false
+  # Only obsolete read-only audit replays are canceled. Production/backfill
+  # retain their separate serialized, non-canceling publication group.
+  cancel-in-progress: true
 
 jobs:
   windows-git-bash:
