@@ -5,9 +5,9 @@
   "execution_lineage_verified": true,
   "pipeline_run_attempt": "1",
   "pipeline_run_date": "2026-09-30",
-  "pipeline_run_id": "36804826262",
+  "pipeline_run_id": "36892091257",
   "price_session": "2026-09-30",
   "price_source": "artifacts_part0/close_prices.parquet",
   "protocol_version": "causal-integrity-v4",
-  "source_code_sha": "6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38"
+  "source_code_sha": "c537f834cc8c8ac7e804a824049ceab4c6fecab3"
 }

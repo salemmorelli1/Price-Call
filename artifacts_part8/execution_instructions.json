@@ -4,7 +4,7 @@
   "data_freshness_ok": true,
   "decision_date": "2026-09-30",
   "execute_window": null,
-  "generated_at": "2026-10-01T02:38:45.429760+00:00",
+  "generated_at": "2026-10-01T17:04:37.561168+00:00",
   "governance_part2_final_pass": false,
   "governance_part2_publish_mode": "FAIL_CLOSED_NEUTRAL",
   "governance_part3_final_pass": false,
@@ -14,10 +14,10 @@
   "n_trades": 0,
   "pipeline_run_attempt": "1",
   "pipeline_run_date": "2026-09-30",
-  "pipeline_run_id": "36804826262",
+  "pipeline_run_id": "36892091257",
   "protocol_version": "causal-integrity-v4",
   "reason": "Governance did not clear: Part 2=FAIL_CLOSED_NEUTRAL/False, Part 3=FAIL_CLOSED_NEUTRAL/False, data_freshness_ok=True",
-  "source_code_sha": "6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38",
+  "source_code_sha": "c537f834cc8c8ac7e804a824049ceab4c6fecab3",
   "source_decision_date": "2026-09-30",
   "status": "NO_ACTION_STALE_OR_UNCLEARED"
 }

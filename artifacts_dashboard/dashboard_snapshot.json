@@ -22,22 +22,22 @@
   "latest_signal": {
     "action_reason": "neutral_model_not_cleared (FAIL_CLOSED_NEUTRAL)",
     "base_rate": 0.197421,
-    "edge": -0.002221,
-    "p_tail": 0.199642,
+    "edge": -0.001189,
+    "p_tail": 0.19861,
     "raw_validation_auc": 0.5,
     "signal_count": 60,
     "target_voo": 0.6
   },
   "lineage": {
     "backfill_run_date": "2026-09-30",
-    "backfill_run_id": "36804826262",
-    "backfill_source_code_sha": "6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38",
+    "backfill_run_id": "36892091257",
+    "backfill_source_code_sha": "c537f834cc8c8ac7e804a824049ceab4c6fecab3",
     "execution_decision_date": "2026-09-30",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
     "execution_pipeline_run_date": "2026-09-30",
-    "execution_pipeline_run_id": "36804826262",
-    "execution_source_code_sha": "6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38",
+    "execution_pipeline_run_id": "36892091257",
+    "execution_source_code_sha": "c537f834cc8c8ac7e804a824049ceab4c6fecab3",
     "expected_completed_market_session": "2026-09-30",
     "latest_prediction_target_date": "2026-10-01",
     "latest_signal_run_date": "2026-10-01",
@@ -46,8 +46,8 @@
     "message": "The prediction tape and market-data lineage are current under the published gate.",
     "model_data_asof": "2026-09-30",
     "pipeline_run_date": "2026-09-30",
-    "pipeline_run_id": "36804826262",
-    "pipeline_source_code_sha": "6be6ad821aa4ec28c9fff5f7dd5da0bb1da42f38",
+    "pipeline_run_id": "36892091257",
+    "pipeline_source_code_sha": "c537f834cc8c8ac7e804a824049ceab4c6fecab3",
     "prediction_tape_paused": false,
     "publication_component_ages": {
       "decision": 0,
@@ -70,19 +70,19 @@
   "live_health_reasons": [
     "Only 4 live observations (60 required)"
   ],
-  "macro_point_in_time_ok": false,
+  "macro_point_in_time_ok": true,
   "metrics": {
-    "backtest_auc": 0.5153209055523555,
-    "backtest_auc_p_value": 0.192722,
-    "backtest_auc_permutation_p_value": 0.18590704647676162,
-    "backtest_brier": 0.16055273464175862,
-    "backtest_brier_skill": -0.003010025325741239,
+    "backtest_auc": 0.5129012410326229,
+    "backtest_auc_p_value": 0.231378,
+    "backtest_auc_permutation_p_value": 0.22138930534732634,
+    "backtest_brier": 0.1606005645523568,
+    "backtest_brier_skill": -0.0033088298272494487,
     "balanced_accuracy": null,
     "live_auc": null,
     "live_brier": 0.039115513561855914,
     "live_brier_null": 0.038974907092466614,
     "live_brier_skill": -0.0036076126799982067,
-    "rolling_median_auc": 0.5571459790209791
+    "rolling_median_auc": 0.5585614600107353
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -93,13 +93,12 @@
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
-      "point-in-time macro coverage is incomplete",
       "prospective independent validation is pending"
     ],
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8990554899645808,
+    "empirical_coverage": 0.8966942148760331,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",
