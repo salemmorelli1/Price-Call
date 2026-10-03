@@ -1,215 +1,241 @@
 {
-  "built_at": "2026-10-02T02:21:16.815407+00:00",
-  "close_checksum": "25afdc44bf9103ca",
-  "close_prices_sha256": "b63abdbfeb889514616b712bd198ddd210aba0917692bbd2b83d78dbfac883a8",
+  "built_at": "2026-10-03T00:01:51.239021+00:00",
+  "close_checksum": "b86ca8b6b8773925",
+  "close_prices_sha256": "9778030aaf9ef76f43b99139c8f27ee39d33a595722284a8e167a8c8c3d602a5",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.05026503381465911,
+      "missing_pre_clean": 0.05043859649122807,
       "usable_for_model": true,
       "years_history": 20.65
     },
     "EEM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "EFA": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "GLD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "HYG": {
       "first_valid_date": "2007-04-11",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.10418570645220253,
+      "missing_pre_clean": 0.10434941520467836,
       "usable_for_model": true,
-      "years_history": 19.47
+      "years_history": 19.48
     },
     "IEF": {
       "first_valid_date": "2005-01-03",
+      "individual_retry_attempted": true,
+      "individual_retry_attempts": 3,
+      "individual_retry_recovered_rows": 0,
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_after_retry": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
+      "paired_retry_recovered_dates": [],
+      "paired_retry_recovered_rows": 0,
+      "paired_retry_start": "2026-09-25",
       "usable_for_model": true,
+      "verified_backfill_completed_at_utc": "2026-10-02T23:56:41.750637+00:00",
+      "verified_backfill_recovered_dates": [
+        "2026-10-02"
+      ],
+      "verified_backfill_source_code_sha": "bbc6307a3c69be7fb80ef1adfe3ba140277a62c4",
+      "verified_backfill_source_run_id": "37079829070",
       "years_history": 21.74
     },
     "IWM": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "JNK": {
       "first_valid_date": "2007-12-04",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.13434472674099798,
+      "missing_pre_clean": 0.13450292397660818,
       "usable_for_model": true,
       "years_history": 18.83
     },
     "LQD": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "MDY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "QQQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "RSP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "SHY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "SMH": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "TLT": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "UUP": {
       "first_valid_date": "2007-03-01",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.0990678121001645,
+      "missing_pre_clean": 0.09923245614035088,
       "usable_for_model": true,
       "years_history": 19.59
     },
     "VNQ": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "VOO": {
       "first_valid_date": "2010-09-09",
+      "individual_retry_attempted": true,
+      "individual_retry_attempts": 3,
+      "individual_retry_recovered_rows": 0,
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.2615609577773716,
+      "missing_after_retry": 0.26151315789473684,
+      "missing_pre_clean": 0.26169590643274854,
+      "paired_retry_recovered_dates": [],
+      "paired_retry_recovered_rows": 0,
+      "paired_retry_start": "2026-09-25",
       "usable_for_model": true,
+      "verified_backfill_completed_at_utc": "2026-10-02T23:56:41.750637+00:00",
+      "verified_backfill_recovered_dates": [
+        "2026-10-02"
+      ],
+      "verified_backfill_source_code_sha": "bbc6307a3c69be7fb80ef1adfe3ba140277a62c4",
+      "verified_backfill_source_run_id": "37079829070",
       "years_history": 16.06
     },
     "XLB": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLC": {
       "first_valid_date": "2018-06-19",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.6192652165966003,
+      "missing_pre_clean": 0.6193347953216374,
       "usable_for_model": true,
-      "years_history": 8.28
+      "years_history": 8.29
     },
     "XLE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLF": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLI": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLK": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLP": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLU": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLV": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "XLY": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.0,
+      "missing_pre_clean": 0.0001827485380116959,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "^MOVE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.01663315664412356,
+      "missing_pre_clean": 0.01663011695906433,
       "usable_for_model": true,
       "years_history": 21.74
     },
     "^SKEW": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.011515262292085542,
+      "missing_pre_clean": 0.011513157894736841,
       "usable_for_model": true,
       "years_history": 21.74
     },
@@ -223,33 +249,33 @@
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.07055382928166697,
+      "missing_pre_clean": 0.07054093567251463,
       "usable_for_model": true,
       "years_history": 20.21
     }
   },
   "date_range": {
-    "end": "2026-10-01",
-    "requested_end": "2026-10-02",
+    "end": "2026-10-02",
+    "requested_end": "2026-10-03",
     "start": "2010-09-09"
   },
-  "features_checksum": "62c7ad3352f0668e",
-  "features_file_sha256": "d88c6679160fcdb1ce0c99427165f12880839dce1a60808aa8b4a7c9acd53ef3",
+  "features_checksum": "6285d0966990ce1d",
+  "features_file_sha256": "f39363751e1315c728e6037e547371af9eb21c1d637130a18e78c16872567ea9",
   "fred_available_sessions_by_series": {
-    "consumer_sentiment": 4040,
-    "curve_2s10s": 3189,
-    "curve_3m10y": 3189,
-    "dollar_index": 1925,
-    "fed_funds_rate": 4040,
+    "consumer_sentiment": 4041,
+    "curve_2s10s": 3190,
+    "curve_3m10y": 3190,
+    "dollar_index": 1926,
+    "fed_funds_rate": 4041,
     "hy_spread": 752,
     "ig_spread": 752,
-    "recession_flag": 3535,
-    "ted_spread": 3189,
-    "vix_fred": 3987,
-    "wti_oil": 3894,
-    "yield_10y": 4040,
-    "yield_2y": 4040,
-    "yield_30y": 4040
+    "recession_flag": 3536,
+    "ted_spread": 3190,
+    "vix_fred": 3988,
+    "wti_oil": 3895,
+    "yield_10y": 4041,
+    "yield_2y": 4041,
+    "yield_30y": 4041
   },
   "fred_enabled": true,
   "fred_first_availability_by_series": {
@@ -258,8 +284,8 @@
     "curve_3m10y": "2014-01-28",
     "dollar_index": "2019-02-05",
     "fed_funds_rate": "2010-09-09",
-    "hy_spread": "2023-10-03",
-    "ig_spread": "2023-10-03",
+    "hy_spread": "2023-10-04",
+    "ig_spread": "2023-10-04",
     "recession_flag": "2012-09-10",
     "ted_spread": "2014-01-28",
     "vix_fred": "2010-11-23",
@@ -301,7 +327,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 888,
         "start": "2024-09-09",
         "status": "ok"
@@ -339,8 +365,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 13133,
+        "end": "2026-10-02",
+        "rows": 13134,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -377,8 +403,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 11674,
+        "end": "2026-10-02",
+        "rows": 11675,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -416,7 +442,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 7401,
         "start": "2024-09-09",
         "status": "ok"
@@ -453,8 +479,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 26390,
+        "end": "2026-10-02",
+        "rows": 26391,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -487,13 +513,13 @@
       {
         "attempts": 1,
         "end": "2024-09-08",
-        "rows": 249,
+        "rows": 248,
         "start": "2020-09-09",
         "status": "ok"
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 794,
         "start": "2024-09-09",
         "status": "ok"
@@ -527,13 +553,13 @@
       {
         "attempts": 1,
         "end": "2024-09-08",
-        "rows": 249,
+        "rows": 248,
         "start": "2020-09-09",
         "status": "ok"
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 795,
         "start": "2024-09-09",
         "status": "ok"
@@ -571,7 +597,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 2062,
         "start": "2024-09-09",
         "status": "ok"
@@ -609,7 +635,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 9407,
         "start": "2024-09-09",
         "status": "ok"
@@ -646,8 +672,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 9587,
+        "end": "2026-10-02",
+        "rows": 9588,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -683,7 +709,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
+        "end": "2026-10-02",
         "rows": 11375,
         "start": "2024-09-09",
         "status": "ok"
@@ -720,8 +746,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 16892,
+        "end": "2026-10-02",
+        "rows": 16893,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -757,8 +783,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 13132,
+        "end": "2026-10-02",
+        "rows": 13133,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -794,8 +820,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-01",
-        "rows": 12947,
+        "end": "2026-10-02",
+        "rows": 12948,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -829,7 +855,7 @@
     "EFA": "2026-10-01",
     "GLD": "2026-10-01",
     "HYG": "2026-10-01",
-    "IEF": "2026-10-01",
+    "IEF": "2026-10-02",
     "IWM": "2026-10-01",
     "JNK": "2026-10-01",
     "LQD": "2026-10-01",
@@ -841,7 +867,7 @@
     "TLT": "2026-10-01",
     "UUP": "2026-10-01",
     "VNQ": "2026-10-01",
-    "VOO": "2026-10-01",
+    "VOO": "2026-10-02",
     "XLB": "2026-10-01",
     "XLC": "2026-10-01",
     "XLE": "2026-10-01",
@@ -852,28 +878,28 @@
     "XLU": "2026-10-01",
     "XLV": "2026-10-01",
     "XLY": "2026-10-01",
-    "^MOVE": "2026-10-01",
-    "^SKEW": "2026-10-01",
-    "^VIX": "2026-10-01",
-    "^VIX3M": "2026-10-01"
+    "^MOVE": "2026-10-02",
+    "^SKEW": "2026-10-02",
+    "^VIX": "2026-10-02",
+    "^VIX3M": "2026-10-02"
   },
-  "latest_completed_market_session": "2026-10-01",
-  "macro_data_sha256": "389a28be7f076d6d79a15fc63185f615bc70c26be21aa87a2cd0a89dd7b94741",
+  "latest_completed_market_session": "2026-10-02",
+  "macro_data_sha256": "4a4a00548950fb858525f2644c2a7620fc6174b2494f5c5f39d1b22380f505d5",
   "market_calendar": "XNYS",
-  "market_data_asof": "2026-10-01",
+  "market_data_asof": "2026-10-02",
   "market_data_source_overrides": {
     "^VIX3M": {
-      "download_sha256": "642e51b2440539129a4c223448893db7579bb9ef3a270cdda80181565faa89d1",
-      "latest_observation": "2026-10-01",
+      "download_sha256": "50abada4167749d2b732f56aa1f19350712b56b8e230d6a91c2da934bb7664ec",
+      "latest_observation": "2026-10-02",
       "provider": "Cboe Global Markets",
-      "retrieved_at_utc": "2026-10-02T02:21:17.733761+00:00",
-      "rows_applied": 4040,
-      "rows_downloaded": 4285,
+      "retrieved_at_utc": "2026-10-03T00:01:52.234416+00:00",
+      "rows_applied": 4041,
+      "rows_downloaded": 4286,
       "status": "applied",
       "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv"
     }
   },
-  "market_observation_mask_sha256": "9059db46e1bb41e66ba00700d85853bfe780067c4e44b01378181aa5e3f44238",
+  "market_observation_mask_sha256": "a47e0eaae53d1e05feffdbd678b5d39490b0f789e4e0645df841ab3eb246d8d7",
   "market_values_are_raw_observations": true,
   "n_features": 59,
   "n_macro_series": 14,
@@ -882,7 +908,7 @@
   "point_in_time_adapter": "point_in_time_macro.py",
   "project_root": "/home/runner/work/Price-Call/Price-Call",
   "protocol_version": "causal-integrity-v4",
-  "tail_rate": 0.07600891309730132,
+  "tail_rate": 0.07599009900990099,
   "version": "V2_DAILY_CANONICAL",
   "vix3m_authoritative_fallback_applied": true
 }

@@ -45,3 +45,4 @@ Date,publish_mode,final_pass,quality_ok,drift_ok,trial_gate_open,fused_gate_open
 2026-09-29,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.068777,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v4,causal-integrity-v4,0.0,0.0,0.0
 2026-09-30,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.069268,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v4,causal-integrity-v4,0.0,0.0,0.0
 2026-10-01,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.069189,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v4,causal-integrity-v4,0.0,0.0,0.0
+2026-10-02,FAIL_CLOSED_NEUTRAL,0,0,0,,,,SHADOW,SHADOW,0,FLAT_VETOED,fail_closed_live_veto,0,0.068551,1,0.0,1.0,ALPHA_STATUS_NOT_PROVIDED,causal-integrity-v4,causal-integrity-v4,0.0,0.0,0.0
