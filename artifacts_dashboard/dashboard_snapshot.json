@@ -1,18 +1,18 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": true,
+  "data_freshness_ok": false,
   "decision_date": "2026-10-07T00:00:00",
-  "deployment_mode": "DEFENSE_ONLY",
+  "deployment_mode": "NO_ACTION_STALE",
   "evidence": {
     "cohort": "causal-integrity-v4",
-    "eligible_realized": 9,
+    "eligible_realized": 10,
     "inference_eligible": false,
     "legacy_realized_excluded": 40,
     "minimum": 60,
     "n_negative": 9,
-    "n_positive": 0,
-    "progress_pct": 15.0
+    "n_positive": 1,
+    "progress_pct": 16.7
   },
   "execution_lineage_ok": true,
   "final_pass": false,
@@ -29,32 +29,32 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-10-07",
-    "backfill_run_id": "37719386319",
-    "backfill_source_code_sha": "66ac3a6ac27cec752a6d51cf082b120485b3a0e1",
+    "backfill_run_date": "2026-10-08",
+    "backfill_run_id": "37869327960",
+    "backfill_source_code_sha": "c95222c89e8bd93a1cc7ad5c1ca42d1277a68d2c",
     "execution_decision_date": "2026-10-07",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
     "execution_pipeline_run_date": "2026-10-07",
     "execution_pipeline_run_id": "37719386319",
     "execution_source_code_sha": "66ac3a6ac27cec752a6d51cf082b120485b3a0e1",
-    "expected_completed_market_session": "2026-10-07",
+    "expected_completed_market_session": "2026-10-08",
     "latest_prediction_target_date": "2026-10-08",
     "latest_signal_run_date": "2026-10-08",
     "latest_signal_source_decision_date": "2026-10-07",
     "market_data_asof": "2026-10-07",
-    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "message": "The dashboard is serving the last successful production snapshot (market 2026-10-07, model 2026-10-07); the latest completed XNYS session is 2026-10-08. Backfill updates do not make the forecast current.",
     "model_data_asof": "2026-10-07",
     "pipeline_run_date": "2026-10-07",
     "pipeline_run_id": "37719386319",
     "pipeline_source_code_sha": "66ac3a6ac27cec752a6d51cf082b120485b3a0e1",
-    "prediction_tape_paused": false,
+    "prediction_tape_paused": true,
     "publication_component_ages": {
-      "decision": 0,
-      "execution": 0,
-      "market_data": 0,
-      "model_data": 0,
-      "pipeline": 0
+      "decision": 1,
+      "execution": 1,
+      "market_data": 1,
+      "model_data": 1,
+      "pipeline": 1
     },
     "publication_component_dates": {
       "decision": "2026-10-07",
@@ -63,12 +63,12 @@
       "model_data": "2026-10-07",
       "pipeline": "2026-10-07"
     },
-    "publication_session_age": 0,
+    "publication_session_age": 1,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
   "live_health_reasons": [
-    "Only 9 live observations (60 required)"
+    "Only 10 live observations (60 required)"
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
@@ -77,11 +77,11 @@
     "backtest_auc_permutation_p_value": 0.11394302848575712,
     "backtest_brier": 0.15933915248585392,
     "backtest_brier_skill": 0.0023503825485937657,
-    "balanced_accuracy": null,
-    "live_auc": null,
-    "live_brier": 0.039040126127649344,
-    "live_brier_null": 0.038974907092466614,
-    "live_brier_skill": -0.0016733570361222583,
+    "balanced_accuracy": 0.6666666666666666,
+    "live_auc": 0.7777777777777778,
+    "live_brier": 0.09934582997696895,
+    "live_brier_null": 0.09949078010833964,
+    "live_brier_skill": 0.0014569212450354918,
     "rolling_median_auc": 0.5573979591836734
   },
   "operator_validation": {
@@ -93,6 +93,7 @@
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
+      "published production is 1 completed XNYS session(s) behind (expected 2026-10-08)",
       "prospective independent validation is pending"
     ],
     "status": "NOT_VALIDATED"
@@ -105,7 +106,7 @@
     "upper_quantile": 0.95
   },
   "protocol_version": "causal-integrity-v4",
-  "publication_freshness_ok": true,
+  "publication_freshness_ok": false,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "high_vol",
   "source_data_freshness_ok": true,

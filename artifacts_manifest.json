@@ -1,8 +1,8 @@
 {
   "files": {
     "artifacts_dashboard/dashboard_snapshot.json": {
-      "bytes": 3804,
-      "sha256": "e024415ab5a30eaf32c419e9c3f161e1cece4f74d59bd2c10ae08c0beb67795e"
+      "bytes": 4047,
+      "sha256": "0c6714786585343eb7a02dc67ee729b7a38ad97ae2346ff30bd9e7283e78a1ef"
     },
     "artifacts_part0/part0_meta.json": {
       "bytes": 24148,
@@ -49,12 +49,12 @@
       "sha256": "e7497dd76167b46f121e99f4be121ba4233e7de69875b1fd7051a6dfe7d6ab74"
     },
     "artifacts_part3/prediction_log.csv": {
-      "bytes": 58747,
-      "sha256": "eea425a76fb76792cf43f8c3bf9e4329f0240acb888803c5ebb0e99de9de3e3b"
+      "bytes": 58999,
+      "sha256": "87f327f9de8298f6569b9651bc2101049cc76d2c2aaa3e3c94ac0abc30b0b0d8"
     },
     "artifacts_part3_v1/part3_summary.json": {
-      "bytes": 3751,
-      "sha256": "5b6456e3b39b2819f30f44ca18683f4f36203b2427348768d756585ea58f77dd"
+      "bytes": 3753,
+      "sha256": "c02c970d5854251eea56b9fdfa4e6c380158c3bb53863bab9a68708c65dab5d1"
     },
     "artifacts_part3_v1/v1_final_production_governance.csv": {
       "bytes": 7999,
@@ -94,23 +94,23 @@
     },
     "artifacts_part9/backfill_run_date.txt": {
       "bytes": 11,
-      "sha256": "cbdcc20ab12e8a17a1fadef2577c0a6e2bb6118281851deb01bfd939cf5003d6"
+      "sha256": "ec4edbd6f96a5cb8162e3310823b9a545a725c9f3f7fe7f6569b59149b450cbd"
     },
     "artifacts_part9/backfill_status.json": {
       "bytes": 295,
-      "sha256": "ea517dc1f86ff9764347a62a978b47ed7f5676e9bc6851edccaf3cd18e0ccce0"
+      "sha256": "9f3670b45a6b86b01baa663c852df87d2cd841f2914f823c13f4534bfb8045ab"
     },
     "artifacts_part9/live_attribution_report.json": {
-      "bytes": 5295,
-      "sha256": "eafbb347877c9cbe0546b3bd33796ad311a49ac781ad7aaeca94ab78d288022c"
+      "bytes": 4672,
+      "sha256": "20c969d965416d20dedefd6322a18509497c374ec8d452e7774236a48579c7e0"
     },
     "index.html": {
-      "bytes": 107753,
-      "sha256": "5e8ca1e77b39cb612dcbaf0505656129c27eabeafd537bc56e8d809a55a78e37"
+      "bytes": 107776,
+      "sha256": "b622ad9c1e0481fe83ee0d8f7b087ef3d464aa8471b07d2f0da389e5fb9053fa"
     }
   },
-  "generated_at_utc": "2026-10-08T03:24:21.672545+00:00",
-  "github_run_id": "37719386319",
+  "generated_at_utc": "2026-10-09T01:22:20.605677+00:00",
+  "github_run_id": "37869327960",
   "protocol_version": "causal-integrity-v4",
-  "source_code_sha": "66ac3a6ac27cec752a6d51cf082b120485b3a0e1"
+  "source_code_sha": "c95222c89e8bd93a1cc7ad5c1ca42d1277a68d2c"
 }
