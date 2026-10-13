@@ -1,18 +1,18 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": true,
+  "data_freshness_ok": false,
   "decision_date": "2026-10-09T00:00:00",
-  "deployment_mode": "DEFENSE_ONLY",
+  "deployment_mode": "NO_ACTION_STALE",
   "evidence": {
     "cohort": "causal-integrity-v4",
-    "eligible_realized": 11,
+    "eligible_realized": 12,
     "inference_eligible": false,
     "legacy_realized_excluded": 40,
     "minimum": 60,
-    "n_negative": 10,
+    "n_negative": 11,
     "n_positive": 1,
-    "progress_pct": 18.3
+    "progress_pct": 20.0
   },
   "execution_lineage_ok": true,
   "final_pass": false,
@@ -29,32 +29,32 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-10-09",
-    "backfill_run_id": "38016968653",
-    "backfill_source_code_sha": "e1cf785ab9cba61de0af0d9f4fb8067f70a58b82",
+    "backfill_run_date": "2026-10-12",
+    "backfill_run_id": "38335608986",
+    "backfill_source_code_sha": "e7b7bdad7682b1f737300341211a2fed030476ec",
     "execution_decision_date": "2026-10-09",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
     "execution_pipeline_run_date": "2026-10-09",
     "execution_pipeline_run_id": "38016968653",
     "execution_source_code_sha": "e1cf785ab9cba61de0af0d9f4fb8067f70a58b82",
-    "expected_completed_market_session": "2026-10-09",
+    "expected_completed_market_session": "2026-10-12",
     "latest_prediction_target_date": "2026-10-12",
     "latest_signal_run_date": "2026-10-10",
     "latest_signal_source_decision_date": "2026-10-09",
     "market_data_asof": "2026-10-09",
-    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "message": "The dashboard is serving the last successful production snapshot (market 2026-10-09, model 2026-10-09); the latest completed XNYS session is 2026-10-12. Backfill updates do not make the forecast current.",
     "model_data_asof": "2026-10-09",
     "pipeline_run_date": "2026-10-09",
     "pipeline_run_id": "38016968653",
     "pipeline_source_code_sha": "e1cf785ab9cba61de0af0d9f4fb8067f70a58b82",
-    "prediction_tape_paused": false,
+    "prediction_tape_paused": true,
     "publication_component_ages": {
-      "decision": 0,
-      "execution": 0,
-      "market_data": 0,
-      "model_data": 0,
-      "pipeline": 0
+      "decision": 1,
+      "execution": 1,
+      "market_data": 1,
+      "model_data": 1,
+      "pipeline": 1
     },
     "publication_component_dates": {
       "decision": "2026-10-09",
@@ -63,12 +63,12 @@
       "model_data": "2026-10-09",
       "pipeline": "2026-10-09"
     },
-    "publication_session_age": 0,
+    "publication_session_age": 1,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
   "live_health_reasons": [
-    "Only 11 live observations (60 required)"
+    "Only 12 live observations (60 required)"
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
@@ -77,11 +77,11 @@
     "backtest_auc_permutation_p_value": 0.11044477761119441,
     "backtest_brier": 0.15948711649858702,
     "backtest_brier_skill": 0.0027518309823686415,
-    "balanced_accuracy": 0.7,
-    "live_auc": 0.8,
-    "live_brier": 0.09358522231108767,
-    "live_brier_null": 0.09381352498912023,
-    "live_brier_skill": 0.0024335806357950185,
+    "balanced_accuracy": 0.6818181818181819,
+    "live_auc": 0.8181818181818181,
+    "live_brier": 0.08887965834151633,
+    "live_brier_null": 0.08908247905643739,
+    "live_brier_skill": 0.002276775599889591,
     "rolling_median_auc": 0.5572916666666666
   },
   "operator_validation": {
@@ -92,6 +92,7 @@
     "independent_validation_status": "prospective_holdout_pending",
     "reasons": [
       "causal Brier skill is below 0.005",
+      "published production is 1 completed XNYS session(s) behind (expected 2026-10-12)",
       "prospective independent validation is pending"
     ],
     "status": "NOT_VALIDATED"
@@ -104,7 +105,7 @@
     "upper_quantile": 0.95
   },
   "protocol_version": "causal-integrity-v4",
-  "publication_freshness_ok": true,
+  "publication_freshness_ok": false,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "calm",
   "source_data_freshness_ok": true,
