@@ -2,8 +2,8 @@
   "annual_tc_drag_bps": null,
   "backtest_baseline_contract": "per-row causal training-window prevalence",
   "calibration_live": {
-    "brier": 0.08492629848644918,
-    "ece": 0.11945134115970765
+    "brier": 0.12548986009894744,
+    "ece": 0.05320693135157806
   },
   "classification_stats_backtest": {
     "accuracy": 0.5044039929536113,
@@ -38,29 +38,29 @@
     "worse_than_null_auc_5pct": false
   },
   "classification_stats_live": {
-    "accuracy": 0.38461538461538464,
+    "accuracy": 0.35714285714285715,
     "accuracy_null": "class-balanced label permutation",
     "annual_tc_drag_bps": null,
-    "auc": 0.8333333333333334,
-    "balanced_accuracy": 0.6666666666666666,
+    "auc": 0.45833333333333337,
+    "balanced_accuracy": 0.41666666666666663,
     "base_rate": 0.1924603174603174,
     "better_than_null_acc_1pct": false,
     "better_than_null_acc_5pct": false,
     "better_than_null_auc_1pct": false,
     "better_than_null_auc_5pct": false,
-    "brier": 0.08492629848644918,
-    "brier_null": 0.0850792863441673,
-    "brier_skill_score": 0.0017981810157575717,
+    "brier": 0.12548986009894744,
+    "brier_null": 0.12558221866789043,
+    "brier_skill_score": 0.000735443837902694,
     "estimated_annual_edge_bps": -0.820075894057865,
     "estimated_annual_edge_source": "part2_active_ret_net_mean",
     "inference_eligible": false,
     "inference_status": "insufficient_class_counts",
-    "matthews_corrcoef": 0.19245008972987526,
-    "mean_active_return": -0.00018428345890550638,
+    "matthews_corrcoef": -0.12171612389003691,
+    "mean_active_return": -0.0010827413133977265,
     "minimum_class_count": 5,
-    "n": 13,
+    "n": 14,
     "n_negative": 12,
-    "n_positive": 1,
+    "n_positive": 2,
     "p_value_accuracy": null,
     "p_value_accuracy_better": null,
     "p_value_accuracy_worse": null,
@@ -77,25 +77,25 @@
     "worse_than_null_auc_5pct": false
   },
   "classification_stats_live_base_model": {
-    "accuracy": 0.3076923076923077,
+    "accuracy": 0.2857142857142857,
     "accuracy_null": "class-balanced label permutation",
-    "auc": 0.5,
+    "auc": 0.2916666666666667,
     "balanced_accuracy": 0.16666666666666666,
     "base_rate": 0.1924603174603174,
     "better_than_null_acc_1pct": false,
     "better_than_null_acc_5pct": false,
     "better_than_null_auc_1pct": false,
     "better_than_null_auc_5pct": false,
-    "brier": 0.08504416651348076,
-    "brier_null": 0.0850792863441673,
-    "brier_skill_score": 0.00041279061160881536,
+    "brier": 0.12559930898119104,
+    "brier_null": 0.12558221866789043,
+    "brier_skill_score": -0.00013608784323349,
     "inference_eligible": false,
     "inference_status": "insufficient_class_counts",
-    "matthews_corrcoef": -0.3651483716701107,
+    "matthews_corrcoef": -0.47140452079103173,
     "minimum_class_count": 5,
-    "n": 13,
+    "n": 14,
     "n_negative": 12,
-    "n_positive": 1,
+    "n_positive": 2,
     "p_value_accuracy": null,
     "p_value_accuracy_better": null,
     "p_value_accuracy_worse": null,
@@ -114,44 +114,19 @@
   "current_cohort_eligible_predictions": 14,
   "current_cohort_predictions": 14,
   "evidence_cohort": "causal-integrity-v4",
-  "feature_drift": {
-    "most_drifted": [
-      {
-        "feature": "alpha_credit_spread",
-        "ks_pval": 5.274350998514357e-129,
-        "ks_stat": 0.9977215189873418,
-        "mean_shift": 0.2870762630994999
-      },
-      {
-        "feature": "alpha_tech_relative",
-        "ks_pval": 4.475429816904554e-89,
-        "ks_stat": 0.9683544303797469,
-        "mean_shift": 0.32818564635897657
-      },
-      {
-        "feature": "alpha_breadth",
-        "ks_pval": 1.369882296391591e-70,
-        "ks_stat": 0.930379746835443,
-        "mean_shift": -0.22631871754667143
-      }
-    ],
-    "n_drifted_5pct": 10,
-    "n_features_tested": 14,
-    "n_severely_drifted_1pct": 10
-  },
-  "generated_at": "2026-10-14T00:31:55.069573+00:00",
+  "generated_at": "2026-10-14T23:21:48.830531+00:00",
   "health_reasons": [
-    "Only 13 live observations (60 required)"
+    "Only 14 live observations (60 required)"
   ],
   "health_status": "IMMATURE",
   "legacy_predictions": 40,
   "legacy_realized_rows": 40,
-  "n_live_realized": 13,
+  "n_live_realized": 14,
   "protocol_version": "causal-integrity-v4",
   "schema_mode_col": "deployment_mode",
   "status": "IMMATURE",
   "total_predictions": 54,
   "total_predictions_all_cohorts": 54,
-  "voo_mae_live": 2.8428215905422487,
-  "voo_rmse_live": 3.3056088331880673
+  "voo_mae_live": 3.2310862181841133,
+  "voo_rmse_live": 3.8783800542982174
 }
