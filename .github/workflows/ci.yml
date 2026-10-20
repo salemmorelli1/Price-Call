@@ -10,16 +10,39 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip
-      - run: pip install --no-cache-dir -r requirements-ci-lock.txt
-      - run: python -m compileall -q .
+      - name: Create isolated test runtime
+        run: |
+          python -m venv .venv
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          runtime = Path(".venv/Scripts" if os.name == "nt" else ".venv/bin").resolve()
+          with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as handle:
+              handle.write(str(runtime) + "\n")
+          PY
+      - run: python -c 'import sys; assert sys.prefix != sys.base_prefix'
+      - run: python -m pip install --no-cache-dir -r requirements-ci-lock.txt
+      - run: python -m pip install --no-cache-dir duckdb==1.5.5 pyarrow==23.0.1
+      - run: python -m pip check
+      - run: python -m compileall -q *.py tests report
       - run: ruff check --select E9,F63,F7,F82 .
       # python -m keeps the repository root on sys.path for the flat-module layout.
       - run: python -m pytest -q tests/
@@ -27,4 +50,7 @@ jobs:
       # with the same ref name that the merged main workflow receives.
       - run: GITHUB_REF_NAME=main python -m pytest -q tests/
       - run: python artifact_integrity.py --root .
+      - run: python audit_governance.py --root .
       - run: python prepare_pages.py --root . --site _site
+      - run: python prepare_pages.py --site _site --verify
+      - run: git diff --exit-code

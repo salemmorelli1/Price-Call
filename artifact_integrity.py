@@ -132,12 +132,12 @@ def current_evidence_mask(frame: pd.DataFrame, *, require_realized: bool = False
     eligible = pd.to_numeric(
         frame.get("evidence_eligible", pd.Series(0, index=frame.index)),
         errors="coerce",
-    ).fillna(0).astype(int).eq(1)
+    ).eq(1)
     mask = frame["model_protocol_version"].fillna(LEGACY_PROTOCOL_VERSION).astype(str).eq(
         PROTOCOL_VERSION
     ) & eligible
     if "horizon_legacy" in frame.columns:
-        mask &= pd.to_numeric(frame["horizon_legacy"], errors="coerce").fillna(0).astype(int).eq(0)
+        mask &= pd.to_numeric(frame["horizon_legacy"], errors="coerce").fillna(0).eq(0)
     if require_realized:
         voo = next((c for c in ("px_voo_realized", "voo_realized") if c in frame.columns), None)
         ief = next((c for c in ("px_ief_realized", "ief_realized") if c in frame.columns), None)

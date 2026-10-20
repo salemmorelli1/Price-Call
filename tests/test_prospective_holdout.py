@@ -63,6 +63,7 @@ def test_first_60_only_score_and_exclude_legacy_and_future_observations():
     assert more["eligible_realized"] == 61
     for key in ("auc", "auc_p_one_sided", "brier_skill_causal", "locked_last_decision"):
         assert first[key] == more[key]
+    assert first["cohort_issuance_sha256"] == more["cohort_issuance_sha256"]
 
 
 def test_csv_roundtrip_with_legacy_nulls_keeps_current_flags(tmp_path):
@@ -90,12 +91,61 @@ def test_locked_cohort_uses_same_vintage_anchor_and_rejects_missing_lineage():
         evaluate(rows)
 
 
-@pytest.mark.parametrize("change", ["late", "wrong_target", "wrong_realization", "duplicate"])
+def test_unresolved_early_forecast_cannot_be_replaced_by_a_later_outcome():
+    rows = _paper_rows(61)
+    rows.loc[0, ["px_voo_realized", "px_ief_realized"]] = np.nan
+    rows.loc[0, "realized_target_date"] = None
+    report = evaluate(rows.sample(frac=1, random_state=7))
+    assert report["status"] == "awaiting_locked_outcomes"
+    assert report["locked_issued"] == 60
+    assert report["locked_realized"] == 59
+    assert report["locked_first_decision"] == rows.loc[0, "decision_date"]
+    assert "prospective_thresholds_pass" not in report
+
+
+def test_fractional_eligibility_flag_does_not_admit_a_forecast():
+    rows = _paper_rows(1)
+    rows["evidence_eligible"] = 1.9
+    assert evaluate(rows)["eligible_issued"] == 0
+
+
+@pytest.mark.parametrize("column,value", [
+    ("model_code_sha", "z" * 40), ("pipeline_run_id", "nan"),
+    ("pipeline_run_attempt", "0"), ("p_final_cal", float("inf")),
+    ("base_rate", 1.01), ("tail_threshold", float("nan")),
+    ("px_voo_t", -1.0),
+])
+def test_pending_issuances_still_require_valid_inputs_and_lineage(column, value):
+    rows = _paper_rows(1)
+    rows.loc[0, ["px_voo_realized", "px_ief_realized"]] = np.nan
+    rows.loc[0, "realized_target_date"] = None
+    rows.loc[0, column] = value
+    with pytest.raises(ValueError):
+        evaluate(rows)
+
+
+def test_filling_locked_outcome_preserves_cohort_identity():
+    rows = _paper_rows(61)
+    missing = rows.copy()
+    missing.loc[0, ["px_voo_realized", "px_ief_realized"]] = np.nan
+    missing.loc[0, "realized_target_date"] = None
+    pending = evaluate(missing)
+    final = evaluate(rows)
+    assert pending["cohort_issuance_sha256"] == final["cohort_issuance_sha256"]
+    assert final["locked_realized"] == 60
+    assert final["allocation_approved"] is False
+
+
+@pytest.mark.parametrize("change", ["late", "early", "wrong_target", "wrong_realization", "duplicate"])
 def test_prospective_holdout_rejects_broken_evidence(change):
     rows = _paper_rows(1)
     if change == "late":
         rows.loc[0, "forecast_issued_at_utc"] = _calendar().session_close(
             pd.Timestamp(rows.loc[0, "target_date"])
+        ).isoformat()
+    elif change == "early":
+        rows.loc[0, "forecast_issued_at_utc"] = _calendar().session_close(
+            pd.Timestamp(rows.loc[0, "decision_date"])
         ).isoformat()
     elif change == "wrong_target":
         rows.loc[0, "target_date"] = rows.loc[0, "decision_date"]

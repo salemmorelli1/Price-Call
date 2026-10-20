@@ -29,6 +29,8 @@ Thumbs.db
 .mypy_cache/
 .ruff_cache/
 .cache/
+_site/
+.pricecall-pages-*/
 
 # Local secrets / env
 .env

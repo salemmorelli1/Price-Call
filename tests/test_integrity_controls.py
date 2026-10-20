@@ -346,8 +346,12 @@ def test_dashboard_html_sync_refuses_empty_prediction_ledger(tmp_path):
         sync_html(tmp_path)
 
 
-def test_pages_bundle_contains_every_local_reference(tmp_path):
+def test_pages_bundle_contains_every_local_reference(tmp_path, monkeypatch):
     from prepare_pages import prepare_site
+
+    # This fixture exercises bundling only; source-integrity rejection is tested
+    # separately with real manifest-verified repository artifacts.
+    monkeypatch.setattr("prepare_pages._source_failures", lambda root: [])
 
     (tmp_path / "artifacts_dashboard").mkdir()
     (tmp_path / "artifacts_dashboard" / "dashboard_snapshot.json").write_text("{}", encoding="utf-8")
@@ -366,7 +370,7 @@ def test_pages_bundle_contains_every_local_reference(tmp_path):
         encoding="utf-8",
     )
     site = tmp_path / "site"
-    prepare_site(tmp_path, site)
+    prepare_site(tmp_path, site, refresh_snapshot=False)
     assert (site / "artifacts_dashboard" / "dashboard_snapshot.json").is_file()
     assert (site / "artifacts_part10_bot" / "signal_log.csv").is_file()
     assert (site / "artifacts_part10_bot" / "pipeline_status.json").is_file()

@@ -1,5 +1,36 @@
 # Price-Call
 
+## October 20 governance audit
+
+`NOT_VALIDATED`, `FAIL_CLOSED_NEUTRAL`, and `FLAT_VETOED` are evidence and
+publication decisions. They do not by themselves mean that Python or Actions
+crashed. `NEUTRAL` refers to the governed 60/40 VOO/IEF paper allocation.
+
+Run `python audit_governance.py --root .` for a read-only explanation of the
+historical evidence, fixed prospective cohort, publication dates, execution
+lineage, and remaining approval requirements. Exit zero means the audit ran
+successfully; the model may correctly remain `BLOCKED`.
+
+The prospective evaluator now fixes the first 60 eligible **issuances** before
+checking outcomes. An unresolved earlier outcome cannot be replaced by a later
+forecast. Its review report uses the DeLong structural-component variance and
+continues to require a separate independent review. The frozen forecaster,
+issued probabilities, outcome anchors, and allocation thresholds are unchanged.
+
+Pages verifies the source artifact hashes and execution lineage, regenerates
+the snapshot only inside a fresh output directory, and records every deployed
+file in `publication.json`. Its browser display expires when the next XNYS
+session settles, including exchange holidays and early closes. To build and
+verify a preview, use a new directory each time:
+
+```bash
+python prepare_pages.py --root . --site .venv/pages-preview
+python prepare_pages.py --site .venv/pages-preview --verify
+```
+
+See [the audit report](docs/GOVERNANCE_EVIDENCE_AUDIT_2026-10-20.md) for observed
+gate values, reproduced defects, scope, and verification.
+
 A production-style Python pipeline for **daily (H=1) VOO vs IEF forecasting**, governance, allocation, execution analytics, live attribution, and paper-trading control.
 
 The stack is built around a strict daily production order:
