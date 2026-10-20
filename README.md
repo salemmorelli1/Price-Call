@@ -11,6 +11,12 @@ historical evidence, fixed prospective cohort, publication dates, execution
 lineage, and remaining approval requirements. Exit zero means the audit ran
 successfully; the model may correctly remain `BLOCKED`.
 
+For the complete verification, run `bash verify_audit.sh` from a clean checkout.
+It creates a new isolated Python 3.12 environment, runs both test modes and
+publication checks, and prints the preview location. Windows Git Bash and Linux
+CI run this exact script. Each invocation uses a fresh environment and output
+directory, so previous local installations and previews are preserved.
+
 The prospective evaluator now fixes the first 60 eligible **issuances** before
 checking outcomes. An unresolved earlier outcome cannot be replaced by a later
 forecast. Its review report uses the DeLong structural-component variance and

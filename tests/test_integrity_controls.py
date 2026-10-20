@@ -86,12 +86,14 @@ def test_workflows_use_locked_dependencies_and_retain_research_bundle():
     production = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
     backfill = Path(".github/workflows/daily-backfill.yml").read_text(encoding="utf-8")
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    verification = Path("verify_audit.sh").read_text(encoding="utf-8")
     assert "requirements-lock.txt" in production
     assert "requirements-lock.txt" in backfill
-    assert "requirements-ci-lock.txt" in ci
+    assert "bash verify_audit.sh" in ci
+    assert "requirements-ci-lock.txt" in verification
     assert "pip install --no-cache-dir -r requirements-lock.txt" in production
     assert "pip install --no-cache-dir -r requirements-lock.txt" in backfill
-    assert "pip install --no-cache-dir -r requirements-ci-lock.txt" in ci
+    assert "pip install --no-cache-dir -r requirements-ci-lock.txt" in verification
     assert 'cache: "pip"' not in production
     assert 'cache: "pip"' not in backfill
     assert "cache: pip" not in ci

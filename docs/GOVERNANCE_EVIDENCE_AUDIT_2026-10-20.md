@@ -116,7 +116,9 @@ tampering, output-path guards, the published Stata tied-rating AUC/SE example,
 an independent dense imbalanced-sample variance calculation, and execution of
 the actual dashboard binding in Node through an expiry boundary. CI runs this
 suite on Python 3.12 in isolated Windows and Linux environments and verifies
-that checks did not rewrite tracked artifacts. Exact GitHub runs are recorded
+that checks did not rewrite tracked artifacts. Both run the delivered
+`bash verify_audit.sh` entry point, including Git Bash activation and fresh
+environment/preview directories. Exact GitHub runs are recorded
 in the PR after completion.
 
 The read-only audit's `integrity_status=PASS` is compatible with
