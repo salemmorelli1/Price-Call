@@ -1,12 +1,12 @@
 {
-  "built_at": "2026-10-19T23:56:41.587119+00:00",
-  "close_checksum": "3bbc87cd352e2db0",
-  "close_prices_sha256": "d757835d1e103052606b85ebc3c4bb46710fd490dd4f636d74a941f9dbb556cd",
+  "built_at": "2026-10-20T23:25:09.168689+00:00",
+  "close_checksum": "350a98a765a4dc65",
+  "close_prices_sha256": "d8815ab127acd0dd049c0174d9248af7dadf916d63f5c1daeafee6f89b23ec77",
   "data_quality": {
     "DBC": {
       "first_valid_date": "2006-02-06",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.05015502462155754,
+      "missing_pre_clean": 0.05014587892049599,
       "usable_for_model": true,
       "years_history": 20.7
     },
@@ -34,9 +34,9 @@
     "HYG": {
       "first_valid_date": "2007-04-11",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.10395768739741018,
+      "missing_pre_clean": 0.10393873085339168,
       "usable_for_model": true,
-      "years_history": 19.52
+      "years_history": 19.53
     },
     "IEF": {
       "first_valid_date": "2005-01-03",
@@ -55,9 +55,9 @@
     "JNK": {
       "first_valid_date": "2007-12-04",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.1340507021703447,
+      "missing_pre_clean": 0.13402625820568928,
       "usable_for_model": true,
-      "years_history": 18.87
+      "years_history": 18.88
     },
     "LQD": {
       "first_valid_date": "2005-01-03",
@@ -111,7 +111,7 @@
     "UUP": {
       "first_valid_date": "2007-03-01",
       "max_equal_close_run": 4,
-      "missing_pre_clean": 0.09885099398139705,
+      "missing_pre_clean": 0.0988329686360321,
       "usable_for_model": true,
       "years_history": 19.64
     },
@@ -125,7 +125,7 @@
     "VOO": {
       "first_valid_date": "2010-09-09",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.260988509939814,
+      "missing_pre_clean": 0.2609409190371991,
       "usable_for_model": true,
       "years_history": 16.11
     },
@@ -139,9 +139,9 @@
     "XLC": {
       "first_valid_date": "2018-06-19",
       "max_equal_close_run": 2,
-      "missing_pre_clean": 0.6179099033375889,
+      "missing_pre_clean": 0.6177972283005105,
       "usable_for_model": true,
-      "years_history": 8.33
+      "years_history": 8.34
     },
     "XLE": {
       "first_valid_date": "2005-01-03",
@@ -202,14 +202,14 @@
     "^MOVE": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.01677913550975743,
+      "missing_pre_clean": 0.016776075857038657,
       "usable_for_model": true,
       "years_history": 21.79
     },
     "^SKEW": {
       "first_valid_date": "2005-01-03",
       "max_equal_close_run": 5,
-      "missing_pre_clean": 0.011490060186029546,
+      "missing_pre_clean": 0.011487964989059081,
       "usable_for_model": true,
       "years_history": 21.79
     },
@@ -223,33 +223,33 @@
     "^VIX3M": {
       "first_valid_date": "2006-07-17",
       "max_equal_close_run": 3,
-      "missing_pre_clean": 0.07039941637789532,
+      "missing_pre_clean": 0.07038657913931437,
       "usable_for_model": true,
       "years_history": 20.26
     }
   },
   "date_range": {
-    "end": "2026-10-19",
-    "requested_end": "2026-10-19",
+    "end": "2026-10-20",
+    "requested_end": "2026-10-20",
     "start": "2010-09-09"
   },
-  "features_checksum": "7efec69a17c574d8",
-  "features_file_sha256": "680286e47dd253716b6f3127d3adcf4317a4615fe6f38a085446faa84d8604de",
+  "features_checksum": "d4450095f09f77d1",
+  "features_file_sha256": "164ef1279c1cf872afc33750ec191b7db795df3c344fe17a4704f6b6cd3a0284",
   "fred_available_sessions_by_series": {
-    "consumer_sentiment": 4052,
-    "curve_2s10s": 3201,
-    "curve_3m10y": 3201,
-    "dollar_index": 1937,
-    "fed_funds_rate": 4052,
+    "consumer_sentiment": 4053,
+    "curve_2s10s": 3202,
+    "curve_3m10y": 3202,
+    "dollar_index": 1938,
+    "fed_funds_rate": 4053,
     "hy_spread": 750,
     "ig_spread": 750,
-    "recession_flag": 3547,
-    "ted_spread": 3201,
-    "vix_fred": 3999,
-    "wti_oil": 3906,
-    "yield_10y": 4052,
-    "yield_2y": 4052,
-    "yield_30y": 4052
+    "recession_flag": 3548,
+    "ted_spread": 3202,
+    "vix_fred": 4000,
+    "wti_oil": 3907,
+    "yield_10y": 4053,
+    "yield_2y": 4053,
+    "yield_30y": 4053
   },
   "fred_enabled": true,
   "fred_first_availability_by_series": {
@@ -258,8 +258,8 @@
     "curve_3m10y": "2014-01-28",
     "dollar_index": "2019-02-05",
     "fed_funds_rate": "2010-09-09",
-    "hy_spread": "2023-10-23",
-    "ig_spread": "2023-10-23",
+    "hy_spread": "2023-10-24",
+    "ig_spread": "2023-10-24",
     "recession_flag": "2012-09-10",
     "ted_spread": "2014-01-28",
     "vix_fred": "2010-11-23",
@@ -301,7 +301,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 888,
         "start": "2024-09-09",
         "status": "ok"
@@ -339,8 +339,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 13145,
+        "end": "2026-10-20",
+        "rows": 13146,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -377,8 +377,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 11686,
+        "end": "2026-10-20",
+        "rows": 11687,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -416,7 +416,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 7416,
         "start": "2024-09-09",
         "status": "ok"
@@ -453,8 +453,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 26406,
+        "end": "2026-10-20",
+        "rows": 26409,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -487,13 +487,13 @@
       {
         "attempts": 1,
         "end": "2024-09-08",
-        "rows": 235,
+        "rows": 234,
         "start": "2020-09-09",
         "status": "ok"
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 792,
         "start": "2024-09-09",
         "status": "ok"
@@ -527,13 +527,13 @@
       {
         "attempts": 1,
         "end": "2024-09-08",
-        "rows": 235,
+        "rows": 234,
         "start": "2020-09-09",
         "status": "ok"
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 793,
         "start": "2024-09-09",
         "status": "ok"
@@ -571,7 +571,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 2062,
         "start": "2024-09-09",
         "status": "ok"
@@ -609,7 +609,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 9407,
         "start": "2024-09-09",
         "status": "ok"
@@ -646,8 +646,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 9599,
+        "end": "2026-10-20",
+        "rows": 9600,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -683,7 +683,7 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
+        "end": "2026-10-20",
         "rows": 11386,
         "start": "2024-09-09",
         "status": "ok"
@@ -720,8 +720,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 16904,
+        "end": "2026-10-20",
+        "rows": 16905,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -757,8 +757,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 13144,
+        "end": "2026-10-20",
+        "rows": 13145,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -794,8 +794,8 @@
       },
       {
         "attempts": 1,
-        "end": "2026-10-19",
-        "rows": 12959,
+        "end": "2026-10-20",
+        "rows": 12960,
         "start": "2024-09-09",
         "status": "ok"
       }
@@ -824,56 +824,56 @@
   "historical_point_in_time_policy": "no-revised-values; missing before archive",
   "horizon": 1,
   "last_raw_observation_by_ticker": {
-    "DBC": "2026-10-19",
-    "EEM": "2026-10-19",
-    "EFA": "2026-10-19",
-    "GLD": "2026-10-19",
-    "HYG": "2026-10-19",
-    "IEF": "2026-10-19",
-    "IWM": "2026-10-19",
-    "JNK": "2026-10-19",
-    "LQD": "2026-10-19",
-    "MDY": "2026-10-19",
-    "QQQ": "2026-10-19",
-    "RSP": "2026-10-19",
-    "SHY": "2026-10-19",
-    "SMH": "2026-10-19",
-    "TLT": "2026-10-19",
-    "UUP": "2026-10-19",
-    "VNQ": "2026-10-19",
-    "VOO": "2026-10-19",
-    "XLB": "2026-10-19",
-    "XLC": "2026-10-19",
-    "XLE": "2026-10-19",
-    "XLF": "2026-10-19",
-    "XLI": "2026-10-19",
-    "XLK": "2026-10-19",
-    "XLP": "2026-10-19",
-    "XLU": "2026-10-19",
-    "XLV": "2026-10-19",
-    "XLY": "2026-10-19",
-    "^MOVE": "2026-10-19",
-    "^SKEW": "2026-10-19",
-    "^VIX": "2026-10-19",
-    "^VIX3M": "2026-10-19"
+    "DBC": "2026-10-20",
+    "EEM": "2026-10-20",
+    "EFA": "2026-10-20",
+    "GLD": "2026-10-20",
+    "HYG": "2026-10-20",
+    "IEF": "2026-10-20",
+    "IWM": "2026-10-20",
+    "JNK": "2026-10-20",
+    "LQD": "2026-10-20",
+    "MDY": "2026-10-20",
+    "QQQ": "2026-10-20",
+    "RSP": "2026-10-20",
+    "SHY": "2026-10-20",
+    "SMH": "2026-10-20",
+    "TLT": "2026-10-20",
+    "UUP": "2026-10-20",
+    "VNQ": "2026-10-20",
+    "VOO": "2026-10-20",
+    "XLB": "2026-10-20",
+    "XLC": "2026-10-20",
+    "XLE": "2026-10-20",
+    "XLF": "2026-10-20",
+    "XLI": "2026-10-20",
+    "XLK": "2026-10-20",
+    "XLP": "2026-10-20",
+    "XLU": "2026-10-20",
+    "XLV": "2026-10-20",
+    "XLY": "2026-10-20",
+    "^MOVE": "2026-10-20",
+    "^SKEW": "2026-10-20",
+    "^VIX": "2026-10-20",
+    "^VIX3M": "2026-10-20"
   },
-  "latest_completed_market_session": "2026-10-19",
-  "macro_data_sha256": "87dae2bdd65041bbccb4d530a6cef0cf435d85a0ae6d038cf17971ee7a832fc5",
+  "latest_completed_market_session": "2026-10-20",
+  "macro_data_sha256": "d0eab795ce90e1e311546213c766201742c90ad845ceb597f88bf36d875518ea",
   "market_calendar": "XNYS",
-  "market_data_asof": "2026-10-19",
+  "market_data_asof": "2026-10-20",
   "market_data_source_overrides": {
     "^VIX3M": {
-      "download_sha256": "ef83c9eb0d8efbb2d6730b2a553d4fd1e601c026c3a1de6525206f0f80f6b85a",
-      "latest_observation": "2026-10-19",
+      "download_sha256": "2ccde0d71a3d8a8efefaf2d5e80bb6a7c605715ff48c81efc2da5c4c63f8e7e3",
+      "latest_observation": "2026-10-20",
       "provider": "Cboe Global Markets",
-      "retrieved_at_utc": "2026-10-19T23:56:42.330316+00:00",
-      "rows_applied": 4052,
-      "rows_downloaded": 4297,
+      "retrieved_at_utc": "2026-10-20T23:25:10.080732+00:00",
+      "rows_applied": 4053,
+      "rows_downloaded": 4298,
       "status": "applied",
       "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv"
     }
   },
-  "market_observation_mask_sha256": "0315d41b51b2d5efbc18ff95b0a0765c797e9c6bc21e9091c8b1088c8402d79b",
+  "market_observation_mask_sha256": "499c378740a3a925ef603c76e2f174b1cffccf22001cab17cb00c62994331f7c",
   "market_values_are_raw_observations": true,
   "n_features": 59,
   "n_macro_series": 14,
@@ -882,7 +882,7 @@
   "point_in_time_adapter": "point_in_time_macro.py",
   "project_root": "/home/runner/work/Price-Call/Price-Call",
   "protocol_version": "causal-integrity-v4",
-  "tail_rate": 0.07578375709701309,
+  "tail_rate": 0.07576505429417571,
   "version": "V2_DAILY_CANONICAL",
   "vix3m_authoritative_fallback_applied": true
 }
