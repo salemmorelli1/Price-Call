@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
 
     steps:
@@ -28,8 +29,21 @@ jobs:
         with:
           enablement: true
 
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install isolated verification runtime
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          .venv/bin/python -m pip install --no-cache-dir -r requirements-ci-lock.txt
+          .venv/bin/python -m pip check
+
       - name: Prepare site
-        run: python prepare_pages.py --root . --site _site
+        run: |
+          python prepare_pages.py --root . --site _site
+          python prepare_pages.py --site _site --verify
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
@@ -37,6 +51,7 @@ jobs:
           path: _site
 
   deploy:
+    if: github.ref_name == 'main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

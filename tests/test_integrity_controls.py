@@ -86,12 +86,14 @@ def test_workflows_use_locked_dependencies_and_retain_research_bundle():
     production = Path(".github/workflows/tuesday-pipeline.yml").read_text(encoding="utf-8")
     backfill = Path(".github/workflows/daily-backfill.yml").read_text(encoding="utf-8")
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    verification = Path("verify_audit.sh").read_text(encoding="utf-8")
     assert "requirements-lock.txt" in production
     assert "requirements-lock.txt" in backfill
-    assert "requirements-ci-lock.txt" in ci
+    assert "bash verify_audit.sh" in ci
+    assert "requirements-ci-lock.txt" in verification
     assert "pip install --no-cache-dir -r requirements-lock.txt" in production
     assert "pip install --no-cache-dir -r requirements-lock.txt" in backfill
-    assert "pip install --no-cache-dir -r requirements-ci-lock.txt" in ci
+    assert "pip install --no-cache-dir -r requirements-ci-lock.txt" in verification
     assert 'cache: "pip"' not in production
     assert 'cache: "pip"' not in backfill
     assert "cache: pip" not in ci
@@ -346,8 +348,12 @@ def test_dashboard_html_sync_refuses_empty_prediction_ledger(tmp_path):
         sync_html(tmp_path)
 
 
-def test_pages_bundle_contains_every_local_reference(tmp_path):
+def test_pages_bundle_contains_every_local_reference(tmp_path, monkeypatch):
     from prepare_pages import prepare_site
+
+    # This fixture exercises bundling only; source-integrity rejection is tested
+    # separately with real manifest-verified repository artifacts.
+    monkeypatch.setattr("prepare_pages._source_failures", lambda root: [])
 
     (tmp_path / "artifacts_dashboard").mkdir()
     (tmp_path / "artifacts_dashboard" / "dashboard_snapshot.json").write_text("{}", encoding="utf-8")
@@ -366,7 +372,7 @@ def test_pages_bundle_contains_every_local_reference(tmp_path):
         encoding="utf-8",
     )
     site = tmp_path / "site"
-    prepare_site(tmp_path, site)
+    prepare_site(tmp_path, site, refresh_snapshot=False)
     assert (site / "artifacts_dashboard" / "dashboard_snapshot.json").is_file()
     assert (site / "artifacts_part10_bot" / "signal_log.csv").is_file()
     assert (site / "artifacts_part10_bot" / "pipeline_status.json").is_file()

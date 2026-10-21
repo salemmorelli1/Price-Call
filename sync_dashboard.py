@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -14,10 +15,18 @@ from artifact_integrity import (
     LEGACY_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
     json_safe,
+    read_json_strict,
     validate_execution_lineage,
     write_json_strict,
 )
-from market_calendar import latest_completed_xnys_session, xnys_session_age
+from market_calendar import (
+    DEFAULT_SETTLEMENT_DELAY_MINUTES,
+    _calendar,
+    latest_completed_xnys_session,
+    next_xnys_session,
+    xnys_session_age,
+)
+from evaluate_prospective_cohort import MIN_OUTCOMES, evaluate
 
 
 def _first(root: Path, candidates: list[str]) -> Path | None:
@@ -30,8 +39,7 @@ def _json(root: Path, candidates: list[str], *, required: bool = False) -> dict[
         if required:
             raise FileNotFoundError(f"required dashboard source missing: {candidates}")
         return {}
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    return read_json_strict(path)
 
 
 def _number(value: Any) -> float | None:
@@ -39,7 +47,12 @@ def _number(value: Any) -> float | None:
         value = float(value)
     except (TypeError, ValueError):
         return None
-    return value if pd.notna(value) else None
+    return value if math.isfinite(value) else None
+
+
+def _true(value: Any) -> bool:
+    """JSON flags must be explicit booleans or numeric 0/1, never truthy text."""
+    return value is True or (type(value) in (int, float) and value == 1)
 
 
 def _parse_date_column(frame: pd.DataFrame, column: str) -> pd.Series:
@@ -107,7 +120,7 @@ def _age_from_expected(value: Any, expected: pd.Timestamp) -> int | None:
         return None
 
 
-def build_snapshot(root: Path) -> dict[str, Any]:
+def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
     part2 = _json(root, [
         "artifacts_part2_g532/predictions/part2_g532_summary.json",
         "artifacts_part2_g532/part2_g532_summary.json",
@@ -137,8 +150,10 @@ def build_snapshot(root: Path) -> dict[str, Any]:
     backtest = part9.get("classification_stats_backtest", {}) or {}
     delong = part2.get("delong_overall_auc", {}) or {}
     distribution = part2.get("distributional_diagnostics", {}) or {}
-    n_live = int(part9.get("n_live_realized", 0) or 0)
-    minimum = 60
+    prediction_path = root / "artifacts_part3" / "prediction_log.csv"
+    prospective = evaluate(pd.read_csv(prediction_path) if prediction_path.is_file() else pd.DataFrame())
+    n_live = int(prospective.get("locked_realized", 0))
+    minimum = MIN_OUTCOMES
     latest_prediction = _latest_record(
         root / "artifacts_part3" / "prediction_log.csv",
         ("target_date", "decision_date"),
@@ -157,18 +172,27 @@ def build_snapshot(root: Path) -> dict[str, Any]:
     )
     auc_p_max = _number(part2.get("historical_auc_p_max")) or 0.10
     brier_skill_min = _number(part2.get("historical_brier_skill_min")) or 0.005
-    macro_point_in_time_ok = bool(part2.get("macro_point_in_time_ok", False))
-    governance_final_pass = bool(
+    macro_point_in_time_ok = _true(part2.get("macro_point_in_time_ok", False))
+    governance_final_pass = _true(
         part3.get("final_pass", part2.get("final_pass", False))
     )
-    source_freshness_ok = bool(part2.get("part1_data_freshness_ok", False))
+    source_freshness_ok = _true(part2.get("part1_data_freshness_ok", False))
+    historical_ok = bool(
+        _true(part2.get("historical_evidence_ok"))
+        and auc is not None and auc > 0.50
+        and auc_p is not None and auc_p <= auc_p_max
+        and brier_skill is not None and brier_skill >= brier_skill_min
+    )
+    independent_ok = _true(part2.get("independent_validation_ok"))
+    prospective_ok = _true(prospective.get("prospective_thresholds_pass"))
     market_asof = (part0.get("date_range", {}) or {}).get("end")
     model_asof = part1.get("asof_date")
     pipeline_session = (
         pipeline_status.get("expected_completed_market_session")
         or pipeline_status.get("pipeline_run_date")
     )
-    expected_session = latest_completed_xnys_session()
+    expected_session = (latest_completed_xnys_session() if now is None
+                        else latest_completed_xnys_session(now))
     expected_session_text = expected_session.date().isoformat()
     publication_dates = {
         "market_data": _date_text(market_asof),
@@ -181,6 +205,15 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             or execution.get("decision_date")
         ),
     }
+    # A static page must close itself when the next exchange session settles,
+    # even if both production and backfill stop publishing entirely.
+    freshness_expires_at_utc = None
+    if all(publication_dates.values()):
+        first_asof = min(publication_dates.values())
+        expires = _calendar().session_close(next_xnys_session(first_asof)) + pd.Timedelta(
+            minutes=DEFAULT_SETTLEMENT_DELAY_MINUTES
+        )
+        freshness_expires_at_utc = expires.isoformat()
     publication_ages = {
         name: _age_from_expected(value, expected_session)
         for name, value in publication_dates.items()
@@ -198,20 +231,22 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         max(known_ages) if known_ages else None
     )
     freshness_ok = source_freshness_ok and publication_freshness_ok
-    final_pass = governance_final_pass and freshness_ok
+    final_pass = bool(
+        governance_final_pass and freshness_ok and historical_ok
+        and macro_point_in_time_ok and independent_ok and prospective_ok
+    )
     governance_publish_mode = part3.get(
         "publish_mode", part2.get("publish_mode", "UNKNOWN")
     )
     governance_deployment_mode = part3.get("deployment_mode", "UNKNOWN")
     publish_mode = (
-        "FAIL_CLOSED_STALE"
-        if not publication_freshness_ok and governance_publish_mode == "NORMAL"
+        ("FAIL_CLOSED_STALE" if not publication_freshness_ok else "FAIL_CLOSED_NEUTRAL")
+        if not final_pass and governance_publish_mode == "NORMAL"
         else governance_publish_mode
     )
     deployment_mode = (
-        governance_deployment_mode
-        if publication_freshness_ok
-        else "NO_ACTION_STALE"
+        (governance_deployment_mode if final_pass else "DEFENSE_ONLY")
+        if publication_freshness_ok else "NO_ACTION_STALE"
     )
     validation_reasons: list[str] = []
     if auc is None or auc <= 0.50:
@@ -240,8 +275,16 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         )
     if not macro_point_in_time_ok:
         validation_reasons.append("point-in-time macro coverage is incomplete")
-    if part2.get("independent_validation_ok") is False:
+    if not independent_ok:
         validation_reasons.append("prospective independent validation is pending")
+    if not prospective_ok:
+        validation_reasons.append(
+            f"fixed prospective cohort: {prospective.get('locked_realized', 0)}/{minimum} "
+            f"outcomes; {prospective['status']}"
+        )
+    if not historical_ok and auc is not None and auc_p is not None and brier_skill is not None:
+        if auc > 0.50 and auc_p <= auc_p_max and brier_skill >= brier_skill_min:
+            validation_reasons.append("historical evidence approval is absent")
     if not final_pass and not validation_reasons:
         validation_reasons.append("the complete governance gate did not pass")
     ticker_ages = part1.get("ticker_age_business_days_raw", {}) or {}
@@ -287,6 +330,7 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "data_freshness_ok": freshness_ok,
         "source_data_freshness_ok": source_freshness_ok,
         "publication_freshness_ok": publication_freshness_ok,
+        "freshness_expires_at_utc": freshness_expires_at_utc,
         "execution_lineage_ok": execution_lineage_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
         "alpha_state": part3.get("current_alpha_live_status", part3.get("latest_alpha_state", "UNKNOWN")),
@@ -295,11 +339,14 @@ def build_snapshot(root: Path) -> dict[str, Any]:
             "voo": _number(part7.get("w_target_voo", 0.60)),
             "ief": _number(part7.get("w_target_ief", 0.40)),
         },
-        "live_health": part9.get("health_status", part9.get("status", "IMMATURE")),
+        "live_health": (part9.get("health_status", part9.get("status", "IMMATURE"))
+                        if n_live >= minimum else "IMMATURE"),
         "live_health_reasons": part9.get("health_reasons", []),
         "evidence": {
             "cohort": part9.get("evidence_cohort", PROTOCOL_VERSION),
             "eligible_realized": n_live,
+            "total_current_realized": int(prospective["eligible_realized"]),
+            "selection": "first_60_eligible_issuances",
             "minimum": minimum,
             "progress_pct": round(min(n_live / minimum, 1.0) * 100, 1),
             "legacy_realized_excluded": int(part9.get("legacy_realized_rows", 0) or 0),
@@ -330,12 +377,13 @@ def build_snapshot(root: Path) -> dict[str, Any]:
         "operator_validation": {
             "status": "VALIDATED" if final_pass else "NOT_VALIDATED",
             "reasons": validation_reasons,
-            "historical_evidence_ok": bool(part2.get("historical_evidence_ok", False)),
-            "independent_validation_ok": bool(part2.get("independent_validation_ok", False)),
+            "historical_evidence_ok": historical_ok,
+            "independent_validation_ok": independent_ok,
             "independent_validation_status": part2.get("independent_validation_status", "not_assessed"),
             "auc_p_value_max": auc_p_max,
             "brier_skill_min": brier_skill_min,
         },
+        "prospective_validation": prospective,
         "lineage": {
             "market_data_asof": market_asof,
             "model_data_asof": model_asof,
@@ -418,6 +466,7 @@ def _signal_records(path: Path) -> list[dict[str, Any]]:
 
 
 _DASHBOARD_BINDING = r'''
+<script id="pricecall-freshness-runtime" src="assets/snapshot_freshness.js"></script>
 <script id="pricecall-verified-snapshot">
 (() => {
   const fmt = (v, digits=3) => v == null ? '—' : Number(v).toFixed(digits);
@@ -429,7 +478,7 @@ _DASHBOARD_BINDING = r'''
   };
   const card = (label, value) => {
     const node = [...document.querySelectorAll('.card')].find(x => x.querySelector('.kicker')?.textContent.trim() === label);
-    if (node?.querySelector('.display')) node.querySelector('.display').textContent = value;
+    if (node?.querySelector('.display')) node.querySelector('.display').textContent = String(value).replaceAll('_', ' ');
   };
   const tableValue = (label, value) => {
     const row = [...document.querySelectorAll('.stat-table tr')].find(x => x.cells?.[0]?.textContent.trim() === label);
@@ -438,11 +487,13 @@ _DASHBOARD_BINDING = r'''
   const pct = v => v == null ? '—' : `${(100 * Number(v)).toFixed(2)}%`;
   fetch('artifacts_dashboard/dashboard_snapshot.json', {cache: 'no-store'})
     .then(response => { if (!response.ok) throw new Error(`snapshot HTTP ${response.status}`); return response.json(); })
-    .then(s => {
+    .then(original => {
+      const render = () => {
+      const s = PriceCallFreshness.derive(original, Date.now());
       metric('Backtest AUC', fmt(s.metrics.backtest_auc), 'current causal tape');
       metric('Rolling-median AUC', fmt(s.metrics.rolling_median_auc), 'current gate statistic');
       metric('AUC p-value', fmt(s.metrics.backtest_auc_p_value), `one-sided gate ≤ ${fmt(s.operator_validation.auc_p_value_max, 2)}`);
-      metric('Live AUC', fmt(s.metrics.live_auc), `eligible cohort n = ${s.evidence.eligible_realized}`);
+      metric('Live AUC', fmt(s.metrics.live_auc), `descriptive current cohort n = ${s.evidence.total_current_realized}`);
       metric('Brier skill', fmt(s.metrics.backtest_brier_skill), `causal gate ≥ ${fmt(s.operator_validation.brier_skill_min)}`);
       metric('90% interval coverage', pct(s.prediction_interval.empirical_coverage), 'next-day spread; nominal 90%');
       card('Sample maturity', s.live_health);
@@ -460,7 +511,7 @@ _DASHBOARD_BINDING = r'''
       const sample = [...document.querySelectorAll('.card')].find(x => x.querySelector('.kicker')?.textContent.trim() === 'Sample maturity');
       if (sample) {
         const p = sample.querySelector('p');
-        if (p) p.textContent = `${s.evidence.eligible_realized} of ${s.evidence.minimum} eligible realized observations in the current cohort; ${s.evidence.legacy_realized_excluded} legacy rows are retained but excluded.`;
+        if (p) p.textContent = `${s.evidence.eligible_realized} of ${s.evidence.minimum} outcomes in the fixed issuance window; ${s.evidence.legacy_realized_excluded} legacy rows are retained but excluded.`;
         const bar = sample.querySelector('.progress span');
         if (bar) bar.style.width = `${s.evidence.progress_pct}%`;
         const muted = sample.querySelector('.muted');
@@ -509,9 +560,18 @@ _DASHBOARD_BINDING = r'''
       const botPlot = document.getElementById('bot-progress-chart');
       if (botPlot && window.Plotly) Plotly.relayout(botPlot, {'annotations[0].text': `${s.evidence.eligible_realized} / ${s.evidence.minimum} current cohort`});
       document.documentElement.dataset.snapshotProtocol = s.protocol_version;
+      };
+      render();
+      window.setInterval(render, 60000);
+      window.addEventListener('focus', render);
+      document.addEventListener('visibilitychange', render);
     })
     .catch(error => {
       document.documentElement.dataset.snapshotError = error.message;
+      card('Operator validation', 'NOT VALIDATED');
+      card('Core publication', 'SNAPSHOT UNAVAILABLE');
+      card('Auxiliary alpha', 'UNVERIFIED');
+      card('Trading status', 'DRY RUN');
       const ticket = document.querySelector('.forecast-ticket');
       if (ticket) ticket.innerHTML = '<b>Verified snapshot unavailable</b><br>FAIL-CLOSED · published state could not be loaded.';
       const status = document.getElementById('snapshot-status');
@@ -528,7 +588,7 @@ _DASHBOARD_BINDING = r'''
 '''.strip()
 
 
-def sync_html(root: Path) -> None:
+def sync_html(root: Path, *, output_path: Path | None = None) -> None:
     path = root / "index.html"
     html = path.read_text(encoding="utf-8")
     pred_rows = _records(root / "artifacts_part3" / "prediction_log.csv", [
@@ -557,7 +617,7 @@ def sync_html(root: Path) -> None:
     if bot_replacements != 1:
         raise ValueError("index.html is missing the expected 'const botRows=' data binding")
     html = re.sub(
-        r"\s*<script id=\"pricecall-verified-snapshot\">.*?</script>\s*",
+        r"\s*<script id=\"pricecall-(?:verified-snapshot|freshness-runtime)\"[^>]*>.*?</script>\s*",
         "\n",
         html,
         flags=re.DOTALL,
@@ -567,7 +627,7 @@ def sync_html(root: Path) -> None:
     html = html.replace("</body>", _DASHBOARD_BINDING + "\n</body>", 1)
     # Write encoded bytes so Windows cannot translate the repository's
     # canonical LF line endings to CRLF during deterministic regeneration.
-    path.write_bytes(html.encode("utf-8"))
+    (output_path or path).write_bytes(html.encode("utf-8"))
 
 
 def main() -> int:
