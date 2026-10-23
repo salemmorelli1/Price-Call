@@ -1,20 +1,20 @@
 {
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": true,
+  "data_freshness_ok": false,
   "decision_date": "2026-10-22T00:00:00",
-  "deployment_mode": "DEFENSE_ONLY",
+  "deployment_mode": "NO_ACTION_STALE",
   "evidence": {
     "cohort": "causal-integrity-v4",
-    "eligible_realized": 19,
-    "inference_eligible": false,
+    "eligible_realized": 20,
+    "inference_eligible": true,
     "legacy_realized_excluded": 40,
     "minimum": 60,
     "n_negative": 15,
-    "n_positive": 4,
-    "progress_pct": 31.7,
+    "n_positive": 5,
+    "progress_pct": 33.3,
     "selection": "first_60_eligible_issuances",
-    "total_current_realized": 19
+    "total_current_realized": 20
   },
   "execution_lineage_ok": true,
   "final_pass": false,
@@ -32,32 +32,32 @@
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-10-22",
-    "backfill_run_id": "39872814888",
-    "backfill_source_code_sha": "a8b43e34179482f92e1a2af1bfdf5bbe87a2a550",
+    "backfill_run_date": "2026-10-23",
+    "backfill_run_id": "40038897328",
+    "backfill_source_code_sha": "6a1089016db77b84c2c23ba1cc01a711f724f96c",
     "execution_decision_date": "2026-10-22",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
     "execution_pipeline_run_date": "2026-10-22",
     "execution_pipeline_run_id": "39872814888",
     "execution_source_code_sha": "a8b43e34179482f92e1a2af1bfdf5bbe87a2a550",
-    "expected_completed_market_session": "2026-10-22",
+    "expected_completed_market_session": "2026-10-23",
     "latest_prediction_target_date": "2026-10-23",
     "latest_signal_run_date": "2026-10-23",
     "latest_signal_source_decision_date": "2026-10-22",
     "market_data_asof": "2026-10-22",
-    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "message": "The dashboard is serving the last successful production snapshot (market 2026-10-22, model 2026-10-22); the latest completed XNYS session is 2026-10-23. Backfill updates do not make the forecast current.",
     "model_data_asof": "2026-10-22",
     "pipeline_run_date": "2026-10-22",
     "pipeline_run_id": "39872814888",
     "pipeline_source_code_sha": "a8b43e34179482f92e1a2af1bfdf5bbe87a2a550",
-    "prediction_tape_paused": false,
+    "prediction_tape_paused": true,
     "publication_component_ages": {
-      "decision": 0,
-      "execution": 0,
-      "market_data": 0,
-      "model_data": 0,
-      "pipeline": 0
+      "decision": 1,
+      "execution": 1,
+      "market_data": 1,
+      "model_data": 1,
+      "pipeline": 1
     },
     "publication_component_dates": {
       "decision": "2026-10-22",
@@ -66,12 +66,12 @@
       "model_data": "2026-10-22",
       "pipeline": "2026-10-22"
     },
-    "publication_session_age": 0,
+    "publication_session_age": 1,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
   "live_health_reasons": [
-    "Only 19 live observations (60 required)"
+    "Only 20 live observations (60 required)"
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
@@ -80,11 +80,11 @@
     "backtest_auc_permutation_p_value": 0.1904047976011994,
     "backtest_brier": 0.1611711844675469,
     "backtest_brier_skill": -0.0028121268540775013,
-    "balanced_accuracy": 0.5083333333333333,
-    "live_auc": 0.6166666666666667,
-    "live_brier": 0.1660845342474359,
-    "live_brier_null": 0.16702708739441194,
-    "live_brier_skill": 0.005643116102396095,
+    "balanced_accuracy": 0.5333333333333333,
+    "live_auc": 0.6666666666666667,
+    "live_brier": 0.1896872718415617,
+    "live_brier_null": 0.19128174996850592,
+    "live_brier_skill": 0.008335757208270955,
     "rolling_median_auc": 0.5579943420154131
   },
   "operator_validation": {
@@ -96,8 +96,9 @@
     "reasons": [
       "one-sided AUC p-value exceeds 0.10",
       "causal Brier skill is below 0.005",
+      "published production is 1 completed XNYS session(s) behind (expected 2026-10-23)",
       "prospective independent validation is pending",
-      "fixed prospective cohort: 19/60 outcomes; awaiting_60_outcomes"
+      "fixed prospective cohort: 20/60 outcomes; awaiting_60_outcomes"
     ],
     "status": "NOT_VALIDATED"
   },
@@ -115,15 +116,13 @@
     "brier_skill_min": 0.005,
     "cohort_issuance_sha256": "8edfe31f9e361b1ccec521938f0951a0c6271200326f165ee9534986a76fcc06",
     "eligible_issued": 20,
-    "eligible_realized": 19,
+    "eligible_realized": 20,
     "independent_validation_ok": false,
     "locked_first_decision": "2026-09-24",
     "locked_issued": 20,
     "locked_last_decision": "2026-10-22",
-    "locked_pending_targets": [
-      "2026-10-23"
-    ],
-    "locked_realized": 19,
+    "locked_pending_targets": [],
+    "locked_realized": 20,
     "method": "first 60 eligible issuances fixed before observing outcomes",
     "probability_source": "p_final_cal",
     "protocol_version": "causal-integrity-v4",
@@ -131,7 +130,7 @@
     "status": "awaiting_60_outcomes"
   },
   "protocol_version": "causal-integrity-v4",
-  "publication_freshness_ok": true,
+  "publication_freshness_ok": false,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "high_vol",
   "source_data_freshness_ok": true,
