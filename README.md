@@ -259,6 +259,20 @@ versus the rowwise causal prevalence forecast.
 See `docs/CAUSAL_RESEARCH_PROTOCOL.md` for the temporal and governance contracts.
 See `docs/ARTIFACT_RETENTION.md` for the non-destructive repository-size policy.
 
+### Governance contract audit (October 27, 2026)
+
+Run `bash verify_audit.sh` from a clean checkout to reproduce the exact Windows
+Git Bash/Linux verification. `python audit_governance.py --root .` explains each
+blocked control in `gate_checks`, including its observed value and frozen
+requirement. `FAIL_CLOSED_NEUTRAL` is the neutral 60/40 paper allocation; workflow
+success does not itself approve the model. The historical thresholds, prospective
+minimum and separate review remain required.
+
+The dashboard independently checks core/governance agreement, finite bounded
+metrics, and the fixed policy. PR Pages previews verify the packaged file set
+without deployment permission; main publication retains its explicit dispatch.
+See `docs/GOVERNANCE_CONTRACT_AUDIT_2026-10-27.md` for reproduced failures and evidence.
+
 ### Production input readiness (October 1, 2026 audit)
 
 Production reports `DATA_PENDING` (process exit 75) when the latest completed

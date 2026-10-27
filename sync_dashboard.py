@@ -27,6 +27,7 @@ from market_calendar import (
     xnys_session_age,
 )
 from evaluate_prospective_cohort import MIN_OUTCOMES, evaluate
+from part2_predictor import Part2Gen53Config
 
 
 def _first(root: Path, candidates: list[str]) -> Path | None:
@@ -43,6 +44,8 @@ def _json(root: Path, candidates: list[str], *, required: bool = False) -> dict[
 
 
 def _number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         value = float(value)
     except (TypeError, ValueError):
@@ -170,21 +173,34 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
     brier_skill = _number(
         part2.get("historical_brier_skill_causal", backtest.get("brier_skill_score"))
     )
-    auc_p_max = _number(part2.get("historical_auc_p_max")) or 0.10
-    brier_skill_min = _number(part2.get("historical_brier_skill_min")) or 0.005
+    # Artifacts report the frozen policy; they cannot redefine its thresholds.
+    auc_p_max = float(Part2Gen53Config.HISTORICAL_AUC_P_MAX)
+    brier_skill_min = float(Part2Gen53Config.HISTORICAL_BRIER_SKILL_MIN)
+    recorded_thresholds = {
+        "auc_p_max": _number(part2.get("historical_auc_p_max")),
+        "brier_skill_min": _number(part2.get("historical_brier_skill_min")),
+    }
+    required_thresholds = {"auc_p_max": auc_p_max, "brier_skill_min": brier_skill_min}
+    thresholds_ok = recorded_thresholds == required_thresholds
+    auc_ok = auc is not None and 0.50 < auc <= 1
+    auc_p_ok = auc_p is not None and 0 <= auc_p <= auc_p_max
+    brier_skill_ok = brier_skill is not None and brier_skill_min <= brier_skill <= 1
     macro_point_in_time_ok = _true(part2.get("macro_point_in_time_ok", False))
     governance_final_pass = _true(
         part3.get("final_pass", part2.get("final_pass", False))
     )
+    core_publish_mode = part2.get("publish_mode", "UNKNOWN")
+    governance_publish_mode = part3.get("publish_mode", "UNKNOWN")
+    governance_deployment_mode = part3.get("deployment_mode", "UNKNOWN")
+    core_ok = _true(part2.get("final_pass")) and core_publish_mode == "NORMAL"
+    governance_ok = _true(part3.get("final_pass")) and governance_publish_mode == "NORMAL"
     source_freshness_ok = _true(part2.get("part1_data_freshness_ok", False))
     historical_ok = bool(
         _true(part2.get("historical_evidence_ok"))
-        and auc is not None and auc > 0.50
-        and auc_p is not None and auc_p <= auc_p_max
-        and brier_skill is not None and brier_skill >= brier_skill_min
+        and thresholds_ok and auc_ok and auc_p_ok and brier_skill_ok
     )
     independent_ok = _true(part2.get("independent_validation_ok"))
-    prospective_ok = _true(prospective.get("prospective_thresholds_pass"))
+    prospective_ok = n_live >= MIN_OUTCOMES and _true(prospective.get("prospective_thresholds_pass"))
     market_asof = (part0.get("date_range", {}) or {}).get("end")
     model_asof = part1.get("asof_date")
     pipeline_session = (
@@ -231,14 +247,35 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
         max(known_ages) if known_ages else None
     )
     freshness_ok = source_freshness_ok and publication_freshness_ok
-    final_pass = bool(
-        governance_final_pass and freshness_ok and historical_ok
-        and macro_point_in_time_ok and independent_ok and prospective_ok
-    )
-    governance_publish_mode = part3.get(
-        "publish_mode", part2.get("publish_mode", "UNKNOWN")
-    )
-    governance_deployment_mode = part3.get("deployment_mode", "UNKNOWN")
+    def check(identifier, passed, observed, required):
+        return {"id": identifier, "passed": bool(passed), "observed": observed, "required": required}
+
+    gate_checks = [
+        check("protocol_thresholds", thresholds_ok, recorded_thresholds, required_thresholds),
+        check("core_publication", core_ok,
+              {"final_pass": part2.get("final_pass"), "publish_mode": core_publish_mode},
+              {"final_pass": True, "publish_mode": "NORMAL"}),
+        check("governance_publication", governance_ok,
+              {"final_pass": part3.get("final_pass"), "publish_mode": governance_publish_mode},
+              {"final_pass": True, "publish_mode": "NORMAL"}),
+        check("historical_auc", auc_ok, auc, {"greater_than": 0.50, "at_most": 1.0}),
+        check("historical_auc_p", auc_p_ok, auc_p, {"at_least": 0.0, "at_most": auc_p_max}),
+        check("historical_brier_skill", brier_skill_ok, brier_skill,
+              {"at_least": brier_skill_min, "at_most": 1.0}),
+        check("historical_approval", _true(part2.get("historical_evidence_ok")),
+              part2.get("historical_evidence_ok"), True),
+        check("source_freshness", source_freshness_ok, part2.get("part1_data_freshness_ok"), True),
+        check("publication_freshness", publication_freshness_ok,
+              {"component_dates": publication_dates, "execution_lineage_ok": execution_lineage_ok},
+              {"every_component_session": expected_session_text, "execution_lineage_ok": True}),
+        check("execution_lineage", execution_lineage_ok, execution_lineage_failures, []),
+        check("point_in_time_macro", macro_point_in_time_ok, part2.get("macro_point_in_time_ok"), True),
+        check("independent_review", independent_ok, part2.get("independent_validation_ok"), True),
+        check("prospective_holdout", prospective_ok,
+              {"locked_realized": n_live, "status": prospective["status"]},
+              {"locked_realized": MIN_OUTCOMES, "prespecified_thresholds_pass": True}),
+    ]
+    final_pass = all(item["passed"] for item in gate_checks)
     publish_mode = (
         ("FAIL_CLOSED_STALE" if not publication_freshness_ok else "FAIL_CLOSED_NEUTRAL")
         if not final_pass and governance_publish_mode == "NORMAL"
@@ -249,13 +286,19 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
         if publication_freshness_ok else "NO_ACTION_STALE"
     )
     validation_reasons: list[str] = []
-    if auc is None or auc <= 0.50:
-        validation_reasons.append("backtest AUC is not above 0.50")
-    if auc_p is None or auc_p > auc_p_max:
-        validation_reasons.append(f"one-sided AUC p-value exceeds {auc_p_max:.2f}")
-    if brier_skill is None or brier_skill < brier_skill_min:
+    if not thresholds_ok:
+        validation_reasons.append("recorded historical thresholds differ from the frozen protocol")
+    if not core_ok:
+        validation_reasons.append(f"core publication has not cleared its gate ({core_publish_mode})")
+    if not governance_ok:
+        validation_reasons.append(f"governance publication has not cleared its gate ({governance_publish_mode})")
+    if not auc_ok:
+        validation_reasons.append("backtest AUC must be finite and in (0.50, 1.00]")
+    if not auc_p_ok:
+        validation_reasons.append(f"one-sided AUC p-value is invalid or exceeds {auc_p_max:.2f}")
+    if not brier_skill_ok:
         validation_reasons.append(
-            f"causal Brier skill is below {brier_skill_min:.3f}"
+            f"causal Brier skill is invalid or below {brier_skill_min:.3f}"
         )
     if not source_freshness_ok:
         validation_reasons.append("required market data are stale")
@@ -283,7 +326,7 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
             f"outcomes; {prospective['status']}"
         )
     if not historical_ok and auc is not None and auc_p is not None and brier_skill is not None:
-        if auc > 0.50 and auc_p <= auc_p_max and brier_skill >= brier_skill_min:
+        if auc_ok and auc_p_ok and brier_skill_ok and thresholds_ok:
             validation_reasons.append("historical evidence approval is absent")
     if not final_pass and not validation_reasons:
         validation_reasons.append("the complete governance gate did not pass")
@@ -326,6 +369,7 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
         "governance_publish_mode": governance_publish_mode,
         "governance_deployment_mode": governance_deployment_mode,
         "final_pass": final_pass,
+        "gate_checks": gate_checks,
         "governance_final_pass": governance_final_pass,
         "data_freshness_ok": freshness_ok,
         "source_data_freshness_ok": source_freshness_ok,
@@ -334,6 +378,7 @@ def build_snapshot(root: Path, *, now: object | None = None) -> dict[str, Any]:
         "execution_lineage_ok": execution_lineage_ok,
         "macro_point_in_time_ok": macro_point_in_time_ok,
         "alpha_state": part3.get("current_alpha_live_status", part3.get("latest_alpha_state", "UNKNOWN")),
+        "alpha_reason": part3.get("current_alpha_reason", "not_recorded"),
         "regime": part3.get("current_regime", "unknown"),
         "weights": {
             "voo": _number(part7.get("w_target_voo", 0.60)),
