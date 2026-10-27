@@ -38,6 +38,8 @@ def audit(root: Path, *, as_of: str | None = None) -> dict[str, object]:
         "decision_date": snapshot["decision_date"],
         "publish_mode": snapshot["publish_mode"],
         "alpha_state": snapshot["alpha_state"],
+        "alpha_reason": snapshot["alpha_reason"],
+        "gate_checks": snapshot["gate_checks"],
         "paper_weights": snapshot["weights"],
         "operator_validation": snapshot["operator_validation"],
         "historical_evidence": {
