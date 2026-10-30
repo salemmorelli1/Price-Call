@@ -1,9 +1,9 @@
 {
   "backfill_run_date": "2026-10-29",
-  "completed_at_utc": "2026-10-30T02:34:17.869750+00:00",
+  "completed_at_utc": "2026-10-30T03:02:26.390261+00:00",
   "github_run_attempt": "1",
-  "github_run_id": "40992334991",
+  "github_run_id": "40993232606",
   "protocol_version": "causal-integrity-v4",
   "result": "verified",
-  "source_code_sha": "ad49eaae957d9119f8cf91381a2c1af271c8c8cf"
+  "source_code_sha": "a19a0ea374fd81001049987a88202bdb2ddfff99"
 }
