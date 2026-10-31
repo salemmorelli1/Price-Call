@@ -2,9 +2,9 @@
   "alpha_reason": "fail_closed_live_veto",
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
-  "data_freshness_ok": false,
-  "decision_date": "2026-10-29T00:00:00",
-  "deployment_mode": "NO_ACTION_STALE",
+  "data_freshness_ok": true,
+  "decision_date": "2026-10-30T00:00:00",
+  "deployment_mode": "DEFENSE_ONLY",
   "evidence": {
     "cohort": "causal-integrity-v4",
     "eligible_realized": 25,
@@ -19,7 +19,7 @@
   },
   "execution_lineage_ok": true,
   "final_pass": false,
-  "freshness_expires_at_utc": "2026-10-30T20:20:00+00:00",
+  "freshness_expires_at_utc": "2026-11-02T21:20:00+00:00",
   "gate_checks": [
     {
       "id": "protocol_thresholds",
@@ -59,7 +59,7 @@
     },
     {
       "id": "historical_auc",
-      "observed": 0.5105765365492436,
+      "observed": 0.5114362263195646,
       "passed": true,
       "required": {
         "at_most": 1.0,
@@ -68,7 +68,7 @@
     },
     {
       "id": "historical_auc_p",
-      "observed": 0.273607,
+      "observed": 0.256562,
       "passed": false,
       "required": {
         "at_least": 0.0,
@@ -77,7 +77,7 @@
     },
     {
       "id": "historical_brier_skill",
-      "observed": -0.003350954261150285,
+      "observed": -0.0024344118795325276,
       "passed": false,
       "required": {
         "at_least": 0.005,
@@ -100,15 +100,15 @@
       "id": "publication_freshness",
       "observed": {
         "component_dates": {
-          "decision": "2026-10-29",
-          "execution": "2026-10-29",
-          "market_data": "2026-10-29",
-          "model_data": "2026-10-29",
-          "pipeline": "2026-10-29"
+          "decision": "2026-10-30",
+          "execution": "2026-10-30",
+          "market_data": "2026-10-30",
+          "model_data": "2026-10-30",
+          "pipeline": "2026-10-30"
         },
         "execution_lineage_ok": true
       },
-      "passed": false,
+      "passed": true,
       "required": {
         "every_component_session": "2026-10-30",
         "execution_lineage_ok": true
@@ -151,48 +151,48 @@
   "latest_signal": {
     "action_reason": "neutral_model_not_cleared (FAIL_CLOSED_NEUTRAL)",
     "base_rate": 0.19246,
-    "edge": -0.000243,
-    "p_tail": 0.192704,
-    "raw_validation_auc": 0.4581,
-    "signal_count": 80,
+    "edge": -0.001904,
+    "p_tail": 0.194364,
+    "raw_validation_auc": 0.5,
+    "signal_count": 81,
     "target_voo": 0.6
   },
   "lineage": {
     "backfill_run_date": "2026-10-30",
-    "backfill_run_id": "41147372251",
-    "backfill_source_code_sha": "e38304f210c7fc7259b3ede773c25b884c07434b",
-    "execution_decision_date": "2026-10-29",
+    "backfill_run_id": "41148045854",
+    "backfill_source_code_sha": "9e0aa8c6db055cd83508a9bc0610bf55f5ed5ae7",
+    "execution_decision_date": "2026-10-30",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
-    "execution_pipeline_run_date": "2026-10-29",
-    "execution_pipeline_run_id": "40993232606",
-    "execution_source_code_sha": "a19a0ea374fd81001049987a88202bdb2ddfff99",
+    "execution_pipeline_run_date": "2026-10-30",
+    "execution_pipeline_run_id": "41148045854",
+    "execution_source_code_sha": "9e0aa8c6db055cd83508a9bc0610bf55f5ed5ae7",
     "expected_completed_market_session": "2026-10-30",
-    "latest_prediction_target_date": "2026-10-30",
-    "latest_signal_run_date": "2026-10-30",
-    "latest_signal_source_decision_date": "2026-10-29",
-    "market_data_asof": "2026-10-29",
-    "message": "The dashboard is serving the last successful production snapshot (market 2026-10-29, model 2026-10-29); the latest completed XNYS session is 2026-10-30. Backfill updates do not make the forecast current.",
-    "model_data_asof": "2026-10-29",
-    "pipeline_run_date": "2026-10-29",
-    "pipeline_run_id": "40993232606",
-    "pipeline_source_code_sha": "a19a0ea374fd81001049987a88202bdb2ddfff99",
-    "prediction_tape_paused": true,
+    "latest_prediction_target_date": "2026-11-02",
+    "latest_signal_run_date": "2026-10-31",
+    "latest_signal_source_decision_date": "2026-10-30",
+    "market_data_asof": "2026-10-30",
+    "message": "The prediction tape and market-data lineage are current under the published gate.",
+    "model_data_asof": "2026-10-30",
+    "pipeline_run_date": "2026-10-30",
+    "pipeline_run_id": "41148045854",
+    "pipeline_source_code_sha": "9e0aa8c6db055cd83508a9bc0610bf55f5ed5ae7",
+    "prediction_tape_paused": false,
     "publication_component_ages": {
-      "decision": 1,
-      "execution": 1,
-      "market_data": 1,
-      "model_data": 1,
-      "pipeline": 1
+      "decision": 0,
+      "execution": 0,
+      "market_data": 0,
+      "model_data": 0,
+      "pipeline": 0
     },
     "publication_component_dates": {
-      "decision": "2026-10-29",
-      "execution": "2026-10-29",
-      "market_data": "2026-10-29",
-      "model_data": "2026-10-29",
-      "pipeline": "2026-10-29"
+      "decision": "2026-10-30",
+      "execution": "2026-10-30",
+      "market_data": "2026-10-30",
+      "model_data": "2026-10-30",
+      "pipeline": "2026-10-30"
     },
-    "publication_session_age": 1,
+    "publication_session_age": 0,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
@@ -201,17 +201,17 @@
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
-    "backtest_auc": 0.5105765365492436,
-    "backtest_auc_p_value": 0.273607,
-    "backtest_auc_permutation_p_value": 0.271864067966017,
-    "backtest_brier": 0.1616156954653197,
-    "backtest_brier_skill": -0.003350954261150285,
+    "backtest_auc": 0.5114362263195646,
+    "backtest_auc_p_value": 0.256562,
+    "backtest_auc_permutation_p_value": 0.24987506246876562,
+    "backtest_brier": 0.16175491557576727,
+    "backtest_brier_skill": -0.0024344118795325276,
     "balanced_accuracy": 0.5396825396825397,
     "live_auc": 0.5873015873015872,
     "live_brier": 0.20798988938768276,
     "live_brier_null": 0.20963994394053917,
     "live_brier_skill": 0.00787089817452602,
-    "rolling_median_auc": 0.5572916666666666
+    "rolling_median_auc": 0.555360452638767
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -224,14 +224,13 @@
       "governance publication has not cleared its gate (FAIL_CLOSED_NEUTRAL)",
       "one-sided AUC p-value is invalid or exceeds 0.10",
       "causal Brier skill is invalid or below 0.005",
-      "published production is 1 completed XNYS session(s) behind (expected 2026-10-30)",
       "prospective independent validation is pending",
       "fixed prospective cohort: 25/60 outcomes; awaiting_60_outcomes"
     ],
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8997084548104957,
+    "empirical_coverage": 0.8945221445221445,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",
@@ -242,14 +241,16 @@
     "auc_method": "delong_structural_components_v1",
     "auc_p_max": 0.1,
     "brier_skill_min": 0.005,
-    "cohort_issuance_sha256": "61067607d62fa5ec102360e07f97ab4dc11ea9c91ac6d87a988f57b0cffb5500",
-    "eligible_issued": 25,
+    "cohort_issuance_sha256": "02d25763968b53b896fbf3c14595b0736392d467a571ac33d811438b3d6f329b",
+    "eligible_issued": 26,
     "eligible_realized": 25,
     "independent_validation_ok": false,
     "locked_first_decision": "2026-09-24",
-    "locked_issued": 25,
-    "locked_last_decision": "2026-10-29",
-    "locked_pending_targets": [],
+    "locked_issued": 26,
+    "locked_last_decision": "2026-10-30",
+    "locked_pending_targets": [
+      "2026-11-02"
+    ],
     "locked_realized": 25,
     "method": "first 60 eligible issuances fixed before observing outcomes",
     "probability_source": "p_final_cal",
@@ -258,7 +259,7 @@
     "status": "awaiting_60_outcomes"
   },
   "protocol_version": "causal-integrity-v4",
-  "publication_freshness_ok": false,
+  "publication_freshness_ok": true,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
   "regime": "crisis",
   "source_data_freshness_ok": true,
