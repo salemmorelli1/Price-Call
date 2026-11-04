@@ -1,13 +1,13 @@
 {
-  "as_of_date": "2026-11-03",
-  "decision_date": "2026-11-02",
+  "as_of_date": "2026-11-04",
+  "decision_date": "2026-11-03",
   "error": "No trades recorded yet",
   "execution_lineage_verified": true,
   "pipeline_run_attempt": "1",
-  "pipeline_run_date": "2026-11-02",
-  "pipeline_run_id": "41567339378",
-  "price_session": "2026-11-02",
+  "pipeline_run_date": "2026-11-03",
+  "pipeline_run_id": "41750105800",
+  "price_session": "2026-11-03",
   "price_source": "artifacts_part0/close_prices.parquet",
   "protocol_version": "causal-integrity-v4",
-  "source_code_sha": "ba514a3284fbcc38753c65ab35e3402c86dc09b3"
+  "source_code_sha": "d78910304901fe7600cb0816a4efa770e4ce3320"
 }
