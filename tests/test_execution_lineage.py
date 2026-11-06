@@ -322,12 +322,13 @@ def test_part10_uses_exact_observed_part0_session(tmp_path, monkeypatch):
         ),
     )
 
-    session, prices, lineage = load_verified_bot_context(cfg)
+    session, prices, lineage, plan = load_verified_bot_context(cfg)
 
     assert session == SESSION
     assert prices == {"VOO": pytest.approx(702.56), "IEF": pytest.approx(91.01)}
     assert lineage["price_session"] == SESSION
     assert lineage["pipeline_run_id"] == RUN_ID
+    assert plan["instructions"] == []
 
 
 def test_signal_log_replaces_same_session_revision_and_sorts(tmp_path):

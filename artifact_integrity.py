@@ -629,6 +629,24 @@ def validate_execution_lineage(root: str | Path) -> list[str]:
         failures.append("Part 8 metadata do not identify the Part 3 fusion allocation")
     if meta.get("latest_order_instructions") != instructions:
         failures.append("Part 8 metadata and execution_instructions.json disagree")
+    if instructions.get("status") == "NO_ACTION_STALE_OR_UNCLEARED":
+        if (instructions.get("instructions") != []
+                or type(instructions.get("n_trades")) is not int
+                or instructions["n_trades"] != 0):
+            failures.append("Part 8 no-action plan contains orders")
+        if not bot_signals.empty and not _is_true_flag(bot_signals.iloc[0].get("dry_run")):
+            failures.append("Part 10 signal did not honor the Part 8 no-action veto")
+        if bot_state.get("mode") not in (None, "DRY_RUN", "STOPPED"):
+            failures.append("Part 10 state claims paper execution during a Part 8 no-action veto")
+        try:
+            trades = pd.read_csv(root_path / "artifacts_part10_bot" / "trade_log.csv")
+            dates = trades["decision_date"].map(_canonical_date_text)
+            if dates.isna().any():
+                failures.append("Part 10 trade log contains an invalid decision date")
+            elif expected_date is not None and dates.eq(expected_date).any():
+                failures.append("Part 10 recorded a same-session trade despite the Part 8 no-action veto")
+        except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
+            failures.append(f"Part 10 trade log could not be checked against the no-action veto: {exc}")
     for label, source in (
         ("Part 10 state", bot_state.get("price_source")),
         ("Part 10 performance", bot_performance.get("price_source")),

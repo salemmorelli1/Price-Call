@@ -1,5 +1,19 @@
 # Price-Call
 
+## November 6 paper execution audit
+
+The [audit and reinforcement-learning assessment](docs/PAPER_EXECUTION_AUDIT_2026-11-06.md)
+explains why the gate remains closed and why a DQN is not recommended for this
+production method. The core forecaster is a supervised scikit-learn ensemble;
+the optional PyTorch BNN is an uncertainty sleeve. The frozen first-60 paper
+cohort and its statistical requirements are preserved.
+
+Part 8 now withholds orders on stale inputs or missing explicit approval.
+Part 10 requires that same-run plan and its governed target before changing the
+paper book. It preserves positions during DRY_RUN and debits purchases and fees
+from cash. `audit_governance.py` reports target weights separately from the
+recorded paper holdings and trade count.
+
 ## October 20 governance audit
 
 `NOT_VALIDATED`, `FAIL_CLOSED_NEUTRAL`, and `FLAT_VETOED` are evidence and

@@ -1359,11 +1359,15 @@ def main() -> int:
     _p2_gov_path = os.path.join(cfg.part2_dir, "part2_g532_summary.json")
     _p2_sum = _load_required_json(_p2_gov_path, "Part 2 summary")
     _p2_publish_mode = str(_p2_sum.get("publish_mode", "UNKNOWN")).strip().upper()
-    _p2_final_pass = bool(_p2_sum.get("final_pass", False))
+    _p2_final_pass = _p2_sum.get("final_pass") is True
     _p3_publish_mode = str(_p3_sum.get("publish_mode", "UNKNOWN")).strip().upper()
-    _p3_final_pass = bool(_p3_sum.get("final_pass", False))
+    # Part 3 writes a JSON integer; arbitrary truthy text is not approval.
+    _p3_flag = _p3_sum.get("final_pass")
+    _p3_final_pass = _p3_flag is True or (type(_p3_flag) is int and _p3_flag == 1)
+    _fresh = _p2_sum.get("part1_data_freshness_ok") is True
     _p8_governance_override = not (
-        _p2_publish_mode == "NORMAL"
+        _fresh
+        and _p2_publish_mode == "NORMAL"
         and _p2_final_pass
         and _p3_publish_mode == "NORMAL"
         and _p3_final_pass
@@ -1414,7 +1418,7 @@ def main() -> int:
             "reason": (
                 f"Governance did not clear: Part 2={_p2_publish_mode}/"
                 f"{_p2_final_pass}, Part 3={_p3_publish_mode}/{_p3_final_pass}, "
-                f"data_freshness_ok={bool(_p2_sum.get('part1_data_freshness_ok', False))}"
+                f"data_freshness_ok={_fresh}"
             ),
             "instructions": [],
             "n_trades": 0,
@@ -1433,7 +1437,8 @@ def main() -> int:
     instructions.update({
         "decision_date": decision_date,
         "source_decision_date": decision_date,
-        "data_freshness_ok": bool(_p2_sum.get("part1_data_freshness_ok", False)),
+        "data_freshness_ok": _fresh,
+        "governed_target_weights": {"VOO": w_voo, "IEF": w_ief},
         "governance_part2_publish_mode": _p2_publish_mode,
         "governance_part2_final_pass": _p2_final_pass,
         "governance_part3_publish_mode": _p3_publish_mode,

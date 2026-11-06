@@ -22,6 +22,9 @@ def audit(root: Path, *, as_of: str | None = None) -> dict[str, object]:
         raise ValueError("Audit --as-of must include an explicit UTC offset")
     snapshot = build_snapshot(root, now=as_of)
     summary = read_json_strict(root / "artifacts_part2_g532/predictions/part2_g532_summary.json")
+    plan = read_json_strict(root / "artifacts_part8/execution_instructions.json")
+    paper_state = read_json_strict(root / "artifacts_part10_bot/portfolio_state.json")
+    paper_trades = pd.read_csv(root / "artifacts_part10_bot/trade_log.csv")
     prospective = snapshot["prospective_validation"]
     tape = pd.read_csv(root / "artifacts_part2_g532/predictions/g532_final_consensus_tape.csv")
     realized = tape.loc[pd.to_numeric(tape["y_avail"], errors="coerce").eq(1)]
@@ -41,6 +44,17 @@ def audit(root: Path, *, as_of: str | None = None) -> dict[str, object]:
         "alpha_reason": snapshot["alpha_reason"],
         "gate_checks": snapshot["gate_checks"],
         "paper_weights": snapshot["weights"],
+        "paper_execution": {
+            "decision_session": plan.get("decision_date"),
+            "part8_status": plan.get("status"),
+            "part8_order_count": plan.get("n_trades"),
+            "bot_mode": snapshot["bot_mode"],
+            "paper_trades_recorded": len(paper_trades),
+            "held_weights": {"voo": paper_state.get("w_voo"), "ief": paper_state.get("w_ief")},
+            "paper_cash": paper_state.get("cash"),
+            "paper_nav": paper_state.get("nav"),
+            "price_basis": "completed-session research marks, not executable fill evidence",
+        },
         "operator_validation": snapshot["operator_validation"],
         "historical_evidence": {
             "auc": snapshot["metrics"]["backtest_auc"],
