@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-11-05T01:20:38.177207+00:00",
+  "built_at": "2026-11-06T03:42:56.339504+00:00",
   "causal_refit_count": 62,
   "causal_refit_frequency": 63,
   "causal_train_window_rows": 1260,
@@ -20,47 +20,47 @@
   "n_regimes": 4,
   "protocol_version": "causal-integrity-v4",
   "regime_distribution": {
-    "calm": 0.3016732283464567,
-    "crisis": 0.20693897637795275,
-    "high_vol": 0.21161417322834647,
-    "risk_on": 0.2125984251968504,
-    "unknown": 0.0671751968503937
+    "calm": 0.3015990159901599,
+    "crisis": 0.2068880688806888,
+    "high_vol": 0.2118081180811808,
+    "risk_on": 0.21254612546125462,
+    "unknown": 0.06715867158671587
   },
   "regime_history_contract": "each label trained strictly before its timestamp",
   "regime_map": {
-    "0": "calm",
-    "1": "crisis",
-    "2": "high_vol",
-    "3": "risk_on"
+    "0": "risk_on",
+    "1": "calm",
+    "2": "crisis",
+    "3": "high_vol"
   },
   "regime_probability_contract": "final-row posterior from observations available through each timestamp",
   "source_part0_dir": "/home/runner/work/Price-Call/Price-Call/artifacts_part0",
   "transition_matrix": [
     [
-      0.97104279,
-      0.02895721,
+      0.98132038,
       0.0,
-      0.0
-    ],
-    [
-      0.04651073,
-      0.94840275,
-      0.00508652,
-      0.0
-    ],
-    [
-      0.04166667,
-      0.0,
-      0.95833333,
+      0.01867962,
       0.0
     ],
     [
       0.0,
-      0.00561498,
+      0.96241373,
+      0.03758627,
+      0.0
+    ],
+    [
+      0.01172764,
+      0.03560325,
+      0.94876074,
+      0.00390837
+    ],
+    [
       0.0,
-      0.99438502
+      0.09090909,
+      0.0,
+      0.90909091
     ]
   ],
-  "unknown_rate": 0.067175,
+  "unknown_rate": 0.067159,
   "version": "V2_DAILY_CANONICAL"
 }
