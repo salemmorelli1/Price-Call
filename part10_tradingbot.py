@@ -2,18 +2,8 @@
 # -*- coding: utf-8 -*-
 # @title Part 10 — Daily Trading Bot ($1,000 Paper Portfolio)
 #
-# AUDIT CHANGELOG (Quant-Guild Part 8 session, 2026-04)
-# ──────────────────────────────────────────────────────
-# Finding C (MEDIUM): compute_performance() annualized Sharpe using sqrt(252)
-#   on between-trade returns, not between-day returns.  At ~1.6 trades/year the
-#   interval between rows in the trade log is weeks to months.  Applying sqrt(252)
-#   assumed each return represented one trading day, overstating Sharpe by
-#   sqrt(252 / trades_per_year) — a factor of ~4.6× at 12 trades/year.
-#   Fix: compute each trade period's annualized return using actual elapsed
-#   calendar days (decision_date diff), then take mean/std across those values.
-#   Sharpe is now NaN when fewer than 2 valid intervals exist, rather than
-#   a numerically inflated finite value.
-# ──────────────────────────────────────────────────────
+# Trade-event NAV observations are sparse; report their valuation basis and
+# withhold a daily-return Sharpe estimate until a daily paper NAV series exists.
 from __future__ import annotations
 
 import csv
@@ -111,6 +101,18 @@ def _safe_float(x: Any, default: float = np.nan) -> float:
         return v if np.isfinite(v) else default
     except Exception:
         return default
+
+
+def _approval_flag(value: Any) -> bool:
+    # The governed target writes a boolean or an integer flag. CSV loading
+    # can produce numpy scalars; a string such as "false" is never approval.
+    return bool((isinstance(value, (bool, np.bool_)) and bool(value)) or (
+        isinstance(value, (int, np.integer)) and value == 1
+    ))
+
+
+def _json_number(value: Any) -> float:
+    return _safe_float(value) if type(value) in (int, float) else np.nan
 
 
 def _canonical_iso_date(value: Any, label: str) -> str:
@@ -220,7 +222,7 @@ class PaperPortfolio:
         self.shares_ief = 0.0
         self.peak_nav = self.cfg.starting_capital
         self._initialized = True
-        print("[Bot] Initialized in DRY_RUN cash mode ($1,000 uninvested)")
+        print(f"[Bot] Initialized with ${self.cash:,.2f} of paper cash")
 
     def nav(self, px_voo: float, px_ief: float) -> float:
         return self.cash + self.shares_voo * px_voo + self.shares_ief * px_ief
@@ -271,20 +273,41 @@ class PaperPortfolio:
         current_w_voo, current_w_ief = self.weights(px_voo, px_ief)
         delta_w = target_w_voo - current_w_voo
 
-        if abs(delta_w) < self.cfg.dead_band:
+        largest_delta = max(abs(delta_w), abs(1.0 - target_w_voo - current_w_ief))
+        if largest_delta < self.cfg.dead_band:
             print(f"[Bot] Dead-band: |Δw|={abs(delta_w):.3f} < {self.cfg.dead_band:.2f} — no trade")
             return None
 
-        target_nav_voo = current_nav * target_w_voo
-        target_nav_ief = current_nav * (1.0 - target_w_voo)
+        # Budget for both the new holdings and the fees. Crediting the shares
+        # while subtracting only fees from cash manufactures capital when a
+        # DRY_RUN cash account makes its first paper buy.
+        fee_rate = self.cfg.tc_bps_one_way / 10_000.0
+        if not (np.isfinite(current_nav) and current_nav > 0
+                and 0 <= target_w_voo <= 1 and 0 <= fee_rate < 1):
+            raise ValueError("Invalid paper rebalance budget, target or cost rate")
+        old_voo, old_ief = self.shares_voo * px_voo, self.shares_ief * px_ief
+
+        def cost(invested: float) -> float:
+            return fee_rate * (abs(invested * target_w_voo - old_voo)
+                               + abs(invested * (1.0 - target_w_voo) - old_ief))
+
+        if cost(0.0) > current_nav:
+            raise ValueError("Paper NAV cannot cover the transaction cost")
+        lo, hi = 0.0, current_nav
+        for _ in range(60):
+            mid = (lo + hi) / 2.0
+            if mid + cost(mid) <= current_nav:
+                lo = mid
+            else:
+                hi = mid
+        target_nav_voo = lo * target_w_voo
+        target_nav_ief = lo * (1.0 - target_w_voo)
         target_shares_voo = target_nav_voo / px_voo
         target_shares_ief = target_nav_ief / px_ief
 
         trade_voo = target_shares_voo - self.shares_voo
         trade_ief = target_shares_ief - self.shares_ief
-        tc_voo = abs(trade_voo * px_voo) * (self.cfg.tc_bps_one_way / 10_000.0)
-        tc_ief = abs(trade_ief * px_ief) * (self.cfg.tc_bps_one_way / 10_000.0)
-        total_tc = tc_voo + tc_ief
+        total_tc = cost(lo)
 
         if dry_run:
             print(
@@ -293,9 +316,9 @@ class PaperPortfolio:
             )
             return None
 
-        self.shares_voo += trade_voo
-        self.shares_ief += trade_ief
-        self.cash -= total_tc
+        self.shares_voo = target_shares_voo
+        self.shares_ief = target_shares_ief
+        self.cash = max(0.0, current_nav - (target_nav_voo + target_nav_ief) - total_tc)
         self.trade_count += 1
 
         post_nav = self.nav(px_voo, px_ief)
@@ -551,7 +574,7 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
                     "p_tail":       float(p_tail_raw),
                     "base_rate":    float(base_rate_raw),
                     "publish_mode": str(ctw.get("publish_mode", "UNKNOWN")),
-                    "final_pass":   bool(ctw.get("final_pass", False)),
+                    "final_pass":   _approval_flag(ctw.get("final_pass")),
                     "raw_val_auc":  _safe_float(ctw.get("raw_val_auc"), np.nan),
                     "source_decision_date": ctw.get("Date") or ctw.get("decision_date"),
                     "model_protocol_version": ctw.get("model_protocol_version"),
@@ -577,7 +600,7 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
                 "p_tail":        p_tail_row,
                 "base_rate":     base_rate_row,
                 "publish_mode":  str(row.get("publish_mode", "UNKNOWN")),
-                "final_pass":    bool(row.get("final_pass", False)),
+                "final_pass":    _approval_flag(row.get("final_pass")),
                 "raw_val_auc":   _safe_float(row.get("raw_val_auc"), np.nan),
                 "source_decision_date": row.get("Date", row.get("decision_date")),
                 "model_protocol_version": row.get("model_protocol_version"),
@@ -599,7 +622,7 @@ def read_latest_signal(cfg: BotConfig) -> Dict[str, Any]:
             signal.update({
                 "raw_val_auc":  _safe_float(s.get("raw_val_auc_median"), np.nan),
                 "publish_mode": str(s.get("publish_mode", "UNKNOWN")),
-                "final_pass":   bool(s.get("final_pass", False)),
+                "final_pass":   _approval_flag(s.get("final_pass")),
                 "source": "part2_summary_auc_only",
             })
             print("[Bot] Warning: Part 2 summary has no row-level probabilities. "
@@ -619,7 +642,9 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
 
     try:
         report = _read_json(cfg.part9_report_path)
-        n_live = int(report.get("n_live_realized", 0))
+        n_live = report.get("n_live_realized", 0)
+        if type(n_live) is not int or n_live < 0:
+            return False, "Invalid realized observation count"
         if n_live < cfg.min_live_n:
             return False, f"Only {n_live} live realized obs (need {cfg.min_live_n})"
 
@@ -627,31 +652,35 @@ def check_accuracy_gate(cfg: BotConfig) -> Tuple[bool, str]:
         if health == "SUSPEND":
             reasons = report.get("health_reasons", [])
             return False, f"Part 9 SUSPEND: {reasons}"
+        if health not in {"ACTIVE", "WARN"} or report.get("evidence_cohort") != PROTOCOL_VERSION:
+            return False, "Part 9 health or evidence cohort has not cleared"
 
         cs = report.get("classification_stats_live", {}) or {}
         cal = report.get("calibration_live", {}) or {}
 
-        t_auc = _safe_float(cs.get("t_stat_auc"), np.nan)
-        acc = _safe_float(cs.get("balanced_accuracy"), np.nan)
-        bss = _safe_float(cs.get("brier_skill_score"), np.nan)
-        ece = _safe_float(cal.get("ece"), np.nan)
+        if cs.get("inference_eligible") is not True:
+            return False, "Part 9 inference is not eligible"
+        t_auc = _json_number(cs.get("t_stat_auc"))
+        acc = _json_number(cs.get("balanced_accuracy"))
+        bss = _json_number(cs.get("brier_skill_score"))
+        ece = _json_number(cal.get("ece"))
 
         if cfg.fail_closed_on_nonfinite_t and not np.isfinite(t_auc):
             return False, "Live AUC t-stat unavailable — fail closed"
         if np.isfinite(t_auc) and t_auc < cfg.min_t_stat:
             return False, f"Live AUC t-stat {t_auc:.2f} < {cfg.min_t_stat:.2f}"
-        if np.isfinite(acc) and acc < 0.50:
-            return False, f"Live balanced accuracy {acc:.2%} < 50%"
-        if np.isfinite(bss) and bss <= 0.0:
-            return False, f"Live Brier skill {bss:.4f} <= 0"
-        if np.isfinite(ece) and ece > 0.15:
-            return False, f"Live ECE {ece:.3f} > 0.15"
+        if not 0.50 <= acc <= 1.0:
+            return False, f"Live balanced accuracy {acc:.2%} unavailable, invalid or below 50%"
+        if not 0.0 < bss <= 1.0:
+            return False, f"Live Brier skill {bss:.4f} unavailable, invalid or nonpositive"
+        if not 0.0 <= ece <= 0.15:
+            return False, f"Live ECE {ece:.3f} unavailable, invalid or above 0.15"
 
         if cfg.enforce_tc_gate:
-            annual_tc_drag_bps = _safe_float(report.get("annual_tc_drag_bps"), np.nan)
-            annual_edge_bps = _safe_float(cs.get("estimated_annual_edge_bps"), np.nan)
-            if np.isfinite(annual_tc_drag_bps) and np.isfinite(annual_edge_bps) and annual_tc_drag_bps >= annual_edge_bps:
-                return False, f"Annual TC drag {annual_tc_drag_bps:.1f} bps >= estimated annual edge {annual_edge_bps:.1f} bps"
+            annual_tc_drag_bps = _json_number(report.get("annual_tc_drag_bps"))
+            annual_edge_bps = _json_number(cs.get("estimated_annual_edge_bps"))
+            if not 0.0 <= annual_tc_drag_bps < annual_edge_bps:
+                return False, "Annual cost or edge unavailable, or costs consume the estimated edge"
 
         return True, f"Model passes live gate: t_auc={t_auc:.2f}, balanced_acc={acc:.2%}, bss={bss:.4f}, ece={ece:.3f}, n={n_live}"
     except Exception as e:
@@ -753,7 +782,7 @@ def load_completed_session_prices(
 
 def load_verified_bot_context(
     cfg: BotConfig,
-) -> Tuple[str, Dict[str, float], Dict[str, Any]]:
+) -> Tuple[str, Dict[str, float], Dict[str, Any], Dict[str, Any]]:
     """Bind the paper bot to the exact Part 8 and Part 0 production lineage."""
     session = _canonical_iso_date(
         os.environ.get("PRICECALL_RUN_DATE_ET")
@@ -812,7 +841,47 @@ def load_verified_bot_context(
         "price_source": "artifacts_part0/close_prices.parquet",
         "price_session": session,
     }
-    return session, prices, lineage
+    return session, prices, lineage, instructions
+
+
+def paper_rebalance_target(instructions: Dict[str, Any], cfg: BotConfig) -> Tuple[Optional[float], str]:
+    """Translate a verified Part 8 plan into a permitted paper target."""
+    status = instructions.get("status")
+    if status != "RESEARCH_INSTRUCTIONS_GENERATED":
+        return None, f"Part 8 does not authorize paper action ({status or 'missing status'})"
+    if any(instructions.get(key) is not True for key in (
+        "lineage_verified", "data_freshness_ok", "governance_part2_final_pass",
+        "governance_part3_final_pass",
+    )) or any(instructions.get(key) != "NORMAL" for key in (
+        "governance_part2_publish_mode", "governance_part3_publish_mode",
+    )):
+        return None, "Part 8 plan is stale or lacks explicit governance approval"
+    orders = instructions.get("instructions")
+    count = instructions.get("n_trades")
+    if type(count) is not int or count < 1 or not isinstance(orders, list) or len(orders) != count:
+        return None, "Part 8 plan has no valid paper orders"
+    weights = instructions.get("governed_target_weights")
+    tickers = {cfg.ticker_equity, cfg.ticker_bond}
+    if not isinstance(weights, dict) or set(weights) != tickers:
+        return None, "Part 8 lacks the complete governed target"
+    voo = _json_number(weights[cfg.ticker_equity])
+    ief = _json_number(weights[cfg.ticker_bond])
+    if (not cfg.min_position_voo <= voo <= cfg.max_position_voo
+            or not 0 <= ief <= 1 or not np.isclose(voo + ief, 1.0, rtol=0, atol=1e-9)):
+        return None, "Part 8 governed target is outside the paper weight contract"
+    seen = set()
+    for order in orders:
+        ticker = order.get("ticker") if isinstance(order, dict) else None
+        if not isinstance(ticker, str) or ticker not in tickers or ticker in seen:
+            return None, "Part 8 has an invalid or duplicate paper order ticker"
+        seen.add(ticker)
+        amount = _json_number(order.get("trade_dollars"))
+        if (not np.isfinite(amount) or amount == 0
+                or order.get("direction") != ("buy" if amount > 0 else "sell")
+                or not np.isclose(_json_number(order.get("target_weight")), weights[ticker],
+                                  rtol=0, atol=1e-6)):
+            return None, "Part 8 paper order disagrees with the governed target"
+    return voo, "Part 8 governed paper plan cleared"
 
 
 def _latest_completed_close(series: pd.Series) -> float:
@@ -846,45 +915,23 @@ def fetch_prices(tickers: List[str], use_prior_day: bool = True) -> Dict[str, fl
 
 
 def compute_performance(trade_log_df: pd.DataFrame, cfg: BotConfig) -> Dict[str, Any]:
+    risk_basis = {
+        "sharpe_ratio": None,
+        "sharpe_status": "withheld_no_daily_paper_nav",
+        "valuation_basis": "post_trade_paper_marks_only",
+    }
     if trade_log_df.empty or "nav_after" not in trade_log_df.columns:
-        return {"error": "No trades recorded yet", "as_of_date": date.today().isoformat()}
+        return {**risk_basis, "error": "No trades recorded yet", "as_of_date": date.today().isoformat()}
 
     df = trade_log_df.dropna(subset=["nav_after"]).copy().sort_values("decision_date")
     nav_series = pd.to_numeric(df["nav_after"], errors="coerce").dropna().values
     if len(nav_series) == 0:
-        return {"error": "No valid NAV observations"}
+        return {**risk_basis, "error": "No valid NAV observations"}
 
     total_return = (nav_series[-1] - cfg.starting_capital) / cfg.starting_capital
     between_trade_returns = np.diff(nav_series) / nav_series[:-1] if len(nav_series) >= 2 else np.array([])
     if len(between_trade_returns) < 2:
-        return {"total_return_pct": round(total_return * 100, 3), "n_trades": len(df)}
-
-    # FIX (Finding C, Audit 2026-04): the original code applied sqrt(252) to
-    # between-trade returns as if each represented one trading day.  At ~1.6
-    # trades/year the actual interval is weeks to months; sqrt(252) overstates
-    # the annualized Sharpe ratio by sqrt(252 / trades_per_year).
-    #
-    # Correct approach: convert each between-trade return to an annualized return
-    # using the actual elapsed calendar days, then compute mean/std across those
-    # annualized values.  This is equivalent to time-weighting each observation.
-    dates = pd.to_datetime(df["decision_date"], errors="coerce").dropna()
-    intervals_days = dates.diff().dt.days.dropna().values.astype(float)
-    n_pairs = min(len(between_trade_returns), len(intervals_days))
-    valid = (
-        (intervals_days[:n_pairs] > 0)
-        & np.isfinite(between_trade_returns[:n_pairs])
-    )
-    if valid.sum() >= 2:
-        ann_returns = (
-            between_trade_returns[:n_pairs][valid]
-            * (252.0 / intervals_days[:n_pairs][valid])
-        )
-        mean_ann = float(np.mean(ann_returns))
-        std_ann = float(np.std(ann_returns, ddof=1))
-        sharpe = mean_ann / (std_ann + 1e-10) if std_ann > 0 else np.nan
-    else:
-        # Fewer than 2 valid intervals: cannot estimate annualized Sharpe reliably.
-        sharpe = np.nan
+        return {**risk_basis, "total_return_pct": round(total_return * 100, 3), "n_trades": len(df)}
 
     running_max = np.maximum.accumulate(nav_series)
     drawdowns = (nav_series - running_max) / running_max
@@ -899,9 +946,9 @@ def compute_performance(trade_log_df: pd.DataFrame, cfg: BotConfig) -> Dict[str,
     tc_drag_bps = float(total_tc / cfg.starting_capital * 10_000.0)
 
     return {
+        **risk_basis,
         "n_trades": len(df),
         "total_return_pct": round(total_return * 100.0, 4),
-        "sharpe_ratio": round(sharpe, 4) if np.isfinite(sharpe) else None,
         "max_drawdown_pct": round(max_dd * 100.0, 4),
         "win_rate_pct": round(win_rate * 100.0, 2),
         "total_tc_dollars": round(total_tc, 4),
@@ -960,7 +1007,7 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     # Validate every upstream identity and the exact observed price row before
     # constructors migrate or otherwise touch persistent bot ledgers.
     try:
-        decision_date, prices, execution_lineage = load_verified_bot_context(cfg)
+        decision_date, prices, execution_lineage, plan = load_verified_bot_context(cfg)
     except Exception as exc:
         print(f"[Bot] ERROR: verified execution context unavailable ({exc})")
         return 1
@@ -994,7 +1041,7 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     p_tail = _safe_float(signal.get("p_tail"), cfg.base_rate_default)
     base_rate = _safe_float(signal.get("base_rate"), cfg.base_rate_default)
     publish_mode = str(signal.get("publish_mode", "UNKNOWN"))
-    final_pass = bool(signal.get("final_pass", False))
+    final_pass = signal.get("final_pass") is True
     edge = base_rate - p_tail
 
     try:
@@ -1023,44 +1070,46 @@ def run_daily(cfg: BotConfig = CFG) -> int:
         return 1
 
     gate_passed, gate_reason = check_accuracy_gate(cfg)
-    dry_run = not gate_passed
-    print(f"[Bot] {'DRY_RUN' if dry_run else 'LIVE'} mode — {gate_reason}")
+    approved_target, plan_reason = paper_rebalance_target(plan, cfg)
+    if approved_target is not None and (publish_mode != "NORMAL" or not final_pass):
+        approved_target = None
+        plan_reason = "Signal publication does not confirm the Part 8 approval"
+    dry_run = approved_target is None or not gate_passed or portfolio.is_stopped
+    reasons = [plan_reason, gate_reason]
+    if portfolio.is_stopped:
+        reasons.append("Paper portfolio is stopped")
+    action_reason = "; ".join(reasons)
+    print(f"[Bot] {'DRY_RUN' if dry_run else 'PAPER'} mode — {action_reason}")
 
     if not portfolio._initialized:
-        if dry_run:
-            portfolio.initialize_cash_only()
-        else:
-            portfolio.initialize(px_voo, px_ief)
+        portfolio.initialize_cash_only()
 
-    strategy_target = None
-    fail_modes = {"FAIL_CLOSED_NEUTRAL", "FAIL_CLOSED", "SHADOW", "UNKNOWN"}
-    if publish_mode not in fail_modes and final_pass:
-        strategy_target = read_strategy_target(cfg)
-    if strategy_target is not None:
-        target_w_voo, target_src = strategy_target
-        action_reason = f"{target_src} (w_voo={target_w_voo:.3f})"
+    if approved_target is not None:
+        target_w_voo, target_src = approved_target, "part8_governed_target"
     else:
-        target_w_voo, action_reason = compute_target_weight(p_tail, base_rate, publish_mode, final_pass, cfg)
-        target_src = "heuristic_fallback"
+        target_w_voo, target_src = cfg.default_w_equity, "neutral_no_action"
 
     print(f"[Bot] Signal: p_tail={p_tail:.4f}, base_rate={base_rate:.4f}, edge={edge:+.4f}")
     print(f"[Bot] Target w_VOO={target_w_voo:.3f} | Source: {target_src} | Reason: {action_reason}")
 
+    trade_record = None
     current_nav = portfolio.nav(px_voo, px_ief)
-    if (not portfolio.is_stopped and portfolio._initialized and current_nav <= cfg.stop_loss_floor):
+    if dry_run:
+        if current_nav <= cfg.stop_loss_floor:
+            print("[Bot] Stop-loss floor observed in DRY_RUN; holdings and cash preserved")
+    elif current_nav <= cfg.stop_loss_floor:
         print(f"[Bot] Passive stop-loss check: NAV=${current_nav:.2f} ≤ floor=${cfg.stop_loss_floor:.2f}")
         portfolio._trigger_stop_loss(px_voo, px_ief, decision_date)
-
-    trade_record = portfolio.rebalance(
-        target_w_voo=target_w_voo,
-        px_voo=px_voo,
-        px_ief=px_ief,
-        decision_date=decision_date,
-        signal=p_tail,
-        action_reason=action_reason,
-        dry_run=(dry_run or portfolio.is_stopped),
-        target_source=target_src,
-    )
+    else:
+        trade_record = portfolio.rebalance(
+            target_w_voo=target_w_voo,
+            px_voo=px_voo,
+            px_ief=px_ief,
+            decision_date=decision_date,
+            signal=p_tail,
+            action_reason=action_reason,
+            target_source=target_src,
+        )
     if trade_record:
         trade_record.update(execution_lineage)
         trade_log.append(trade_record)
@@ -1100,6 +1149,9 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     state.update(execution_lineage)
     state["decision_date"] = decision_date
     state["last_updated"] = run_date
+    state["mode"] = "STOPPED" if portfolio.is_stopped else "DRY_RUN" if dry_run else "PAPER"
+    state["paper_execution_plan_cleared"] = approved_target is not None
+    state["paper_execution_reason"] = action_reason
     state["px_voo"] = round(float(px_voo), 4)
     state["px_ief"] = round(float(px_ief), 4)
     write_json_strict(state_path, state)
@@ -1120,10 +1172,10 @@ def run_daily(cfg: BotConfig = CFG) -> int:
     print(f"  Stop-loss floor:   ${cfg.stop_loss_floor:.2f} (${post_nav - cfg.stop_loss_floor:.2f} buffer)")
     print(f"  Current weights:   VOO {w_voo:.1%} / IEF {w_ief:.1%}")
     print(f"  Trades executed:   {portfolio.trade_count}")
-    print(f"  Sharpe (running):  {perf.get('sharpe_ratio', 'N/A')}")
-    print(f"  Max drawdown:      {perf.get('max_drawdown_pct', 'N/A')}%")
+    print(f"  Sharpe:            {perf['sharpe_status']}")
+    print(f"  Trade-mark drawdown: {perf.get('max_drawdown_pct', 'N/A')}%")
     print(f"  Total TC drag:     {perf.get('total_tc_drag_bps', 'N/A')} bps")
-    print(f"  Mode:              {'⛔ STOPPED' if portfolio.is_stopped else '🟡 DRY_RUN' if dry_run else '🟢 LIVE'}")
+    print(f"  Mode:              {state['mode']}")
     print("\n✅ PART 10 COMPLETE")
     print(f"   Trade log:    {trade_log.path}")
     print(f"   Signal log:   {signal_log.path}")
