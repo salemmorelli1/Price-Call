@@ -3,23 +3,23 @@
   "alpha_state": "FLAT_VETOED",
   "bot_mode": "DRY_RUN",
   "data_freshness_ok": true,
-  "decision_date": "2026-11-16T00:00:00",
+  "decision_date": "2026-11-17T00:00:00",
   "deployment_mode": "DEFENSE_ONLY",
   "evidence": {
     "cohort": "causal-integrity-v4",
-    "eligible_realized": 36,
+    "eligible_realized": 37,
     "inference_eligible": true,
     "legacy_realized_excluded": 40,
     "minimum": 60,
     "n_negative": 27,
-    "n_positive": 9,
-    "progress_pct": 60.0,
+    "n_positive": 10,
+    "progress_pct": 61.7,
     "selection": "first_60_eligible_issuances",
-    "total_current_realized": 36
+    "total_current_realized": 37
   },
   "execution_lineage_ok": true,
   "final_pass": false,
-  "freshness_expires_at_utc": "2026-11-17T21:20:00+00:00",
+  "freshness_expires_at_utc": "2026-11-18T21:20:00+00:00",
   "gate_checks": [
     {
       "id": "protocol_thresholds",
@@ -59,7 +59,7 @@
     },
     {
       "id": "historical_auc",
-      "observed": 0.5175142746640827,
+      "observed": 0.5099170640680074,
       "passed": true,
       "required": {
         "at_most": 1.0,
@@ -68,7 +68,7 @@
     },
     {
       "id": "historical_auc_p",
-      "observed": 0.155278,
+      "observed": 0.285691,
       "passed": false,
       "required": {
         "at_least": 0.0,
@@ -77,7 +77,7 @@
     },
     {
       "id": "historical_brier_skill",
-      "observed": 0.0025189653931942946,
+      "observed": -0.0030101704994116574,
       "passed": false,
       "required": {
         "at_least": 0.005,
@@ -100,17 +100,17 @@
       "id": "publication_freshness",
       "observed": {
         "component_dates": {
-          "decision": "2026-11-16",
-          "execution": "2026-11-16",
-          "market_data": "2026-11-16",
-          "model_data": "2026-11-16",
-          "pipeline": "2026-11-16"
+          "decision": "2026-11-17",
+          "execution": "2026-11-17",
+          "market_data": "2026-11-17",
+          "model_data": "2026-11-17",
+          "pipeline": "2026-11-17"
         },
         "execution_lineage_ok": true
       },
       "passed": true,
       "required": {
-        "every_component_session": "2026-11-16",
+        "every_component_session": "2026-11-17",
         "execution_lineage_ok": true
       }
     },
@@ -135,7 +135,7 @@
     {
       "id": "prospective_holdout",
       "observed": {
-        "locked_realized": 36,
+        "locked_realized": 37,
         "status": "awaiting_60_outcomes"
       },
       "passed": false,
@@ -151,32 +151,32 @@
   "latest_signal": {
     "action_reason": "Part 8 does not authorize paper action (NO_ACTION_STALE_OR_UNCLEARED); Only 36 live realized obs (need 60)",
     "base_rate": 0.195437,
-    "edge": -0.007383,
-    "p_tail": 0.20282,
+    "edge": -0.010584,
+    "p_tail": 0.20602,
     "raw_validation_auc": 0.5,
-    "signal_count": 92,
+    "signal_count": 93,
     "target_voo": 0.6
   },
   "lineage": {
-    "backfill_run_date": "2026-11-16",
-    "backfill_run_id": "44008139708",
-    "backfill_source_code_sha": "dcf0f6edb90717a29942113965b3e6b08b345d71",
-    "execution_decision_date": "2026-11-16",
+    "backfill_run_date": "2026-11-17",
+    "backfill_run_id": "44224360379",
+    "backfill_source_code_sha": "ca9d1092ad79cc6bdc874a07446b38dcffa75e5d",
+    "execution_decision_date": "2026-11-17",
     "execution_lineage_failures": [],
     "execution_lineage_ok": true,
-    "execution_pipeline_run_date": "2026-11-16",
-    "execution_pipeline_run_id": "44008139708",
-    "execution_source_code_sha": "dcf0f6edb90717a29942113965b3e6b08b345d71",
-    "expected_completed_market_session": "2026-11-16",
-    "latest_prediction_target_date": "2026-11-17",
-    "latest_signal_run_date": "2026-11-17",
-    "latest_signal_source_decision_date": "2026-11-16",
-    "market_data_asof": "2026-11-16",
+    "execution_pipeline_run_date": "2026-11-17",
+    "execution_pipeline_run_id": "44224360379",
+    "execution_source_code_sha": "ca9d1092ad79cc6bdc874a07446b38dcffa75e5d",
+    "expected_completed_market_session": "2026-11-17",
+    "latest_prediction_target_date": "2026-11-18",
+    "latest_signal_run_date": "2026-11-18",
+    "latest_signal_source_decision_date": "2026-11-17",
+    "market_data_asof": "2026-11-17",
     "message": "The prediction tape and market-data lineage are current under the published gate.",
-    "model_data_asof": "2026-11-16",
-    "pipeline_run_date": "2026-11-16",
-    "pipeline_run_id": "44008139708",
-    "pipeline_source_code_sha": "dcf0f6edb90717a29942113965b3e6b08b345d71",
+    "model_data_asof": "2026-11-17",
+    "pipeline_run_date": "2026-11-17",
+    "pipeline_run_id": "44224360379",
+    "pipeline_source_code_sha": "ca9d1092ad79cc6bdc874a07446b38dcffa75e5d",
     "prediction_tape_paused": false,
     "publication_component_ages": {
       "decision": 0,
@@ -186,32 +186,32 @@
       "pipeline": 0
     },
     "publication_component_dates": {
-      "decision": "2026-11-16",
-      "execution": "2026-11-16",
-      "market_data": "2026-11-16",
-      "model_data": "2026-11-16",
-      "pipeline": "2026-11-16"
+      "decision": "2026-11-17",
+      "execution": "2026-11-17",
+      "market_data": "2026-11-17",
+      "model_data": "2026-11-17",
+      "pipeline": "2026-11-17"
     },
     "publication_session_age": 0,
     "stale_tickers": {}
   },
   "live_health": "IMMATURE",
   "live_health_reasons": [
-    "Only 36 live observations (60 required)"
+    "Only 37 live observations (60 required)"
   ],
   "macro_point_in_time_ok": true,
   "metrics": {
-    "backtest_auc": 0.5175142746640827,
-    "backtest_auc_p_value": 0.155278,
-    "backtest_auc_permutation_p_value": 0.15142428785607195,
-    "backtest_brier": 0.1612327712076192,
-    "backtest_brier_skill": 0.0025189653931942946,
-    "balanced_accuracy": 0.5185185185185185,
-    "live_auc": 0.4897119341563786,
-    "live_brier": 0.1902941611466038,
-    "live_brier_null": 0.19108860268644495,
-    "live_brier_skill": 0.004157451717458072,
-    "rolling_median_auc": 0.5565767973856209
+    "backtest_auc": 0.5099170640680074,
+    "backtest_auc_p_value": 0.285691,
+    "backtest_auc_permutation_p_value": 0.28735632183908044,
+    "backtest_brier": 0.1624084126879286,
+    "backtest_brier_skill": -0.0030101704994116574,
+    "balanced_accuracy": 0.5240740740740741,
+    "live_auc": 0.5259259259259259,
+    "live_brier": 0.20227410157675868,
+    "live_brier_null": 0.2034192462019843,
+    "live_brier_skill": 0.005629480720450664,
+    "rolling_median_auc": 0.5584846912298911
   },
   "operator_validation": {
     "auc_p_value_max": 0.1,
@@ -225,12 +225,12 @@
       "one-sided AUC p-value is invalid or exceeds 0.10",
       "causal Brier skill is invalid or below 0.005",
       "prospective independent validation is pending",
-      "fixed prospective cohort: 36/60 outcomes; awaiting_60_outcomes"
+      "fixed prospective cohort: 37/60 outcomes; awaiting_60_outcomes"
     ],
     "status": "NOT_VALIDATED"
   },
   "prediction_interval": {
-    "empirical_coverage": 0.8969310943833236,
+    "empirical_coverage": 0.8969907407407407,
     "lower_quantile": 0.05,
     "nominal_coverage": 0.9,
     "object": "next-day VOO-minus-IEF return spread",
@@ -241,17 +241,17 @@
     "auc_method": "delong_structural_components_v1",
     "auc_p_max": 0.1,
     "brier_skill_min": 0.005,
-    "cohort_issuance_sha256": "f85b797a0bfc4edad3a16fa8c5e81f2bdfba2597d9dc13bd80887013fe9c5d18",
-    "eligible_issued": 37,
-    "eligible_realized": 36,
+    "cohort_issuance_sha256": "a4b5158404f6667bc948ca22f9df8bbc24400584d24c1745c701be2ae7ca1846",
+    "eligible_issued": 38,
+    "eligible_realized": 37,
     "independent_validation_ok": false,
     "locked_first_decision": "2026-09-24",
-    "locked_issued": 37,
-    "locked_last_decision": "2026-11-16",
+    "locked_issued": 38,
+    "locked_last_decision": "2026-11-17",
     "locked_pending_targets": [
-      "2026-11-17"
+      "2026-11-18"
     ],
-    "locked_realized": 36,
+    "locked_realized": 37,
     "method": "first 60 eligible issuances fixed before observing outcomes",
     "probability_source": "p_final_cal",
     "protocol_version": "causal-integrity-v4",
@@ -261,7 +261,7 @@
   "protocol_version": "causal-integrity-v4",
   "publication_freshness_ok": true,
   "publish_mode": "FAIL_CLOSED_NEUTRAL",
-  "regime": "crisis",
+  "regime": "high_vol",
   "source_data_freshness_ok": true,
   "weights": {
     "ief": 0.4,
