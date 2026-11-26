@@ -1,12 +1,12 @@
 {
-  "completed_at_utc": "2026-11-25T04:09:33.886299+00:00",
-  "expected_completed_market_session": "2026-11-24",
+  "completed_at_utc": "2026-11-26T03:33:06.999886+00:00",
+  "expected_completed_market_session": "2026-11-25",
   "github_run_attempt": "1",
-  "github_run_id": "45541992814",
-  "market_data_asof": "2026-11-24",
-  "pipeline_run_date": "2026-11-24",
+  "github_run_id": "45746663989",
+  "market_data_asof": "2026-11-25",
+  "pipeline_run_date": "2026-11-25",
   "protocol_version": "causal-integrity-v4",
   "result": "verified",
-  "source_code_sha": "cb430098c4fa029f7e3cb359cb9fc48c12fdd8df",
-  "workflow_completed_et_date": "2026-11-24"
+  "source_code_sha": "3256f743fd02dc7d904e998d3c27b4045222959d",
+  "workflow_completed_et_date": "2026-11-25"
 }
